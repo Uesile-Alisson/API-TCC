@@ -7,9 +7,9 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '@/prisma/prisma.service';
 import { SignInDTO } from './dto/sign-in.dto';
-import { FisrtAcessDTO } from './dto/first-acess.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
+import { FirstAcessDTO } from './dto/first-acess.dto';
+import { ForgotPasswordDTO } from './dto/forgot-password.dto';
+import { ResetPasswordDTO } from './dto/reset-password.dto';
 import { MailService } from '@/mail/mail.service';
 
 @Injectable()
@@ -55,7 +55,7 @@ export class AuthService {
     };
   }
 
-  async firstAccess(userId: number, dto: FisrtAcessDTO) {
+  async firstAccess(userId: number, dto: FirstAcessDTO) {
     if (dto.senhaNova !== dto.confirmarSenha) {
       throw new BadRequestException('As senhas são diferentes.');
     }
@@ -94,7 +94,7 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(dto: ForgotPasswordDto) {
+  async forgotPassword(dto: ForgotPasswordDTO) {
     const user = await this.prisma.usuarios.findUnique({
       where: {
         login: dto.login,
@@ -132,7 +132,7 @@ export class AuthService {
     };
   }
 
-  async resetPassword(dto: ResetPasswordDto) {
+  async resetPassword(dto: ResetPasswordDTO) {
     if (dto.senhaNova !== dto.confirmarSenha) {
       throw new BadRequestException('As senhas são diferentes.');
     }

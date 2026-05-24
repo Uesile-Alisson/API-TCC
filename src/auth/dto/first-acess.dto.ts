@@ -1,6 +1,6 @@
 import { IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
 
-export class FisrtAcessDTO {
+export class FirstAcessDTO {
   @IsString()
   @IsNotEmpty()
   @MinLength(6)
