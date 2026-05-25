@@ -36,7 +36,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       login: user.login,
       nome: user.nome,
       email: user.email,
-      nivel_acesso: user.niveisacessos.nome,
+      nivel_acesso: {
+        nome: user.niveisacessos.nome,
+      },
       primeiro_acesso: user.primeiro_acesso,
     };
   }

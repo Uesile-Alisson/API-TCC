@@ -1,13 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY, Role } from '../decorators/roles.decorator';
-
-type RequestWithUser = {
-  user: {
-    nivel_acesso: Role;
-  };
-};
-
+import { AuthenticatedRequest } from '../types/authenticated-request.interface';
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
@@ -22,9 +16,9 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<RequestWithUser>();
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const user = request.user;
 
-    return roles.includes(user.nivel_acesso);
+    return roles.includes(user.nivel_acesso.nome);
   }
 }
