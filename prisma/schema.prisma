@@ -8,29 +8,27 @@ datasource db {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model alarmes {
-  id_alarme              Int              @id @default(autoincrement())
-  id_processo            Int?
-  id_tanque              Int?
-  id_sensor              Int?
-  id_mqtt_mensagem       Int?
-  id_usuario_responsavel Int?
-  titulo                 String           @db.VarChar(120)
-  descricao              String
-  tipo_alarme            tipoalarme
-  severidade             severidadealarme
-  status_alarme          statusalarme
-  origem_alarme          origemalarme
-  valor_detectado        Decimal?         @db.Decimal(10, 3)
-  unidade                String?          @db.VarChar(20)
-  ocorrido_em            DateTime         @db.Timestamp(6)
-  resolvido_em           DateTime?        @db.Timestamp(6)
-  excluido_em            DateTime?        @db.Timestamp(6)
-  mqttmensagens          mqttmensagens?   @relation(fields: [id_mqtt_mensagem], references: [id_mqtt_mensagem], map: "fk_alarme_mqtt_mensagem")
-  processos              processos?       @relation(fields: [id_processo], references: [id_processo], map: "fk_alarme_processo")
-  sensores               sensores?        @relation(fields: [id_sensor], references: [id_sensor], map: "fk_alarme_sensor")
-  tanques                tanques?         @relation(fields: [id_tanque], references: [id_tanque], map: "fk_alarme_tanque")
-  usuarios               usuarios?        @relation(fields: [id_usuario_responsavel], references: [id_usuario], map: "fk_alarme_usuario_responsavel")
-  relatorios             relatorios[]
+  id_alarme                 Int                       @id @default(autoincrement())
+  id_mqtt_mensagem          Int?
+  id_usuario_responsavel    Int?
+  titulo                    String                    @db.VarChar(120)
+  descricao                 String
+  tipo_alarme               tipoalarme
+  severidade                severidadealarme
+  status_alarme             statusalarme
+  origem_alarme             origemalarme
+  valor_detectado           Decimal?                  @db.Decimal(10, 3)
+  unidade                   String?                   @db.VarChar(20)
+  ocorrido_em               DateTime                  @db.Timestamp(6)
+  resolvido_em              DateTime?                 @db.Timestamp(6)
+  excluido_em               DateTime?                 @db.Timestamp(6)
+  id_processo_tanque_sensor Int?
+  mqttmensagens             mqttmensagens?            @relation(fields: [id_mqtt_mensagem], references: [id_mqtt_mensagem], map: "fk_alarme_mqtt_mensagem")
+  processostanquessensores  processostanquessensores? @relation(fields: [id_processo_tanque_sensor], references: [id_processo_tanque_sensor], map: "fk_alarme_processo_tanque_sensor")
+  usuarios                  usuarios?                 @relation(fields: [id_usuario_responsavel], references: [id_usuario], map: "fk_alarme_usuario_responsavel")
+  relatorios                relatorios[]
+
+  @@index([id_processo_tanque_sensor], map: "idx_alarmes_processo_tanque_sensor")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -78,32 +76,29 @@ model configuracoessistema {
 }
 
 model eventos {
-  id_evento_processo Int                @id @default(autoincrement())
-  id_processo        Int
-  id_tanque          Int?
-  id_sensor          Int?
-  tipo_evento        tipoeventoprocesso
-  origem_evento      origemevento
-  severidade_evento  severidadeevento
-  ocorrido_em        DateTime           @default(now()) @db.Timestamp(6)
-  processos          processos          @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_evento_processo")
-  sensores           sensores?          @relation(fields: [id_sensor], references: [id_sensor], map: "fk_evento_sensor")
-  tanques            tanques?           @relation(fields: [id_tanque], references: [id_tanque], map: "fk_evento_tanque")
+  id_evento_processo        Int                       @id @default(autoincrement())
+  id_processo               Int
+  tipo_evento               tipoeventoprocesso
+  origem_evento             origemevento
+  severidade_evento         severidadeevento
+  ocorrido_em               DateTime                  @default(now()) @db.Timestamp(6)
+  id_processo_tanque_sensor Int?
+  processos                 processos                 @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_evento_processo")
+  processostanquessensores  processostanquessensores? @relation(fields: [id_processo_tanque_sensor], references: [id_processo_tanque_sensor], map: "fk_evento_processo_tanque_sensor")
+
+  @@index([id_processo_tanque_sensor], map: "idx_eventos_processo_tanque_sensor")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model leiturasensores {
-  id_leitura_sensor Int       @id @default(autoincrement())
-  id_processo       Int
-  id_tanque         Int
-  id_sensor         Int
-  valor_vacuo       Decimal   @db.Decimal(10, 3)
-  unidade_medida    String    @db.VarChar(20)
-  leitura_em        DateTime  @db.Timestamp(6)
-  recebido_em       DateTime  @db.Timestamp(6)
-  processos         processos @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_leitura_processo")
-  sensores          sensores  @relation(fields: [id_sensor], references: [id_sensor], map: "fk_leitura_sensor")
-  tanques           tanques   @relation(fields: [id_tanque], references: [id_tanque], map: "fk_leitura_tanque")
+  id_leitura_sensor         Int                      @id @default(autoincrement())
+  valor_vacuo               Decimal                  @db.Decimal(10, 3)
+  leitura_em                DateTime                 @db.Timestamp(6)
+  recebido_em               DateTime                 @db.Timestamp(6)
+  id_processo_tanque_sensor Int
+  processostanquessensores  processostanquessensores @relation(fields: [id_processo_tanque_sensor], references: [id_processo_tanque_sensor], onDelete: Cascade, map: "fk_leitura_processo_tanque_sensor")
+
+  @@index([id_processo_tanque_sensor], map: "idx_leituras_processo_tanque_sensor")
 }
 
 model logsoperacionais {
@@ -148,24 +143,22 @@ model mqttconfiguracoes {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model mqttmensagens {
-  id_mqtt_mensagem     Int                @id @default(autoincrement())
-  id_mqtt_configuracao Int?
-  id_processo          Int?
-  id_tanque            Int?
-  id_sensor            Int?
-  topico               String             @db.VarChar(180)
-  payload              Json
-  direcao              direcaomqtt
-  origem               origemmqtt
-  erro                 String?
-  recebido_em          DateTime?          @db.Timestamp(6)
-  enviado_em           DateTime?          @db.Timestamp(6)
-  criado_em            DateTime           @default(now()) @db.Timestamp(6)
-  alarmes              alarmes[]
-  mqttconfiguracoes    mqttconfiguracoes? @relation(fields: [id_mqtt_configuracao], references: [id_mqtt_configuracao], map: "fk_mqtt_mensagem_config")
-  processos            processos?         @relation(fields: [id_processo], references: [id_processo], map: "fk_mqtt_mensagem_processo")
-  sensores             sensores?          @relation(fields: [id_sensor], references: [id_sensor], map: "fk_mqtt_mensagem_sensor")
-  tanques              tanques?           @relation(fields: [id_tanque], references: [id_tanque], map: "fk_mqtt_mensagem_tanque")
+  id_mqtt_mensagem          Int                       @id @default(autoincrement())
+  id_mqtt_configuracao      Int?
+  topico                    String                    @db.VarChar(180)
+  payload                   Json
+  direcao                   direcaomqtt
+  origem                    origemmqtt
+  erro                      String?
+  recebido_em               DateTime?                 @db.Timestamp(6)
+  enviado_em                DateTime?                 @db.Timestamp(6)
+  criado_em                 DateTime                  @default(now()) @db.Timestamp(6)
+  id_processo_tanque_sensor Int?
+  alarmes                   alarmes[]
+  mqttconfiguracoes         mqttconfiguracoes?        @relation(fields: [id_mqtt_configuracao], references: [id_mqtt_configuracao], map: "fk_mqtt_mensagem_config")
+  processostanquessensores  processostanquessensores? @relation(fields: [id_processo_tanque_sensor], references: [id_processo_tanque_sensor], map: "fk_mqtt_mensagem_processo_tanque_sensor")
+
+  @@index([id_processo_tanque_sensor], map: "idx_mqtt_mensagens_processo_tanque_sensor")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -227,11 +220,8 @@ model processos {
   finalizado_em     DateTime?          @db.Timestamp(6)
   parada_emergencia Boolean            @default(false)
   criado_em         DateTime           @default(now()) @db.Timestamp(6)
-  alarmes           alarmes[]
   eventos           eventos[]
-  leiturasensores   leiturasensores[]
   logsoperacionais  logsoperacionais[]
-  mqttmensagens     mqttmensagens[]
   usuarios          usuarios           @relation(fields: [id_usuario], references: [id_usuario], map: "fk_processo_usuario")
   processostanques  processostanques[]
   relatorios        relatorios[]
@@ -260,16 +250,21 @@ model processostanques {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model processostanquessensores {
-  id_processo_tanque_sensor Int              @id @default(autoincrement())
+  id_processo_tanque_sensor Int               @id @default(autoincrement())
   id_processo_tanque        Int
   id_sensor                 Int
-  ativo                     Boolean          @default(true)
-  removido_em               DateTime?        @db.Timestamp(6)
+  ativo                     Boolean           @default(true)
+  removido_em               DateTime?         @db.Timestamp(6)
   observacoes               String?
-  processostanques          processostanques @relation(fields: [id_processo_tanque], references: [id_processo_tanque], onDelete: Cascade, map: "fk_processo_tanque_sensor_processo_tanque")
-  sensores                  sensores         @relation(fields: [id_sensor], references: [id_sensor], map: "fk_processo_tanque_sensor_sensor")
+  alarmes                   alarmes[]
+  eventos                   eventos[]
+  leiturasensores           leiturasensores[]
+  mqttmensagens             mqttmensagens[]
+  processostanques          processostanques  @relation(fields: [id_processo_tanque], references: [id_processo_tanque], onDelete: Cascade, map: "fk_processo_tanque_sensor_processo_tanque")
+  sensores                  sensores          @relation(fields: [id_sensor], references: [id_sensor], map: "fk_processo_tanque_sensor_sensor")
 
   @@unique([id_processo_tanque, id_sensor], map: "uq_processo_tanque_sensor")
+  @@unique([id_processo_tanque, id_sensor], map: "uq_pts_processo_tanque_sensor")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -304,10 +299,6 @@ model sensores {
   ultimo_valor_lido        Decimal?                   @db.Decimal(10, 3)
   criado_em                DateTime                   @default(now()) @db.Timestamp(6)
   excluido_em              DateTime?                  @db.Timestamp(6)
-  alarmes                  alarmes[]
-  eventos                  eventos[]
-  leiturasensores          leiturasensores[]
-  mqttmensagens            mqttmensagens[]
   processostanquessensores processostanquessensores[]
 }
 
@@ -322,10 +313,6 @@ model tanques {
   criado_em        DateTime           @default(now()) @db.Timestamp(6)
   atualizado_em    DateTime           @default(now()) @db.Timestamp(6)
   excluido_em      DateTime?          @db.Timestamp(6)
-  alarmes          alarmes[]
-  eventos          eventos[]
-  leiturasensores  leiturasensores[]
-  mqttmensagens    mqttmensagens[]
   processostanques processostanques[]
 }
 
