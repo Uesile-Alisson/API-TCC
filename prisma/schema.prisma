@@ -23,12 +23,19 @@ model alarmes {
   resolvido_em              DateTime?                 @db.Timestamp(6)
   excluido_em               DateTime?                 @db.Timestamp(6)
   id_processo_tanque_sensor Int?
+  id_processo               Int?
+  id_processo_tanque        Int?
   mqttmensagens             mqttmensagens?            @relation(fields: [id_mqtt_mensagem], references: [id_mqtt_mensagem], map: "fk_alarme_mqtt_mensagem")
+  processos                 processos?                @relation(fields: [id_processo], references: [id_processo], map: "fk_alarme_processo")
+  processostanques          processostanques?         @relation(fields: [id_processo_tanque], references: [id_processo_tanque], map: "fk_alarme_processo_tanque")
   processostanquessensores  processostanquessensores? @relation(fields: [id_processo_tanque_sensor], references: [id_processo_tanque_sensor], map: "fk_alarme_processo_tanque_sensor")
   usuarios                  usuarios?                 @relation(fields: [id_usuario_responsavel], references: [id_usuario], map: "fk_alarme_usuario_responsavel")
   relatorios                relatorios[]
 
   @@index([id_processo_tanque_sensor], map: "idx_alarmes_processo_tanque_sensor")
+  @@index([id_processo], map: "idx_alarmes_id_processo")
+  @@index([id_processo_tanque], map: "idx_alarmes_id_processo_tanque")
+  @@index([id_processo_tanque_sensor], map: "idx_alarmes_id_processo_tanque_sensor")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -137,6 +144,7 @@ model mqttconfiguracoes {
   ativo                Boolean           @default(true)
   criado_em            DateTime          @default(now()) @db.Timestamp(6)
   atualizado_em        DateTime          @default(now()) @db.Timestamp(6)
+  topico_heartbeat     String            @db.VarChar(180)
   usuarios             usuarios?         @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_usuario")
   mqttmensagens        mqttmensagens[]
 }
@@ -220,6 +228,7 @@ model processos {
   finalizado_em     DateTime?          @db.Timestamp(6)
   parada_emergencia Boolean            @default(false)
   criado_em         DateTime           @default(now()) @db.Timestamp(6)
+  alarmes           alarmes[]
   eventos           eventos[]
   logsoperacionais  logsoperacionais[]
   usuarios          usuarios           @relation(fields: [id_usuario], references: [id_usuario], map: "fk_processo_usuario")
@@ -241,6 +250,7 @@ model processostanques {
   iniciado_em              DateTime?                  @db.Timestamp(6)
   finalizado_em            DateTime?                  @db.Timestamp(6)
   criado_em                DateTime                   @default(now()) @db.Timestamp(6)
+  alarmes                  alarmes[]
   processos                processos                  @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_processo_tanque_processo")
   tanques                  tanques                    @relation(fields: [id_tanque], references: [id_tanque], map: "fk_processo_tanque_tanque")
   processostanquessensores processostanquessensores[]
@@ -459,7 +469,7 @@ enum statusgeralsistema {
   MANUTENCAO
   ALERTA
   FALHA
-  BLOQUEADO
+  INICIANDO
 }
 
 enum statusprocesso {
