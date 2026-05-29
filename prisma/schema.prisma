@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
@@ -124,29 +125,30 @@ model logsoperacionais {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model mqttconfiguracoes {
-  id_mqtt_configuracao Int               @id @default(autoincrement())
-  id_usuario_alteracao Int?
-  broker_url           String            @db.VarChar(150)
-  porta                Int
-  senha_mqtt_hash      String?
-  topico_leituras      String            @db.VarChar(180)
-  topico_comandos      String            @db.VarChar(180)
-  topico_status        String            @db.VarChar(180)
-  topico_alarmes       String?           @db.VarChar(180)
-  qos_padrao           Int               @db.SmallInt
-  retain_padrao        Boolean
-  reconexao_automatica Boolean
-  timeout_comunicacao  Int
-  status_conexao       statusconexaomqtt
-  ultima_conexao       DateTime?         @db.Timestamp(6)
-  ultima_sincronizacao DateTime?         @db.Timestamp(6)
-  ultima_falha         String?
-  ativo                Boolean           @default(true)
-  criado_em            DateTime          @default(now()) @db.Timestamp(6)
-  atualizado_em        DateTime          @default(now()) @db.Timestamp(6)
-  topico_heartbeat     String            @db.VarChar(180)
-  usuarios             usuarios?         @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_usuario")
-  mqttmensagens        mqttmensagens[]
+  id_mqtt_configuracao       Int                          @id @default(autoincrement())
+  id_usuario_alteracao       Int?
+  broker_url                 String                       @db.VarChar(150)
+  porta                      Int
+  senha_mqtt_hash            String?
+  topico_leituras            String                       @db.VarChar(180)
+  topico_comandos            String                       @db.VarChar(180)
+  topico_status              String                       @db.VarChar(180)
+  topico_alarmes             String?                      @db.VarChar(180)
+  qos_padrao                 Int                          @db.SmallInt
+  retain_padrao              Boolean
+  reconexao_automatica       Boolean
+  timeout_comunicacao        Int
+  status_conexao             statusconexaomqtt
+  ultima_conexao             DateTime?                    @db.Timestamp(6)
+  ultima_sincronizacao       DateTime?                    @db.Timestamp(6)
+  ultima_falha               String?
+  ativo                      Boolean                      @default(true)
+  criado_em                  DateTime                     @default(now()) @db.Timestamp(6)
+  atualizado_em              DateTime                     @default(now()) @db.Timestamp(6)
+  topico_heartbeat           String                       @db.VarChar(180)
+  usuarios                   usuarios?                    @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_usuario")
+  mqttconfiguracoeshistorico mqttconfiguracoeshistorico[]
+  mqttmensagens              mqttmensagens[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -211,29 +213,30 @@ model permissoes {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model processos {
-  id_processo       Int                @id @default(autoincrement())
-  id_usuario        Int
-  nome_processo     String?            @db.VarChar(120)
-  status_processo   statusprocesso
-  vacuo_alvo        Decimal            @db.Decimal(10, 3)
-  vacuo_inicial     Decimal?           @db.Decimal(10, 3)
-  vacuo_final       Decimal?           @db.Decimal(10, 3)
-  vacuo_medio       Decimal?           @db.Decimal(10, 3)
-  eficiencia        Decimal?           @db.Decimal(5, 2)
-  tempo_maximo      Int
-  tempo_execucao    Int?
-  iniciado_em       DateTime?          @db.Timestamp(6)
-  pausado_em        DateTime?          @db.Timestamp(6)
-  retomado_em       DateTime?          @db.Timestamp(6)
-  finalizado_em     DateTime?          @db.Timestamp(6)
-  parada_emergencia Boolean            @default(false)
-  criado_em         DateTime           @default(now()) @db.Timestamp(6)
-  alarmes           alarmes[]
-  eventos           eventos[]
-  logsoperacionais  logsoperacionais[]
-  usuarios          usuarios           @relation(fields: [id_usuario], references: [id_usuario], map: "fk_processo_usuario")
-  processostanques  processostanques[]
-  relatorios        relatorios[]
+  id_processo                         Int                                  @id @default(autoincrement())
+  id_usuario                          Int
+  nome_processo                       String?                              @db.VarChar(120)
+  status_processo                     statusprocesso
+  vacuo_alvo                          Decimal                              @db.Decimal(10, 3)
+  vacuo_inicial                       Decimal?                             @db.Decimal(10, 3)
+  vacuo_final                         Decimal?                             @db.Decimal(10, 3)
+  vacuo_medio                         Decimal?                             @db.Decimal(10, 3)
+  eficiencia                          Decimal?                             @db.Decimal(5, 2)
+  tempo_maximo                        Int
+  tempo_execucao                      Int?
+  iniciado_em                         DateTime?                            @db.Timestamp(6)
+  pausado_em                          DateTime?                            @db.Timestamp(6)
+  retomado_em                         DateTime?                            @db.Timestamp(6)
+  finalizado_em                       DateTime?                            @db.Timestamp(6)
+  parada_emergencia                   Boolean                              @default(false)
+  criado_em                           DateTime                             @default(now()) @db.Timestamp(6)
+  alarmes                             alarmes[]
+  eventos                             eventos[]
+  logsoperacionais                    logsoperacionais[]
+  usuarios                            usuarios                             @relation(fields: [id_usuario], references: [id_usuario], map: "fk_processo_usuario")
+  processosmqttconfiguracoeshistorico processosmqttconfiguracoeshistorico?
+  processostanques                    processostanques[]
+  relatorios                          relatorios[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -327,25 +330,73 @@ model tanques {
 }
 
 model usuarios {
-  id_usuario           Int                    @id @default(autoincrement())
-  id_nivel_acesso      Int
-  nome                 String                 @db.VarChar(120)
-  login                String                 @unique @db.VarChar(60)
-  email                String?                @unique @db.VarChar(120)
-  senha_hash           String
-  primeiro_acesso      Boolean                @default(true)
-  ultimo_acesso        DateTime?              @db.Timestamp(6)
-  criado_em            DateTime               @default(now()) @db.Timestamp(6)
-  atualizado_em        DateTime?              @db.Timestamp(6)
-  alarmes              alarmes[]
-  backups              backups[]
-  bombas               bombas[]
-  configuracoessistema configuracoessistema[]
-  logsoperacionais     logsoperacionais[]
-  mqttconfiguracoes    mqttconfiguracoes[]
-  processos            processos[]
-  relatorios           relatorios[]
-  niveisacessos        niveisacessos          @relation(fields: [id_nivel_acesso], references: [id_nivel_acesso], map: "fk_usuario_nivel_acesso")
+  id_usuario                 Int                          @id @default(autoincrement())
+  id_nivel_acesso            Int
+  nome                       String                       @db.VarChar(120)
+  login                      String                       @unique @db.VarChar(60)
+  email                      String?                      @unique @db.VarChar(120)
+  senha_hash                 String
+  primeiro_acesso            Boolean                      @default(true)
+  ultimo_acesso              DateTime?                    @db.Timestamp(6)
+  criado_em                  DateTime                     @default(now()) @db.Timestamp(6)
+  atualizado_em              DateTime?                    @db.Timestamp(6)
+  alarmes                    alarmes[]
+  backups                    backups[]
+  bombas                     bombas[]
+  configuracoessistema       configuracoessistema[]
+  logsoperacionais           logsoperacionais[]
+  mqttconfiguracoes          mqttconfiguracoes[]
+  mqttconfiguracoeshistorico mqttconfiguracoeshistorico[]
+  processos                  processos[]
+  relatorios                 relatorios[]
+  niveisacessos              niveisacessos                @relation(fields: [id_nivel_acesso], references: [id_nivel_acesso], map: "fk_usuario_nivel_acesso")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model mqttconfiguracoeshistorico {
+  id_mqtt_configuracao_historico      Int                                   @id(map: "MqttConfiguracoesHistorico_pkey") @default(autoincrement())
+  id_mqtt_configuracao                Int
+  id_usuario_alteracao                Int?
+  broker_url                          String                                @db.VarChar(150)
+  porta                               Int
+  usuario_mqtt                        String?                               @db.VarChar(120)
+  senha_mqtt_hash                     String?
+  topico_leituras                     String                                @db.VarChar(180)
+  topico_comandos                     String                                @db.VarChar(180)
+  topico_status                       String                                @db.VarChar(180)
+  topico_alarmes                      String                                @db.VarChar(180)
+  topico_heartbeat                    String                                @db.VarChar(180)
+  reconexao_automatica                Boolean
+  timeout_comunicacao                 Int
+  status_conexao                      statusconexaomqtt
+  ultima_conexao                      DateTime?                             @db.Timestamp(6)
+  ultima_sincronizacao                DateTime?                             @db.Timestamp(6)
+  ultima_falha                        String?
+  criado_em                           DateTime                              @db.Timestamp(6)
+  atualizado_em                       DateTime?                             @db.Timestamp(6)
+  registrado_em                       DateTime                              @default(now()) @db.Timestamp(6)
+  mqttconfiguracoes                   mqttconfiguracoes                     @relation(fields: [id_mqtt_configuracao], references: [id_mqtt_configuracao], map: "fk_mqtt_config_historico_config")
+  usuarios                            usuarios?                             @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_historico_usuario")
+  processosmqttconfiguracoeshistorico processosmqttconfiguracoeshistorico[]
+
+  @@index([id_mqtt_configuracao], map: "idx_mqtt_config_hist_config")
+  @@index([registrado_em], map: "idx_mqtt_config_hist_registrado")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model processosmqttconfiguracoeshistorico {
+  id_processo_mqtt_configuracao_historico Int                        @id(map: "ProcessosMqttConfiguracoesHistorico_pkey") @default(autoincrement())
+  id_processo                             Int                        @unique(map: "uq_proc_mqtt_hist_config_atual", where: raw("(usado_ate IS NULL)"))
+  id_mqtt_configuracao_historico          Int
+  usado_de                                DateTime                   @default(now()) @db.Timestamp(6)
+  usado_ate                               DateTime?                  @db.Timestamp(6)
+  criado_em                               DateTime                   @default(now()) @db.Timestamp(6)
+  mqttconfiguracoeshistorico              mqttconfiguracoeshistorico @relation(fields: [id_mqtt_configuracao_historico], references: [id_mqtt_configuracao_historico], map: "fk_proc_mqtt_hist_config_historico")
+  processos                               processos                  @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_proc_mqtt_hist_processo")
+
+  @@unique([id_processo, id_mqtt_configuracao_historico], map: "uq_proc_mqtt_hist_processo_config")
+  @@index([id_mqtt_configuracao_historico], map: "idx_proc_mqtt_hist_config")
+  @@index([id_processo], map: "idx_proc_mqtt_hist_processo")
 }
 
 enum criticidadepermissao {
@@ -469,7 +520,7 @@ enum statusgeralsistema {
   MANUTENCAO
   ALERTA
   FALHA
-  INICIANDO
+  BLOQUEADO
 }
 
 enum statusprocesso {

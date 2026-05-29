@@ -2,92 +2,92 @@ import { mqtt_topic_prefix } from './mqtt-topics';
 import { TopicValidator } from './topic-validator';
 
 export const TopicBuilder = {
-    leituraTanque(id_tanque: number, id_sensor: number): string {
-        TopicValidator.validatePositiveInteger(id_sensor, 'id_sensor');
-        TopicValidator.validatePositiveInteger(id_tanque, 'id_tanque');
+  leituraTanque(id_tanque: number, id_sensor: number): string {
+    TopicValidator.validatePositiveInteger(id_sensor, 'id_sensor');
+    TopicValidator.validatePositiveInteger(id_tanque, 'id_tanque');
 
-        const topic = `${mqtt_topic_prefix}/tanques/${id_tanque}/sensores/${id_sensor}/leituras`;
-        TopicValidator.validateTopics(topic, 'topicoLeituraTanque');
+    const topic = `${mqtt_topic_prefix}/tanques/${id_tanque}/sensores/${id_sensor}/leituras`;
+    TopicValidator.validateTopics(topic, 'topicoLeituraTanque');
 
-        return topic;
-    },
+    return topic;
+  },
 
-    statusTanque(id_tanque: number): string {
-        TopicValidator.validatePositiveInteger(id_tanque, 'id_tanque');
+  statusTanque(id_tanque: number): string {
+    TopicValidator.validatePositiveInteger(id_tanque, 'id_tanque');
 
-        const topic = `${mqtt_topic_prefix}/tanques/${id_tanque}/status`;
-        TopicValidator.validateTopics(topic, 'topicoStatusTanque');
+    const topic = `${mqtt_topic_prefix}/tanques/${id_tanque}/status`;
+    TopicValidator.validateTopics(topic, 'topicoStatusTanque');
 
-        return topic;
-    },
+    return topic;
+  },
 
-    alarmeTanque(id_tanque: number): string {
-        TopicValidator.validatePositiveInteger(id_tanque, 'id_tanque');
+  alarmeTanque(id_tanque: number): string {
+    TopicValidator.validatePositiveInteger(id_tanque, 'id_tanque');
 
-        const topic = `${mqtt_topic_prefix}/tanques/${id_tanque}/alarmes`;
-        TopicValidator.validateTopics(topic, 'topicoAlarmeTanque');
+    const topic = `${mqtt_topic_prefix}/tanques/${id_tanque}/alarmes`;
+    TopicValidator.validateTopics(topic, 'topicoAlarmeTanque');
 
-        return topic;
-    },
+    return topic;
+  },
 
-    comandoTanque(id_tanque: number): string {
-        TopicValidator.validatePositiveInteger(id_tanque, 'id_tanque');
+  comandoTanque(id_tanque: number): string {
+    TopicValidator.validatePositiveInteger(id_tanque, 'id_tanque');
 
-        const topic = `${mqtt_topic_prefix}/tanques/${id_tanque}/comandos`;
-        TopicValidator.validateTopics(topic, 'topicoComandoTanque');
+    const topic = `${mqtt_topic_prefix}/tanques/${id_tanque}/comandos`;
+    TopicValidator.validateTopics(topic, 'topicoComandoTanque');
 
-        return topic;
-    },
+    return topic;
+  },
 
-    comandoBomba(id_bomba: number): string {
-        TopicValidator.validatePositiveInteger(id_bomba, 'id_bomba');
+  comandoBomba(id_bomba: number): string {
+    TopicValidator.validatePositiveInteger(id_bomba, 'id_bomba');
 
-        const topic = `${mqtt_topic_prefix}/bombas/${id_bomba}/comandos`;
-        TopicValidator.validateTopics(topic, 'topicoComandoBomba');
+    const topic = `${mqtt_topic_prefix}/bombas/${id_bomba}/comandos`;
+    TopicValidator.validateTopics(topic, 'topicoComandoBomba');
 
-        return topic;
-    },
+    return topic;
+  },
 
-    statusBomba(id_bomba: number): string {
-        TopicValidator.validatePositiveInteger(id_bomba, 'id_bomba');
+  statusBomba(id_bomba: number): string {
+    TopicValidator.validatePositiveInteger(id_bomba, 'id_bomba');
 
-        const topic = `${mqtt_topic_prefix}/bombas/${id_bomba}/status`;
-        TopicValidator.validateTopics(topic, 'topicoStatusBomba');
+    const topic = `${mqtt_topic_prefix}/bombas/${id_bomba}/status`;
+    TopicValidator.validateTopics(topic, 'topicoStatusBomba');
 
-        return topic;
-    },
+    return topic;
+  },
 
-    alarmeBomba(id_bomba: number): string {
-        TopicValidator.validatePositiveInteger(id_bomba, 'id_bomba');
+  alarmeBomba(id_bomba: number): string {
+    TopicValidator.validatePositiveInteger(id_bomba, 'id_bomba');
 
-        const topic = `${mqtt_topic_prefix}/bombas/${id_bomba}/alarmes`;
-        TopicValidator.validateTopics(topic, 'topicoAlarmeBomba');
+    const topic = `${mqtt_topic_prefix}/bombas/${id_bomba}/alarmes`;
+    TopicValidator.validateTopics(topic, 'topicoAlarmeBomba');
 
-        return topic;
-    },
+    return topic;
+  },
 
-    emergencia(): string {
-        const topic = `${mqtt_topic_prefix}/emergencias`;
-        TopicValidator.validateTopics(topic, 'topicoEmergencia');
+  emergencia(): string {
+    const topic = `${mqtt_topic_prefix}/emergencias`;
+    TopicValidator.validateTopics(topic, 'topicoEmergencia');
 
-        return topic;
-    },
+    return topic;
+  },
 
-    comandoProcesso(id_processo: number): string {
-        TopicValidator.validatePositiveInteger(id_processo, 'id_processo');
+  comandoProcesso(id_processo: number): string {
+    TopicValidator.validatePositiveInteger(id_processo, 'id_processo');
 
-        const topic = `${mqtt_topic_prefix}/processos/${id_processo}/comandos`;
-        TopicValidator.validateTopics(topic, 'topicoComandoProcesso');
+    const topic = `${mqtt_topic_prefix}/processos/${id_processo}/comandos`;
+    TopicValidator.validateTopics(topic, 'topicoComandoProcesso');
 
-        return topic;
-    },
+    return topic;
+  },
 
-    Processo(id_processo: number): string {
-        TopicValidator.validatePositiveInteger(id_processo, 'id_processo');
+  Processo(id_processo: number): string {
+    TopicValidator.validatePositiveInteger(id_processo, 'id_processo');
 
-        const topic = `${mqtt_topic_prefix}/processos/${id_processo}`;
-        TopicValidator.validateTopics(topic, 'topicoProcesso');
+    const topic = `${mqtt_topic_prefix}/processos/${id_processo}`;
+    TopicValidator.validateTopics(topic, 'topicoProcesso');
 
-        return topic;
-    },
+    return topic;
+  },
 } as const;
