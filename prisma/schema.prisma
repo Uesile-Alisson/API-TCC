@@ -133,9 +133,7 @@ model mqttconfiguracoes {
   topico_leituras            String                       @db.VarChar(180)
   topico_comandos            String                       @db.VarChar(180)
   topico_status              String                       @db.VarChar(180)
-  topico_alarmes             String?                      @db.VarChar(180)
-  qos_padrao                 Int                          @db.SmallInt
-  retain_padrao              Boolean
+  topico_alarmes             String                       @db.VarChar(180)
   reconexao_automatica       Boolean
   timeout_comunicacao        Int
   status_conexao             statusconexaomqtt
@@ -146,9 +144,13 @@ model mqttconfiguracoes {
   criado_em                  DateTime                     @default(now()) @db.Timestamp(6)
   atualizado_em              DateTime                     @default(now()) @db.Timestamp(6)
   topico_heartbeat           String                       @db.VarChar(180)
+  chave_configuracao         String                       @unique(map: "uq_mqtt_config_chave_configuracao") @default("MQTT_PRINCIPAL") @db.VarChar(50)
+  usuario_mqtt               String?                      @db.VarChar(120)
   usuarios                   usuarios?                    @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_usuario")
   mqttconfiguracoeshistorico mqttconfiguracoeshistorico[]
   mqttmensagens              mqttmensagens[]
+
+  @@index([usuario_mqtt], map: "idx_mqtt_config_usuario_mqtt")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -381,6 +383,7 @@ model mqttconfiguracoeshistorico {
 
   @@index([id_mqtt_configuracao], map: "idx_mqtt_config_hist_config")
   @@index([registrado_em], map: "idx_mqtt_config_hist_registrado")
+  @@index([usuario_mqtt], map: "idx_mqtt_config_hist_usuario_mqtt")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

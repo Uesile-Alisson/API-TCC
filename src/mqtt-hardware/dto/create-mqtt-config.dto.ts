@@ -18,6 +18,10 @@ export class CreateMqttConfigDTO {
   @Max(65535)
   porta!: number;
 
+  @IsString()
+  @IsOptional()
+  usuario_mqtt?: string;
+
   @IsOptional()
   @IsString()
   senha_mqtt?: string;
@@ -47,7 +51,7 @@ export class CreateMqttConfigDTO {
   retain_padrao!: boolean;
 
   @IsBoolean()
-  reconexao_auto!: boolean;
+  reconexao_automatica!: boolean;
 
   @IsInt()
   @IsNotEmpty()
