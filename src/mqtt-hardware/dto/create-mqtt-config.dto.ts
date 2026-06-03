@@ -6,6 +6,7 @@ import {
   IsOptional,
   Max,
   Min,
+  IsDateString,
 } from 'class-validator';
 
 export class CreateMqttConfigDTO {
@@ -61,4 +62,8 @@ export class CreateMqttConfigDTO {
   @IsOptional()
   @IsBoolean()
   ativo?: boolean;
+
+  @IsDateString()
+  @IsNotEmpty()
+  criado_em!: string;
 }

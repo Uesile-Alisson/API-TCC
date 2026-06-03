@@ -20,6 +20,6 @@ export interface ActiveMqttConfig {
   ultima_sincronizacao: Date | null;
   ultima_falha: string | null;
   criado_em: Date;
-  atualizado_em: Date | null;
+  atualizado_em: Date;
   ativo: boolean;
 }
