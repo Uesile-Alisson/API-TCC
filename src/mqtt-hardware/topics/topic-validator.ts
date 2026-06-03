@@ -1,11 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
 
 export class TopicValidator {
-  static validatePositiveInteger(value: number, fieldname: string): void {
-    if (!Number.isInteger(value) || value <= 0) {
+  static validatePositiveInteger(
+    value: number | undefined | null,
+    fieldname: string,
+  ): void {
+    if (!Number.isInteger(value) || value === null || value === undefined) {
       throw new BadRequestException(
-        `${fieldname} tem que sr inteiro e positivo.`,
+        `${fieldname} é obrigatório e deve ser um número inteiro positivo.`,
       );
+    }
+
+    if (value <= 0) {
+      throw new BadRequestException(`${fieldname} deve ser maior que zero.`);
     }
   }
 

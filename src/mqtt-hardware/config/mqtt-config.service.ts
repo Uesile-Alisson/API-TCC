@@ -14,7 +14,7 @@ import { ActiveMqttConfig } from '../interfaces/active-mqtt-config.interface';
 
 @Injectable()
 export class MqttConfigService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   async getConfig(): Promise<ActiveMqttConfig> {
     const config = await this.prisma.mqttconfiguracoes.findUnique({
@@ -72,7 +72,10 @@ export class MqttConfigService {
     return createdConfig;
   }
 
-  async updateConfig(dto: UpdateMqttConfigDTO, idUsuarioAlteracao: number): Promise<ActiveMqttConfig> {
+  async updateConfig(
+    dto: UpdateMqttConfigDTO,
+    idUsuarioAlteracao: number,
+  ): Promise<ActiveMqttConfig> {
     const currentConfig = await this.getConfig();
     this.validateDtoTopics(dto);
 
@@ -99,19 +102,22 @@ export class MqttConfigService {
           ultima_falha: null,
           ultima_sincronizacao: null,
           atualizado_em: new Date(),
-        }
+        },
       });
 
       this.validateConfig(config);
 
       await this.createHistorySnapshot(tx, config);
       return config;
-    })
+    });
 
     return updatedConfig;
   }
 
-  async updateConnectionStatus(status: statusconexaomqtt, ultima_falha?: string | null): Promise<void> {
+  async updateConnectionStatus(
+    status: statusconexaomqtt,
+    ultima_falha?: string | null,
+  ): Promise<void> {
     const config = await this.getConfig();
 
     await this.prisma.mqttconfiguracoes.update({
@@ -120,7 +126,8 @@ export class MqttConfigService {
       },
       data: {
         status_conexao: status,
-        ultima_conexao: status === statusconexaomqtt.CONECTADO ? new Date() : undefined,
+        ultima_conexao:
+          status === statusconexaomqtt.CONECTADO ? new Date() : undefined,
         ultima_falha: ultima_falha ?? null,
         atualizado_em: new Date(),
       },
@@ -153,13 +160,14 @@ export class MqttConfigService {
   async registerProcessConfigUsage(idProcesso: number): Promise<void> {
     const config = await this.getConfig();
 
-    const snapshot = await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       const history = await this.createHistorySnapshot(tx, config);
 
       await tx.processosmqttconfiguracoeshistorico.create({
         data: {
           id_processo: idProcesso,
-          id_mqtt_configuracao_historico: history.id_mqtt_configuracao_historico,
+          id_mqtt_configuracao_historico:
+            history.id_mqtt_configuracao_historico,
           usado_de: new Date(),
           usado_ate: null,
         },
@@ -170,23 +178,27 @@ export class MqttConfigService {
   }
 
   async finishProcessConfigUsage(idProcesso: number): Promise<void> {
-    const activeUsage = await this.prisma.processosmqttconfiguracoeshistorico.findFirst({
-      where: {
-        id_processo: idProcesso,
-        usado_ate: null,
-      },
-      orderBy: {
-        usado_ate: 'desc',
-      },
-    });
+    const activeUsage =
+      await this.prisma.processosmqttconfiguracoeshistorico.findFirst({
+        where: {
+          id_processo: idProcesso,
+          usado_ate: null,
+        },
+        orderBy: {
+          usado_ate: 'desc',
+        },
+      });
 
     if (!activeUsage) {
-      throw new NotFoundException('Configuração MQTT do processo informado não foi achada.');
+      throw new NotFoundException(
+        'Configuração MQTT do processo informado não foi achada.',
+      );
     }
 
     await this.prisma.processosmqttconfiguracoeshistorico.update({
       where: {
-        id_processo_mqtt_configuracao_historico: activeUsage.id_processo_mqtt_configuracao_historico,
+        id_processo_mqtt_configuracao_historico:
+          activeUsage.id_processo_mqtt_configuracao_historico,
       },
       data: {
         usado_ate: new Date(),

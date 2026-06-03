@@ -64,6 +64,7 @@ model bombas {
   atualizado_em           DateTime             @default(now()) @db.Timestamp(6)
   configuracoessistema    configuracoessistema @relation(fields: [id_configuracao_sistema], references: [id_configuracao_sistema], map: "fk_bomba_config")
   usuarios                usuarios?            @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_bomba_usuario")
+  valvulas                valvulas[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -402,6 +403,29 @@ model processosmqttconfiguracoeshistorico {
   @@index([id_processo], map: "idx_proc_mqtt_hist_processo")
 }
 
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model valvulas {
+  id_valvula            Int           @id(map: "Valvulas_pkey") @default(autoincrement())
+  id_bomba              Int
+  numero_saida_manifold Int           @db.SmallInt
+  nome_valvula          String        @db.VarChar(80)
+  tipo_valvula          TipoValvula   @default(SOLENOIDE)
+  status_valvula        StatusValvula @default(DESCONHECIDA)
+  ativo                 Boolean       @default(true)
+  ultimo_acionamento    DateTime?     @db.Timestamp(6)
+  criado_em             DateTime      @default(now()) @db.Timestamp(6)
+  atualizado_em         DateTime?     @db.Timestamp(6)
+  bombas                bombas        @relation(fields: [id_bomba], references: [id_bomba], map: "fk_valvulas_bombas")
+
+  @@unique([id_bomba, numero_saida_manifold], map: "uq_valvulas_bomba_saida_manifold")
+  @@index([ativo], map: "idx_valvulas_ativo")
+  @@index([id_bomba, ativo], map: "idx_valvulas_bomba_ativo")
+  @@index([id_bomba], map: "idx_valvulas_id_bomba")
+  @@index([status_valvula], map: "idx_valvulas_status_valvula")
+  @@index([tipo_valvula], map: "idx_valvulas_tipo_valvula")
+}
+
 enum criticidadepermissao {
   BAIXA
   MEDIA
@@ -616,4 +640,16 @@ enum tipologoperacional {
 enum tiporelatorio {
   PROCESSO
   ALARME
+}
+
+enum StatusValvula {
+  DESCONHECIDA
+  ABERTA
+  FECHADA
+  FALHA
+}
+
+enum TipoValvula {
+  SOLENOIDE
+  VAZAO
 }

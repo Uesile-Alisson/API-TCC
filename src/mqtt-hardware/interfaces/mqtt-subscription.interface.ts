@@ -1,4 +1,4 @@
 export interface MqttSubscriptions {
-    topic: string;
-    qos: 0 | 1 | 2;
+  topic: string;
+  qos: 0 | 1 | 2;
 }

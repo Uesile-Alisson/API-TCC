@@ -15,15 +15,11 @@ export class MqttCommandDTO {
 
   @IsOptional()
   @IsInt()
-  id_tanque?: number;
+  id_valvula?: number;
 
   @IsOptional()
   @IsInt()
   id_bomba?: number;
-
-  @IsOptional()
-  @IsInt()
-  id_processo?: number;
 
   @IsNotEmpty()
   @IsString()
