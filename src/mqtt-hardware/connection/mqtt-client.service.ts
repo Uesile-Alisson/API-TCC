@@ -17,6 +17,10 @@ import { MqttSubscriptions } from '../interfaces/mqtt-subscription.interface';
 import { MqttMessageValidator } from '../validators/mqtt-message.validator';
 
 type MqttMessageListenner = (message: MqttMessage) => Promise<void> | void;
+type MqttConnectionStatusListener = (
+  status: statusconexaomqtt,
+  error?: string,
+) => Promise<void> | void;
 
 @Injectable()
 export class MqttClientService implements OnModuleInit, OnModuleDestroy {
@@ -27,6 +31,8 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
   private isConnected = false;
 
   private readonly messageListenner = new Set<MqttMessageListenner>();
+  private readonly connectionStatusListeners =
+    new Set<MqttConnectionStatusListener>();
 
   constructor(private readonly mqttConfigService: MqttConfigService) {}
 
@@ -62,9 +68,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
       const clientOptions = this.buildClientOptions(config);
       const connectionUrl = this.buildConnectionUrl(clientOptions);
 
-      await this.mqttConfigService.updateConnectionStatus(
-        statusconexaomqtt.RECONECTANDO,
-      );
+      await this.updateConnectionStatus(statusconexaomqtt.RECONECTANDO);
 
       this.logger.log(`Iniciando conexão MQTT em ${connectionUrl}`);
 
@@ -86,9 +90,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
       const subscriptions = this.buildDefaultSubscriptions(config);
       await this.subscribeMany(subscriptions);
 
-      await this.mqttConfigService.updateConnectionStatus(
-        statusconexaomqtt.CONECTADO,
-      );
+      await this.updateConnectionStatus(statusconexaomqtt.CONECTADO);
 
       this.isConnected = true;
 
@@ -101,6 +103,8 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
       const errorMessage = this.getErrorMessage(error);
 
       this.logger.error(`Falha ao conectar no MQTT: ${errorMessage}`);
+
+      await this.updateConnectionStatus(statusconexaomqtt.FALHA, errorMessage);
 
       this.forceClearCient();
 
@@ -120,6 +124,8 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     if (!client) {
       this.isConnected = false;
 
+      await this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
+
       return {
         sucess: true,
         message: 'Cliente MQTT já estava desconectado',
@@ -135,9 +141,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
     this.forceClearCient();
 
-    await this.mqttConfigService.updateConnectionStatus(
-      statusconexaomqtt.DESCONECTADO,
-    );
+    await this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
 
     return {
       sucess: true,
@@ -242,8 +246,35 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     this.messageListenner.delete(listener);
   }
 
+  registerConnectionStatusListener(
+    listener: MqttConnectionStatusListener,
+  ): void {
+    this.connectionStatusListeners.add(listener);
+  }
+
+  removeConnectionStatusListener(listener: MqttConnectionStatusListener): void {
+    this.connectionStatusListeners.delete(listener);
+  }
+
   getConnectionState(): boolean {
     return this.isConnected;
+  }
+
+  private async notifyConnectionStatusListeners(
+    status: statusconexaomqtt,
+    error?: string,
+  ): Promise<void> {
+    for (const listener of this.connectionStatusListeners) {
+      await listener(status, error);
+    }
+  }
+
+  private async updateConnectionStatus(
+    status: statusconexaomqtt,
+    error?: string,
+  ): Promise<void> {
+    await this.mqttConfigService.updateConnectionStatus(status, error);
+    await this.notifyConnectionStatusListeners(status, error);
   }
 
   private registerClientEvents(): void {
@@ -256,9 +287,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.log('Cliente MQTT conectado ao broker');
 
-      void this.mqttConfigService.updateConnectionStatus(
-        statusconexaomqtt.CONECTADO,
-      );
+      void this.updateConnectionStatus(statusconexaomqtt.CONECTADO);
     });
 
     this.client.on('reconnect', () => {
@@ -266,9 +295,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.warn('Cliente MQTT tentando reconectar ...');
 
-      void this.mqttConfigService.updateConnectionStatus(
-        statusconexaomqtt.RECONECTANDO,
-      );
+      void this.updateConnectionStatus(statusconexaomqtt.RECONECTANDO);
     });
 
     this.client.on('close', () => {
@@ -276,9 +303,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.log('Conexão MQTT fechada');
 
-      void this.mqttConfigService.updateConnectionStatus(
-        statusconexaomqtt.DESCONECTADO,
-      );
+      void this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
     });
 
     this.client.on('offline', () => {
@@ -286,9 +311,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.log('Cliente MQTT offline');
 
-      void this.mqttConfigService.updateConnectionStatus(
-        statusconexaomqtt.DESCONECTADO,
-      );
+      void this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
     });
 
     this.client.on('error', (error) => {
@@ -298,10 +321,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.log('Conexão MQTT fechada');
 
-      void this.mqttConfigService.updateConnectionStatus(
-        statusconexaomqtt.DESCONECTADO,
-        messageError,
-      );
+      void this.updateConnectionStatus(statusconexaomqtt.FALHA, messageError);
     });
 
     this.client.on('message', (topic, rawPayoad, packet) => {
@@ -402,6 +422,10 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
       {
         topic: config.topico_leituras,
         qos: 0,
+      },
+      {
+        topic: config.topico_acoplamentos,
+        qos: 1,
       },
     ];
   }

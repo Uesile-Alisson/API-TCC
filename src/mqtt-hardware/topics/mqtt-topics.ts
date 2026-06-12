@@ -6,6 +6,7 @@ export const mqtt_topics = {
   STATUS: `${mqtt_topic_prefix}/status`,
   ALARMES: `${mqtt_topic_prefix}/alarmes`,
   HEARTBEAT: `${mqtt_topic_prefix}/heartbeat`,
+  ACOPLAMENTOS: `${mqtt_topic_prefix}/acoplamentos`,
 } as const;
 
 export type MqttTopicKey = keyof typeof mqtt_topics;

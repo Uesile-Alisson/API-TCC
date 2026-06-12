@@ -1,4 +1,4 @@
-import { severidadealarme, tipoalarme } from '@prisma/client';
+import { severidadealarme, tipoalarme, origemalarme } from '@prisma/client';
 import {
   IsDateString,
   IsEnum,
@@ -25,6 +25,10 @@ export class Esp32AlarmDTO {
   @IsEnum(tipoalarme)
   @IsNotEmpty()
   tipo_alarme!: tipoalarme;
+
+  @IsOptional()
+  @IsEnum(origemalarme)
+  origem_alarme?: origemalarme;
 
   @IsEnum(severidadealarme)
   @IsNotEmpty()

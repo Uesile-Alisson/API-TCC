@@ -52,6 +52,7 @@ export class MqttConfigService {
           topico_status: dto.topico_status,
           topico_alarmes: dto.topico_alarmes,
           topico_heartbeat: dto.topico_heartbeat,
+          topico_acoplamentos: dto.topico_acoplamentos,
           reconexao_automatica: dto.reconexao_automatica,
           timeout_comunicacao: dto.timeout_comunicacao,
           status_conexao: statusconexaomqtt.DESCONECTADO,
@@ -95,6 +96,7 @@ export class MqttConfigService {
           topico_heartbeat: dto.topico_heartbeat,
           topico_leituras: dto.topico_leituras,
           topico_status: dto.topico_status,
+          topico_acoplamentos: dto.topico_acoplamentos,
           reconexao_automatica: dto.reconexao_automatica,
           timeout_comunicacao: dto.timeout_comunicacao,
           status_conexao: statusconexaomqtt.DESCONECTADO,
@@ -224,6 +226,10 @@ export class MqttConfigService {
     TopicValidator.validateTopics(config.topico_heartbeat, 'topico_heartbeat');
     TopicValidator.validateTopics(config.topico_leituras, 'topico_leituras');
     TopicValidator.validateTopics(config.topico_status, 'topico_status');
+    TopicValidator.validateTopics(
+      config.topico_acoplamentos,
+      'topico_acoplamentos',
+    );
 
     if (
       !Number.isInteger(config.timeout_comunicacao) ||
@@ -267,6 +273,13 @@ export class MqttConfigService {
     if (dto.topico_heartbeat) {
       TopicValidator.validateTopics(dto.topico_heartbeat, 'topico_heartbeat');
     }
+
+    if (dto.topico_acoplamentos) {
+      TopicValidator.validateTopics(
+        dto.topico_acoplamentos,
+        'topico_acoplamentos',
+      );
+    }
   }
 
   private async createHistorySnapshot(
@@ -286,6 +299,7 @@ export class MqttConfigService {
         topico_status: config.topico_status,
         topico_alarmes: config.topico_alarmes,
         topico_heartbeat: config.topico_heartbeat,
+        topico_acoplamentos: config.topico_acoplamentos,
         reconexao_automatica: config.reconexao_automatica,
         timeout_comunicacao: config.timeout_comunicacao,
         status_conexao: config.status_conexao,

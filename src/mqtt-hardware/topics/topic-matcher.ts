@@ -17,6 +17,10 @@ export const TopicMatcher = {
     return topic === mqtt_topics.HEARTBEAT;
   },
 
+  isAcoplamento(topic: string): boolean {
+    return topic === mqtt_topics.ACOPLAMENTOS;
+  },
+
   isComando(topic: string): boolean {
     return topic === mqtt_topics.COMANDOS || topic.endsWith('/comandos');
   },

@@ -9,4 +9,5 @@ export interface HardwareState {
   currentStatus: statusgeralsistema | null;
   lastError: string | null;
   updatedAt: Date;
+  enviado_em?: Date;
 }
