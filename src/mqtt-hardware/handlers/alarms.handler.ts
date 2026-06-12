@@ -10,6 +10,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
 import { MqttPayloadValidator } from '../validators/mqtt-payload.validator';
 import { MqttMessageHandler } from './interfaces/mqtt-message-handler.interface';
+import { MqttAlarmHandlerResult } from './interfaces/mqtt-handler-results.interfaces';
 
 type AlarmPayload = ReturnType<typeof MqttPayloadValidator.validateAlarm>;
 type AlarmOriginReference = {
@@ -19,12 +20,12 @@ type AlarmOriginReference = {
 };
 
 @Injectable()
-export class AlarmsHandler implements MqttMessageHandler {
+export class AlarmsHandler implements MqttMessageHandler<MqttAlarmHandlerResult | null> {
   private readonly logger = new Logger(AlarmsHandler.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async handle(message: MqttMessage): Promise<void> {
+  async handle(message: MqttMessage): Promise<MqttAlarmHandlerResult | null> {
     const dto = MqttPayloadValidator.validateAlarm(message.payload);
 
     if (!this.hasOriginReference(dto)) {
@@ -33,18 +34,41 @@ export class AlarmsHandler implements MqttMessageHandler {
           `Tópico: ${message.topic}. Título: ${dto.titulo}.`,
       );
 
-      return;
+      return null;
     }
 
     const referencesAreValid = await this.validateOriginReferences(dto);
 
     if (!referencesAreValid) {
-      return;
+      return null;
     }
 
     const alarm = await this.createdAlarm(message, dto);
     this.logAlarmCreated(alarm, message.topic);
-    await this.handleAlarmBySeverity(alarm);
+    return this.buildAlarmHandlerResult(alarm, message.topic);
+  }
+
+  private buildAlarmHandlerResult(
+    alarm: alarmes,
+    topic: string,
+  ): MqttAlarmHandlerResult {
+    return {
+      id_alarme: alarm.id_alarme,
+      titulo: alarm.titulo,
+      descricao: alarm.descricao,
+      tipo_alarme: alarm.tipo_alarme,
+      severidade: alarm.severidade,
+      status_alarme: alarm.status_alarme,
+      origem_alarme: alarm.origem_alarme,
+      valor_detectado: alarm.valor_detectado?.toString() ?? null,
+      unidade: alarm.unidade,
+      ocorrido_em: alarm.ocorrido_em,
+      resolvido_em: alarm.resolvido_em,
+      id_processo: alarm.id_processo,
+      id_processo_tanque: alarm.id_processo_tanque,
+      id_processo_tanque_sensor: alarm.id_processo_tanque_sensor,
+      topic,
+    };
   }
 
   private async createdAlarm(
@@ -73,79 +97,6 @@ export class AlarmsHandler implements MqttMessageHandler {
         id_processo_tanque_sensor: dto.id_processo_tanque_sensor ?? null,
       },
     });
-  }
-
-  private async handleAlarmBySeverity(alarm: alarmes): Promise<void> {
-    if (alarm.severidade === severidadealarme.INFO) {
-      this.handleInfoAlarm(alarm);
-      return;
-    }
-
-    if (alarm.severidade === severidadealarme.MEDIO) {
-      this.handleMediumAlarm(alarm);
-      return;
-    }
-
-    if (alarm.severidade === severidadealarme.CRITICO) {
-      this.handleCriticalAlarm(alarm);
-      return;
-    }
-
-    this.logger.warn(
-      `Alarme com severidade não tratada. ID ${alarm.id_alarme}.` +
-        `Severidade: ${alarm.severidade}.`,
-    );
-  }
-
-  private async handleInfoAlarm(alarm: alarmes): Promise<void> {
-    this.logger.error(
-      `Alarme informativo registrado. ID ${alarm.id_alarme}.` +
-        `Tipo: ${alarm.tipo_alarme}. Título: ${alarm.titulo}`,
-    );
-
-    /*
-      INFO:
-      - baixa criticidade;
-      - apenas registra;
-      - não altera processo;
-      - não aciona parada de emergência;
-      - depois o socket enviará esse alarme para o front como evento oficial.
-    */
-  }
-
-  private async handleMediumAlarm(alarm: alarmes): Promise<void> {
-    this.logger.warn(
-      `Alarme médio registrado. ID ${alarm.id_alarme}.` +
-        `Tipo: ${alarm.tipo_alarme}. Título: ${alarm.titulo}`,
-    );
-
-    /*
-      MEDIO:
-      - anomalia ou atenção operacional;
-      - registra e alerta operador;
-      - não aciona parada automática;
-      - pode futuramente gerar acompanhamento ou escalonamento.
-    */
-  }
-
-  private async handleCriticalAlarm(alarm: alarmes): Promise<void> {
-    this.logger.error(
-      `Alarme crítico registrado. ID ${alarm.id_alarme}.` +
-        `Tipo: ${alarm.tipo_alarme}. Título: ${alarm.titulo}`,
-    );
-
-    /*
-      CRITICO:
-      - alta criticidade;
-      - se houver processo em execução relacionado, deve acionar parada de emergência;
-      - futuramente vai:
-        1. criar evento operacional;
-        2. atualizar processo/tanque como INTERROMPIDO ou FALHA;
-        3. chamar MqttCommandService.paradaEmergencia();
-        4. emitir evento oficial para o dashboard via socket refatorado.
-
-      Por enquanto, esse handler apenas cria o alarme e registra a criticidade.
-    */
   }
 
   private hasOriginReference(reference: AlarmOriginReference): boolean {

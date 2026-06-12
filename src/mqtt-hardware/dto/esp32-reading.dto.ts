@@ -9,15 +9,7 @@ import {
 export class Esp32ReadingDTO {
   @IsInt()
   @IsNotEmpty()
-  id_tanque: number;
-
-  @IsInt()
-  @IsNotEmpty()
-  id_sensor: number;
-
-  @IsInt()
-  @IsNotEmpty()
-  id_processo: number;
+  id_processo_tanque_sensor: number;
 
   @IsNumber()
   @IsNotEmpty()
@@ -29,5 +21,5 @@ export class Esp32ReadingDTO {
 
   @IsDateString()
   @IsNotEmpty()
-  leitura_em: string;
+  leitura_em: Date;
 }

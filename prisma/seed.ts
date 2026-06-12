@@ -48,7 +48,7 @@ async function main() {
     },
   });
 
-  const senhaHash = await bcrypt.hash('Admin@123', 10);
+  const senha_hash = await bcrypt.hash('Admin@123', 10);
 
   await prisma.usuarios.upsert({
     where: { login: 'admin' },
@@ -57,7 +57,7 @@ async function main() {
       nome: 'Administrador',
       login: 'admin',
       email: 'admin@tsea.com',
-      senha_hash: senhaHash,
+      senha_hash,
       primeiro_acesso: false,
       id_nivel_acesso: 3,
     },

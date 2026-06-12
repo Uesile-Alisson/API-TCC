@@ -17,7 +17,15 @@ export class Esp32StatusDTO {
 
   @IsNotEmpty()
   @IsEnum(statusgeralsistema)
-  status_geral?: statusgeralsistema;
+  status_geral: statusgeralsistema;
+
+  @IsOptional()
+  @IsString()
+  mensagem: string;
+
+  @IsOptional()
+  @IsString()
+  device_id: string;
 
   @IsOptional()
   @IsString()
@@ -41,5 +49,5 @@ export class Esp32StatusDTO {
 
   @IsDateString()
   @IsNotEmpty()
-  enviado_em!: string;
+  enviado_em!: Date;
 }

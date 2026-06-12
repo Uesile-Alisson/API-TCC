@@ -4,14 +4,18 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
 import { MqttPayloadValidator } from '../validators/mqtt-payload.validator';
 import { MqttMessageHandler } from './interfaces/mqtt-message-handler.interface';
+import { MqttAcoplamentoMangueiraHandlerResult } from './interfaces/mqtt-handler-results.interfaces';
+import { Esp32AcoplamentoDTO } from '../dto/esp32-acoplamento.dto';
 
 @Injectable()
-export class AcoplamentoMangueiraHandler implements MqttMessageHandler {
+export class AcoplamentoMangueiraHandler implements MqttMessageHandler<MqttAcoplamentoMangueiraHandlerResult | null> {
   private readonly logger = new Logger(AcoplamentoMangueiraHandler.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async handle(message: MqttMessage): Promise<void> {
+  async handle(
+    message: MqttMessage,
+  ): Promise<MqttAcoplamentoMangueiraHandlerResult | null> {
     const dto = MqttPayloadValidator.validateAcoplamentos(message.payload);
 
     const novoStatus = this.resolveStatusAcoplamento(dto.sinal_detectado);
@@ -29,7 +33,7 @@ export class AcoplamentoMangueiraHandler implements MqttMessageHandler {
         `Mensagem de acoplamento ignorada. Sensor ${dto.id_sensor} não está cadastrado em SensoresAcoplamentoMangueira.`,
       );
 
-      return;
+      return null;
     }
 
     if (!sensorAcoplamento.ativo) {
@@ -37,7 +41,7 @@ export class AcoplamentoMangueiraHandler implements MqttMessageHandler {
         `Mensagem de acoplamento ignorada. Sensor ${dto.id_sensor} está inativo.`,
       );
 
-      return;
+      return null;
     }
 
     if (sensorAcoplamento.id_tanque !== dto.id_tanque) {
@@ -47,7 +51,7 @@ export class AcoplamentoMangueiraHandler implements MqttMessageHandler {
           `Payload: tanque ${dto.id_tanque}`,
       );
 
-      return;
+      return null;
     }
 
     const statusAnterior = sensorAcoplamento.status_acoplamento;
@@ -75,9 +79,44 @@ export class AcoplamentoMangueiraHandler implements MqttMessageHandler {
       statusMudou,
     });
 
-    if (novoStatus === StatusAcoplamentoMangueira.DESACOPLADA) {
-      await this.handleMangueiraDesacoplada(dto.id_sensor, dto.id_tanque);
-    }
+    return this.buildAcoplamentoHandlerResult({
+      dto,
+      novoStatus,
+      verificadoEm,
+      message,
+      statusMudou,
+      statusAnterior,
+    });
+  }
+
+  private buildAcoplamentoHandlerResult(params: {
+    dto: Esp32AcoplamentoDTO;
+    novoStatus: StatusAcoplamentoMangueira;
+    statusAnterior: StatusAcoplamentoMangueira;
+    verificadoEm: Date;
+    message: MqttMessage;
+    statusMudou: boolean;
+  }): MqttAcoplamentoMangueiraHandlerResult {
+    const {
+      dto,
+      novoStatus,
+      verificadoEm,
+      message,
+      statusAnterior,
+      statusMudou,
+    } = params;
+
+    return {
+      id_sensor: dto.id_sensor,
+      id_tanque: dto.id_tanque,
+      sinal_detectado: dto.sinal_detectado,
+      status_acoplamento: novoStatus,
+      verificado_em: verificadoEm,
+      topic: message.topic,
+      receivedAt: message.receivedAt,
+      status_anterior: statusAnterior,
+      status_mudou: statusMudou,
+    };
   }
 
   private resolveStatusAcoplamento(
@@ -86,28 +125,6 @@ export class AcoplamentoMangueiraHandler implements MqttMessageHandler {
     return sinalDetectado
       ? StatusAcoplamentoMangueira.ACOPLADA
       : StatusAcoplamentoMangueira.DESACOPLADA;
-  }
-
-  private async handleMangueiraDesacoplada(
-    idSensor: number,
-    idTanque: number,
-  ): Promise<void> {
-    this.logger.error(
-      `Mangueira desacoplada detectada. Sensor ${idSensor}, tanque ${idTanque}`,
-    );
-
-    /*
-      Integrações futuras, quando os próximos módulos estiverem prontos:
-
-      1. Verificar se existe processo em execução usando esse tanque.
-      2. Criar alarme crítico de segurança.
-      3. Criar evento operacional PARADA_EMERGENCIA.
-      4. Chamar MqttCommandService.paradaEmergencia().
-      5. Atualizar processo/tanque como INTERROMPIDO ou FALHA.
-
-      Por enquanto este handler apenas atualiza o estado do acoplamento
-      no banco e registra o log crítico.
-    */
   }
 
   private logStatusUpdate(params: {

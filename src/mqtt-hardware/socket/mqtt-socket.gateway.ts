@@ -8,12 +8,14 @@ import {
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import {
-  GenericMqttSocketPayload,
+  AlarmCreatedSocketPayload,
+  HardwareStatusSocketPayload,
+  HeartbeatSocketPayload,
   MqttConnectionStatusSocketPayload,
   MqttErrorSocketPayload,
   SensorAcoplamentoSocketPayload,
+  SensorReadingSocketPayload,
 } from '../interfaces/mqtt-socket-events.interface';
-import { MqttMessage } from '../interfaces/mqtt-message.interface';
 import { HardwareState } from '../interfaces/hardware-state.interface';
 
 @WebSocketGateway({
@@ -60,13 +62,6 @@ export class MqttSocketGateway
     });
   }
 
-  emitMqttMessage(payload: MqttMessage): void {
-    this.server.emit('mqtt:message', {
-      ...payload,
-      enviado_em: payload.enviado_em ?? new Date(),
-    });
-  }
-
   emitHardwareState(payload: HardwareState): void {
     this.server.emit('hardware:state', {
       ...payload,
@@ -74,28 +69,28 @@ export class MqttSocketGateway
     });
   }
 
-  emitSensorReading(payload: GenericMqttSocketPayload): void {
+  emitSensorReading(payload: SensorReadingSocketPayload): void {
     this.server.emit('sensor:reading', {
       ...payload,
       enviado_em: payload.enviado_em ?? new Date(),
     });
   }
 
-  emitHardwareStatus(payload: GenericMqttSocketPayload): void {
+  emitHardwareStatus(payload: HardwareStatusSocketPayload): void {
     this.server.emit('hardware:status', {
       ...payload,
       enviado_em: payload.enviado_em ?? new Date(),
     });
   }
 
-  emitHeartbeat(payload: GenericMqttSocketPayload): void {
+  emitHeartbeat(payload: HeartbeatSocketPayload): void {
     this.server.emit('hardware:heartbeat', {
       ...payload,
       enviado_em: payload.enviado_em ?? new Date(),
     });
   }
 
-  emitAlarm(payload: GenericMqttSocketPayload): void {
+  emitAlarm(payload: AlarmCreatedSocketPayload): void {
     this.server.emit('alarm:created', {
       ...payload,
       enviado_em: payload.enviado_em ?? new Date(),
