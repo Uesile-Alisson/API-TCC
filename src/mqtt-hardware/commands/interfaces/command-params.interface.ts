@@ -11,9 +11,7 @@ export interface ProcessoCommandParams {
   id_processo_tanque?: number;
 }
 
-export interface EmptyCommandParams {
-  [key: string]: never;
-}
+export type EmptyCommandParams = Record<never, never>;
 
 export type CommandParams =
   | BombaCommandParams

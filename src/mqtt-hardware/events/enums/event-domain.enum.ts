@@ -1,0 +1,13 @@
+export enum EventDomain {
+  MQTT = 'MQTT',
+  MESSAGE = 'MESSAGE',
+  HEARTBEAT = 'HEARTBEAT',
+  HARDWARE = 'HARDWARE',
+  SENSOR = 'SENSOR',
+  ACOPLAMENTO = 'ACOPLAMENTO',
+  PUMP = 'PUMP',
+  VALVE = 'VALVE',
+  RELAY = 'RELAY',
+  PROCESS = 'PROCESS',
+  ALARM = 'ALARM',
+}

@@ -155,9 +155,9 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     return this.connect();
   }
 
-  async publish(
+  async publish<TPayload extends object>(
     topic: string,
-    payload: Record<string, unknown>,
+    payload: TPayload,
     options: MqttPublishOptions,
   ): Promise<MqttOperationResult> {
     this.ensureClientConnected();
@@ -430,7 +430,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     ];
   }
 
-  private waitForConnection(timeoutMs: number): Promise<void> {
+  waitForConnection(timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.client) {
         reject(
