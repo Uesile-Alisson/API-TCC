@@ -8,6 +8,9 @@ export interface HardwareStatusEventInput {
   status_bomba_auxiliar?: statusbomba | null;
   status_valvulas?: HardwareValveStatusInput[];
   processo_em_execucao?: boolean;
+  id_processo?: number | null;
+  id_processo_tanque?: number | null;
+  id_processo_tanque_sensor?: number | null;
   mensagem?: string | null;
   erro?: string | null;
   recebido_em: Date;

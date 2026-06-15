@@ -69,19 +69,20 @@ model bombas {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model configuracoessistema {
-  id_configuracao_sistema   Int                @id @default(autoincrement())
-  id_usuario_alteracao      Int?
-  tempo_maximo_padrao       Int
-  encerramento_automatico   Boolean
-  limite_seguranca_vacuo    Decimal            @db.Decimal(10, 3)
-  vacuo_padrao              Decimal            @db.Decimal(10, 3)
-  quantidade_maxima_tanques Int
-  status_geral_sistema      statusgeralsistema
-  versao_sistema            String             @db.VarChar(30)
-  criado_em                 DateTime           @default(now()) @db.Timestamp(6)
-  atualizado_em             DateTime           @default(now()) @db.Timestamp(6)
-  bombas                    bombas[]
-  usuarios                  usuarios?          @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_config_usuario")
+  id_configuracao_sistema     Int                @id @default(autoincrement())
+  id_usuario_alteracao        Int?
+  tempo_maximo_padrao         Int
+  encerramento_automatico     Boolean
+  limite_seguranca_vacuo      Decimal            @db.Decimal(10, 3)
+  vacuo_padrao                Decimal            @db.Decimal(10, 3)
+  quantidade_maxima_tanques   Int
+  status_geral_sistema        statusgeralsistema
+  versao_sistema              String             @db.VarChar(30)
+  criado_em                   DateTime           @default(now()) @db.Timestamp(6)
+  atualizado_em               DateTime           @default(now()) @db.Timestamp(6)
+  tolerancia_vacuo_percentual Decimal            @default(10.00) @db.Decimal(5, 2)
+  bombas                      bombas[]
+  usuarios                    usuarios?          @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_config_usuario")
 }
 
 model eventos {
