@@ -1,3 +1,5 @@
+import { Decimal } from '@prisma/client/runtime/client';
+
 export interface HeartbeatEventInput {
   id_mqtt_mensagem?: number | null;
   esp32_online: boolean;
@@ -12,7 +14,7 @@ export type HeartbeatTimeoutInput =
 
 export interface HeartbeatTimeoutBaseInput {
   lastHeartbeatAt?: Date | null;
-  timeoutMs: number;
+  timeoutMs: Decimal | null;
   checkedAt: Date;
 }
 

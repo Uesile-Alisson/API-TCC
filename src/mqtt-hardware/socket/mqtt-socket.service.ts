@@ -131,7 +131,7 @@ export class MqttSocketService {
     this.logger.debug(
       `Heartbeat publicado no socket. ` +
         `Dispositivo: ${payload.device_id}. ` +
-        `Heartbeat em: ${payload.heartbeat_at.toISOString()}. `,
+        `Heartbeat em: ${payload.heartbeat_at?.toISOString()}. `,
     );
   }
 

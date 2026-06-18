@@ -1,4 +1,5 @@
 import { origemalarme, severidadealarme, tipoalarme } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/client';
 
 export type AlarmClassificationResult =
   | AlarmRequiredClassificationResult
@@ -16,7 +17,7 @@ export interface AlarmRequiredClassificationResult {
   id_processo_tanque?: number | null;
   id_processo_tanque_sensor?: number | null;
   id_usuario_responsavel?: number | null;
-  valor_detectado?: number | null;
+  valor_detectado?: Decimal | null;
   unidade?: string | null;
   shouldTriggerEmergencyStop: boolean;
 }

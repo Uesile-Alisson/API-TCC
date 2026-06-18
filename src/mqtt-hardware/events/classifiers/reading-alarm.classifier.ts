@@ -22,7 +22,7 @@ export class ReadingAlarmClassifier {
   async classify(
     input: SensorReadingEventInput,
   ): Promise<AlarmClassificationResult> {
-    if (this.hasInvalidReading(input.valor_vacuo)) {
+    if (this.hasInvalidReading(input.valor_vacuo.toNumber())) {
       return this.createInvalidReadingAlarm(input);
     }
 
@@ -60,7 +60,7 @@ export class ReadingAlarmClassifier {
 
     if (
       this.exceededSafetyLimit(
-        input.valor_vacuo,
+        input.valor_vacuo.toNumber(),
         context.limite_seguranca_vacuo,
       )
     ) {
@@ -85,7 +85,7 @@ export class ReadingAlarmClassifier {
 
     if (
       this.isOutsideTarget(
-        input.valor_vacuo,
+        input.valor_vacuo.toNumber(),
         context.vacuo_alvo,
         context.tolerancia_vacuo_percentual,
       )

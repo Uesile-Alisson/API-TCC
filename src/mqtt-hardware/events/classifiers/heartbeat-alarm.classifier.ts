@@ -87,6 +87,6 @@ export class HeartbeatAlarmClassifier {
       ? 'A falha ocorreu durante processo em execução.'
       : 'A falha ocorreu fora de processo em execução.';
 
-    return `${lastHeartbeatDescription} O ESP32 não enviou heartbeat dentro do limite configurado de ${input.timeoutMs} ms.${processDescription}`;
+    return `${lastHeartbeatDescription} O ESP32 não enviou heartbeat dentro do limite configurado de ${input.timeoutMs?.toNumber()} ms.${processDescription}`;
   }
 }

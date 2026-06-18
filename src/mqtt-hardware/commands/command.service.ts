@@ -88,7 +88,7 @@ export class CommandService {
   ): Promise<CommandResult> {
     this.validatePositiveId(idValvula, 'id_valvula');
 
-    return await this.publishCommand<EmptyCommandParams>(
+    return await this.publishCommand<ValvulaCommandParams>(
       MQTT_COMMANDS.ABRIR_VALVULA,
       {
         id_valvula: idValvula,
@@ -136,7 +136,7 @@ export class CommandService {
     return await this.publishCommand<EmptyCommandParams>(
       MQTT_COMMANDS.PARADA_EMERGENCIA,
       {},
-      this.resolveStandardPublishOptions(options),
+      this.resolveEmergencyPublishOptions(options),
       {
         ...options,
         motivo:
