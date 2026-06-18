@@ -69,20 +69,24 @@ model bombas {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model configuracoessistema {
-  id_configuracao_sistema     Int                @id @default(autoincrement())
-  id_usuario_alteracao        Int?
-  tempo_maximo_padrao         Int
-  encerramento_automatico     Boolean
-  limite_seguranca_vacuo      Decimal            @db.Decimal(10, 3)
-  vacuo_padrao                Decimal            @db.Decimal(10, 3)
-  quantidade_maxima_tanques   Int
-  status_geral_sistema        statusgeralsistema
-  versao_sistema              String             @db.VarChar(30)
-  criado_em                   DateTime           @default(now()) @db.Timestamp(6)
-  atualizado_em               DateTime           @default(now()) @db.Timestamp(6)
-  tolerancia_vacuo_percentual Decimal            @default(10.00) @db.Decimal(5, 2)
-  bombas                      bombas[]
-  usuarios                    usuarios?          @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_config_usuario")
+  id_configuracao_sistema        Int                @id @default(autoincrement())
+  id_usuario_alteracao           Int?
+  tempo_maximo_padrao            Int
+  encerramento_automatico        Boolean
+  limite_seguranca_vacuo         Decimal            @db.Decimal(10, 3)
+  vacuo_padrao                   Decimal            @db.Decimal(10, 3)
+  quantidade_maxima_tanques      Int
+  status_geral_sistema           statusgeralsistema
+  versao_sistema                 String             @db.VarChar(30)
+  criado_em                      DateTime           @default(now()) @db.Timestamp(6)
+  atualizado_em                  DateTime           @default(now()) @db.Timestamp(6)
+  tolerancia_vacuo_percentual    Decimal            @default(10.00) @db.Decimal(5, 2)
+  limite_nivel_maximo_percentual Decimal            @default(95.00) @db.Decimal(5, 2)
+  tolerancia_volume_percentual   Decimal            @default(5.00) @db.Decimal(5, 2)
+  vazao_minima_l_min             Decimal            @default(0.100) @db.Decimal(10, 3)
+  vazao_maxima_l_min             Decimal            @default(5.000) @db.Decimal(10, 3)
+  bombas                         bombas[]
+  usuarios                       usuarios?          @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_config_usuario")
 }
 
 model eventos {
@@ -102,13 +106,21 @@ model eventos {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model leiturasensores {
   id_leitura_sensor         Int                      @id @default(autoincrement())
-  valor_vacuo               Decimal                  @db.Decimal(10, 3)
+  valor_vacuo               Decimal?                 @db.Decimal(10, 3)
   leitura_em                DateTime                 @db.Timestamp(6)
   recebido_em               DateTime                 @db.Timestamp(6)
   id_processo_tanque_sensor Int
+  tipo_leitura              tipoleiturasensor
+  valor                     Decimal                  @db.Decimal(10, 3)
+  unidade_medida            String                   @db.VarChar(20)
+  volume_acumulado_ml       Decimal?                 @db.Decimal(10, 3)
+  percentual_nivel          Decimal?                 @db.Decimal(5, 2)
   processostanquessensores  processostanquessensores @relation(fields: [id_processo_tanque_sensor], references: [id_processo_tanque_sensor], onDelete: Cascade, map: "fk_leitura_processo_tanque_sensor")
 
   @@index([id_processo_tanque_sensor], map: "idx_leituras_processo_tanque_sensor")
+  @@index([leitura_em], map: "idx_leiturasensores_leitura_em")
+  @@index([id_processo_tanque_sensor, tipo_leitura, leitura_em(sort: Desc)], map: "idx_leiturasensores_pts_tipo_data")
+  @@index([tipo_leitura], map: "idx_leiturasensores_tipo_leitura")
 }
 
 model logsoperacionais {
@@ -218,71 +230,95 @@ model permissoes {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model processos {
-  id_processo                         Int                                  @id @default(autoincrement())
-  id_usuario                          Int
-  nome_processo                       String?                              @db.VarChar(120)
-  status_processo                     statusprocesso
-  vacuo_alvo                          Decimal                              @db.Decimal(10, 3)
-  vacuo_inicial                       Decimal?                             @db.Decimal(10, 3)
-  vacuo_final                         Decimal?                             @db.Decimal(10, 3)
-  vacuo_medio                         Decimal?                             @db.Decimal(10, 3)
-  eficiencia                          Decimal?                             @db.Decimal(5, 2)
-  tempo_maximo                        Int
-  tempo_execucao                      Int?
-  iniciado_em                         DateTime?                            @db.Timestamp(6)
-  pausado_em                          DateTime?                            @db.Timestamp(6)
-  retomado_em                         DateTime?                            @db.Timestamp(6)
-  finalizado_em                       DateTime?                            @db.Timestamp(6)
-  parada_emergencia                   Boolean                              @default(false)
-  criado_em                           DateTime                             @default(now()) @db.Timestamp(6)
-  alarmes                             alarmes[]
-  eventos                             eventos[]
-  logsoperacionais                    logsoperacionais[]
-  usuarios                            usuarios                             @relation(fields: [id_usuario], references: [id_usuario], map: "fk_processo_usuario")
-  processosmqttconfiguracoeshistorico processosmqttconfiguracoeshistorico?
-  processostanques                    processostanques[]
-  relatorios                          relatorios[]
+  id_processo                                                           Int                                  @id @default(autoincrement())
+  id_usuario                                                            Int
+  nome_processo                                                         String?                              @db.VarChar(120)
+  status_processo                                                       statusprocesso
+  vacuo_alvo                                                            Decimal                              @db.Decimal(10, 3)
+  vacuo_inicial                                                         Decimal?                             @db.Decimal(10, 3)
+  vacuo_final                                                           Decimal?                             @db.Decimal(10, 3)
+  vacuo_medio                                                           Decimal?                             @db.Decimal(10, 3)
+  eficiencia                                                            Decimal?                             @db.Decimal(5, 2)
+  tempo_maximo                                                          Int
+  tempo_execucao                                                        Int?
+  iniciado_em                                                           DateTime?                            @db.Timestamp(6)
+  pausado_em                                                            DateTime?                            @db.Timestamp(6)
+  retomado_em                                                           DateTime?                            @db.Timestamp(6)
+  finalizado_em                                                         DateTime?                            @db.Timestamp(6)
+  parada_emergencia                                                     Boolean                              @default(false)
+  criado_em                                                             DateTime                             @default(now()) @db.Timestamp(6)
+  fase_processo                                                         faseprocesso                         @default(CONFIGURACAO)
+  id_processo_tanque_atual                                              Int?
+  alarmes                                                               alarmes[]
+  eventos                                                               eventos[]
+  logsoperacionais                                                      logsoperacionais[]
+  usuarios                                                              usuarios                             @relation(fields: [id_usuario], references: [id_usuario], map: "fk_processo_usuario")
+  processostanques_processos_id_processo_tanque_atualToprocessostanques processostanques?                    @relation("processos_id_processo_tanque_atualToprocessostanques", fields: [id_processo_tanque_atual], references: [id_processo_tanque], map: "fk_processos_processo_tanque_atual")
+  processosmqttconfiguracoeshistorico                                   processosmqttconfiguracoeshistorico?
+  processostanques                                                      processostanques[]
+  relatorios                                                            relatorios[]
+
+  @@index([fase_processo], map: "idx_processos_fase_processo")
+  @@index([status_processo, fase_processo], map: "idx_processos_status_fase")
+  @@index([id_processo_tanque_atual], map: "idx_processos_tanque_atual")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model processostanques {
-  id_processo_tanque       Int                        @id @default(autoincrement())
-  id_processo              Int
-  id_tanque                Int
-  vacuo_alvo               Decimal                    @db.Decimal(10, 3)
-  vacuo_inicial            Decimal?                   @db.Decimal(10, 3)
-  vacuo_final              Decimal?                   @db.Decimal(10, 3)
-  vacuo_medio              Decimal?                   @db.Decimal(10, 3)
-  eficiencia               Decimal?                   @db.Decimal(5, 2)
-  status_tanque_processo   statustanqueprocesso
-  iniciado_em              DateTime?                  @db.Timestamp(6)
-  finalizado_em            DateTime?                  @db.Timestamp(6)
-  criado_em                DateTime                   @default(now()) @db.Timestamp(6)
-  alarmes                  alarmes[]
-  processos                processos                  @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_processo_tanque_processo")
-  tanques                  tanques                    @relation(fields: [id_tanque], references: [id_tanque], map: "fk_processo_tanque_tanque")
-  processostanquessensores processostanquessensores[]
+  id_processo_tanque                                             Int                        @id @default(autoincrement())
+  id_processo                                                    Int
+  id_tanque                                                      Int
+  vacuo_alvo                                                     Decimal                    @db.Decimal(10, 3)
+  vacuo_inicial                                                  Decimal?                   @db.Decimal(10, 3)
+  vacuo_final                                                    Decimal?                   @db.Decimal(10, 3)
+  vacuo_medio                                                    Decimal?                   @db.Decimal(10, 3)
+  eficiencia                                                     Decimal?                   @db.Decimal(5, 2)
+  status_tanque_processo                                         statustanqueprocesso
+  iniciado_em                                                    DateTime?                  @db.Timestamp(6)
+  finalizado_em                                                  DateTime?                  @db.Timestamp(6)
+  criado_em                                                      DateTime                   @default(now()) @db.Timestamp(6)
+  volume_alvo_ml                                                 Decimal?                   @db.Decimal(10, 3)
+  volume_enviado_ml                                              Decimal                    @default(0.000) @db.Decimal(10, 3)
+  vazao_atual_l_min                                              Decimal?                   @db.Decimal(10, 3)
+  nivel_atual_percentual                                         Decimal?                   @db.Decimal(5, 2)
+  vacuo_atingido                                                 Boolean                    @default(false)
+  vacuo_estabilizado                                             Boolean                    @default(false)
+  alimentacao_iniciada_em                                        DateTime?                  @db.Timestamp(6)
+  alimentacao_finalizada_em                                      DateTime?                  @db.Timestamp(6)
+  alarmes                                                        alarmes[]
+  processos_processos_id_processo_tanque_atualToprocessostanques processos[]                @relation("processos_id_processo_tanque_atualToprocessostanques")
+  processos                                                      processos                  @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_processo_tanque_processo")
+  tanques                                                        tanques                    @relation(fields: [id_tanque], references: [id_tanque], map: "fk_processo_tanque_tanque")
+  processostanquessensores                                       processostanquessensores[]
 
   @@unique([id_processo, id_tanque], map: "uq_processo_tanque")
+  @@index([alimentacao_iniciada_em, alimentacao_finalizada_em], map: "idx_processostanques_alimentacao")
+  @@index([nivel_atual_percentual], map: "idx_processostanques_nivel_atual")
+  @@index([status_tanque_processo], map: "idx_processostanques_status_tanque_processo")
+  @@index([volume_alvo_ml, volume_enviado_ml], map: "idx_processostanques_volume")
+  @@index([volume_enviado_ml], map: "idx_processostanques_volume_enviado")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model processostanquessensores {
-  id_processo_tanque_sensor Int               @id @default(autoincrement())
+  id_processo_tanque_sensor Int                @id @default(autoincrement())
   id_processo_tanque        Int
   id_sensor                 Int
-  ativo                     Boolean           @default(true)
-  removido_em               DateTime?         @db.Timestamp(6)
+  ativo                     Boolean            @default(true)
+  removido_em               DateTime?          @db.Timestamp(6)
   observacoes               String?
+  tipo_sensor_processo      tiposensorprocesso @default(VACUO)
   alarmes                   alarmes[]
   eventos                   eventos[]
   leiturasensores           leiturasensores[]
   mqttmensagens             mqttmensagens[]
-  processostanques          processostanques  @relation(fields: [id_processo_tanque], references: [id_processo_tanque], onDelete: Cascade, map: "fk_processo_tanque_sensor_processo_tanque")
-  sensores                  sensores          @relation(fields: [id_sensor], references: [id_sensor], map: "fk_processo_tanque_sensor_sensor")
+  processostanques          processostanques   @relation(fields: [id_processo_tanque], references: [id_processo_tanque], onDelete: Cascade, map: "fk_processo_tanque_sensor_processo_tanque")
+  sensores                  sensores           @relation(fields: [id_sensor], references: [id_sensor], map: "fk_processo_tanque_sensor_sensor")
 
   @@unique([id_processo_tanque, id_sensor], map: "uq_processo_tanque_sensor")
   @@unique([id_processo_tanque, id_sensor], map: "uq_pts_processo_tanque_sensor")
+  @@index([id_processo_tanque, tipo_sensor_processo], map: "idx_pts_tanque_tipo_sensor")
+  @@index([tipo_sensor_processo], map: "idx_pts_tipo_sensor_processo")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -317,8 +353,12 @@ model sensores {
   ultimo_valor_lido             Decimal?                       @db.Decimal(10, 3)
   criado_em                     DateTime                       @default(now()) @db.Timestamp(6)
   excluido_em                   DateTime?                      @db.Timestamp(6)
+  tipo_sensor                   tiposensor                     @default(VACUO)
+  fator_calibracao              Decimal?                       @db.Decimal(10, 4)
   processostanquessensores      processostanquessensores[]
   sensoresacoplamentomangueiras sensoresacoplamentomangueiras?
+
+  @@index([tipo_sensor, status_sensor], map: "idx_sensores_tipo_sensor_status")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -334,6 +374,7 @@ model tanques {
   excluido_em                   DateTime?                      @db.Timestamp(6)
   processostanques              processostanques[]
   sensoresacoplamentomangueiras sensoresacoplamentomangueiras?
+  valvulas                      valvulas[]
 }
 
 model usuarios {
@@ -421,7 +462,10 @@ model valvulas {
   ultimo_acionamento    DateTime?     @db.Timestamp(6)
   criado_em             DateTime      @default(now()) @db.Timestamp(6)
   atualizado_em         DateTime?     @db.Timestamp(6)
+  funcao_valvula        funcaovalvula @default(FLUIDO)
+  id_tanque             Int?
   bombas                bombas        @relation(fields: [id_bomba], references: [id_bomba], map: "fk_valvulas_bombas")
+  tanques               tanques?      @relation(fields: [id_tanque], references: [id_tanque], map: "fk_valvulas_tanque")
 
   @@unique([id_bomba, numero_saida_manifold], map: "uq_valvulas_bomba_saida_manifold")
   @@index([ativo], map: "idx_valvulas_ativo")
@@ -429,6 +473,9 @@ model valvulas {
   @@index([id_bomba], map: "idx_valvulas_id_bomba")
   @@index([status_valvula], map: "idx_valvulas_status_valvula")
   @@index([tipo_valvula], map: "idx_valvulas_tipo_valvula")
+  @@index([funcao_valvula], map: "idx_valvulas_funcao_valvula")
+  @@index([id_tanque], map: "idx_valvulas_id_tanque")
+  @@index([id_tanque, funcao_valvula, ativo], map: "idx_valvulas_tanque_funcao_ativo")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -602,6 +649,12 @@ enum statustanqueprocesso {
   CONCLUIDO
   FALHA
   INTERROMPIDO
+  AGUARDANDO
+  GERANDO_VACUO
+  VACUO_ATINGIDO
+  VACUO_ESTABILIZADO
+  ALIMENTANDO
+  CHEIO
 }
 
 enum tipoalarme {
@@ -613,11 +666,16 @@ enum tipoalarme {
   SEGURANCA
   SISTEMA
   TANQUE
+  FLUXO
+  NIVEL
+  VALVULA
+  MANGUEIRA
 }
 
 enum tipobomba {
   AUXILIAR
   PRINCIPAL
+  TRANSFERENCIA_FLUIDO
 }
 
 enum tipoeventoprocesso {
@@ -644,6 +702,18 @@ enum tipoeventoprocesso {
   MQTT_DESCONECTADO
   ESP32_SINCRONIZADO
   ESP32_DESCONECTADO
+  BOMBA_VACUO_ATIVADA
+  BOMBA_VACUO_DESATIVADA
+  BOMBA_TRANSFERENCIA_ATIVADA
+  BOMBA_TRANSFERENCIA_DESATIVADA
+  TRANSFERENCIA_FLUIDO_INICIADA
+  TRANSFERENCIA_FLUIDO_FINALIZADA
+  VAZAO_DETECTADA
+  AUSENCIA_DE_FLUXO
+  VOLUME_ALVO_ATINGIDO
+  NIVEL_MAXIMO_ATINGIDO
+  MANGUEIRA_ACOPLADA
+  MANGUEIRA_DESACOPLADA
 }
 
 enum tipologoperacional {
@@ -682,4 +752,42 @@ enum StatusAcoplamentoMangueira {
   DESACOPLADA
   DESCONHECIDA
   FALHA
+}
+
+enum faseprocesso {
+  CONFIGURACAO
+  PRE_CHECAGEM
+  GERANDO_VACUO
+  VACUO_ESTABILIZADO
+  ALIMENTANDO_FLUIDO
+  FINALIZANDO
+  FINALIZADO
+}
+
+enum funcaovalvula {
+  FLUIDO
+  VACUO
+  SEGURANCA
+  RESERVA
+}
+
+enum tipoleiturasensor {
+  VACUO
+  VAZAO
+  NIVEL
+}
+
+enum tiposensor {
+  VACUO
+  VAZAO
+  NIVEL
+  ACOPLAMENTO
+  GENERICO
+}
+
+enum tiposensorprocesso {
+  VACUO
+  VAZAO
+  NIVEL
+  ACOPLAMENTO
 }
