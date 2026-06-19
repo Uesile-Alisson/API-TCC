@@ -11,7 +11,7 @@ import { MqttConfigService } from './config/mqtt-config.service';
 import { UpdateMqttConfigDTO } from './dto/update-mqtt-config.dto';
 import { MqttClientService } from './connection/mqtt-client.service';
 import { MqttHealthService } from './connection/mqtt-health.service';
-import type { HardwareState } from './interfaces/hardware-state.interface';
+import type { HardwareState } from './interfaces/hardware-state.interface'; 
 
 type SanitizedMqttConfig = {
   id_mqtt_configuracao: number;
