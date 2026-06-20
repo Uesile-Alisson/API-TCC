@@ -14,9 +14,9 @@ export class ProcessoConfigValidator {
   private readonly maxTanques = 3;
 
   validateCreate(dto: CreateProcessoDTO) {
-    this.validateTempoMaximo(dto.tempo_maximo)
-    this.validateVacuoAlvo(dto.vacuo_alvo, 'vacuo_alvo')
-    this.validateTanques(dto.tanques, true)
+    this.validateTempoMaximo(dto.tempo_maximo);
+    this.validateVacuoAlvo(dto.vacuo_alvo, 'vacuo_alvo');
+    this.validateTanques(dto.tanques, true);
   }
 
   validateUpdate(dto: UpdateProcessoConfigDTO): void {
@@ -29,35 +29,48 @@ export class ProcessoConfigValidator {
     }
 
     if (dto.tanques !== undefined) {
-      this.validateTanques(dto.tanques, true)
+      this.validateTanques(dto.tanques, true);
     }
 
-    this.vaildateAtLeastOneField(dto)
+    this.vaildateAtLeastOneField(dto);
   }
 
   private vaildateAtLeastOneField(dto: ProcessoConfigDTO): void {
-    const hasAsyncField = dto.nome_processo !== undefined || dto.tempo_maximo !== undefined || dto.vacuo_alvo !== undefined || dto.tanques !== undefined;
+    const hasAsyncField =
+      dto.nome_processo !== undefined ||
+      dto.tempo_maximo !== undefined ||
+      dto.vacuo_alvo !== undefined ||
+      dto.tanques !== undefined;
 
     if (!hasAsyncField) {
-      throw new BadRequestException('Informe pelo menos um campo para atualizar a configuração do processo.')
+      throw new BadRequestException(
+        'Informe pelo menos um campo para atualizar a configuração do processo.',
+      );
     }
   }
 
   private validateTempoMaximo(tempoMaximo: number | undefined): void {
     if (tempoMaximo === undefined || tempoMaximo === null) {
-        throw new BadRequestException('O tempo máximo é obrigatório.')
+      throw new BadRequestException('O tempo máximo é obrigatório.');
     }
 
     if (!Number.isInteger(tempoMaximo)) {
-      throw new BadRequestException('O tempo máximo deve ser um número inteiro.')
+      throw new BadRequestException(
+        'O tempo máximo deve ser um número inteiro.',
+      );
     }
 
     if (tempoMaximo <= 0) {
-      throw new BadRequestException('O tempo máximo deve ser maior do que zero.')
+      throw new BadRequestException(
+        'O tempo máximo deve ser maior do que zero.',
+      );
     }
   }
 
-  private validateVacuoAlvo(vacuo_alvo: number | undefined, fieldname: string): void {
+  private validateVacuoAlvo(
+    vacuo_alvo: number | undefined,
+    fieldname: string,
+  ): void {
     if (vacuo_alvo === undefined || vacuo_alvo === null) {
       return;
     }
@@ -65,9 +78,16 @@ export class ProcessoConfigValidator {
     if (!Number.isFinite(vacuo_alvo)) {
       throw new BadRequestException(`${fieldname} deve ser um número válido.`);
     }
+
+    if (vacuo_alvo >= 0) {
+      throw new BadRequestException(`${fieldname} deve ser menor que zero.`);
+    }
   }
 
-  private validateTanques(tanques: Array<CreateProcessoTanqueDTO | UpdateProcessoTanqueDTO>, required: boolean): void {
+  private validateTanques(
+    tanques: Array<CreateProcessoTanqueDTO | UpdateProcessoTanqueDTO>,
+    required: boolean,
+  ): void {
     if (!tanques || tanques.length === 0) {
       if (required) {
         throw new BadRequestException(
@@ -95,12 +115,16 @@ export class ProcessoConfigValidator {
     this.validateSensoresDuplicadosNoProcesso(tanques);
   }
 
-  private validateTanquesDuplicados(tanques: Array<CreateProcessoTanqueDTO | UpdateProcessoTanqueDTO>): void {
+  private validateTanquesDuplicados(
+    tanques: Array<CreateProcessoTanqueDTO | UpdateProcessoTanqueDTO>,
+  ): void {
     const tanqueIds = new Set<number>();
 
     for (const tanque of tanques) {
       if (!tanque.id_tanque) {
-        throw new BadRequestException('Todos os tanques devem possuir id_tanque.');
+        throw new BadRequestException(
+          'Todos os tanques devem possuir id_tanque.',
+        );
       }
 
       if (tanqueIds.has(tanque.id_tanque)) {

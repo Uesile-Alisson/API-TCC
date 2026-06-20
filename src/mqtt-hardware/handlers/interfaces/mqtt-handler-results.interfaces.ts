@@ -15,7 +15,7 @@ export interface MqttAlarmHandlerResult {
   severidade: severidadealarme;
   status_alarme: statusalarme;
   origem_alarme: origemalarme;
-  valor_detectado: string | null;
+  valor_detectado: number | null;
   unidade: string | null;
   ocorrido_em: Date;
   resolvido_em: Date | null;
@@ -31,7 +31,7 @@ export interface MqttReadingHandlerResult {
   id_processo: number;
   id_tanque: number;
   id_sensor: number;
-  valor_vacuo: string;
+  valor_vacuo: number;
   leitura_em: Date;
   recebido_em: Date;
   topic: string;

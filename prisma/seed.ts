@@ -3,6 +3,11 @@ import { PrismaClient, nivelacesso } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaPg } from '@prisma/adapter-pg';
 
+if (process.env.NODE_ENV !== 'development') {
+  console.log('Seed ignorado: ambiente não é development.');
+  process.exit(0);
+}
+
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL,
 });
@@ -48,7 +53,10 @@ async function main() {
     },
   });
 
-  const senha_hash = await bcrypt.hash('Admin@123', 10);
+  const senha_hash = await bcrypt.hash(
+    process.env.DEV_ADMIN_PASSWORD ?? 'Admin@123',
+    10,
+  );
 
   await prisma.usuarios.upsert({
     where: { login: 'admin' },
@@ -58,7 +66,7 @@ async function main() {
       login: 'admin',
       email: 'admin@tsea.com',
       senha_hash,
-      primeiro_acesso: false,
+      primeiro_acesso: true,
       id_nivel_acesso: 3,
     },
   });

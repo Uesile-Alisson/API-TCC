@@ -47,7 +47,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
   async connect(): Promise<MqttOperationResult> {
     if (this.isConnected && this.client) {
       return {
-        sucess: true,
+        success: true,
         message: 'Cliente MQTT já conectado.',
         timestamp: new Date(),
       };
@@ -55,7 +55,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
     if (this.isConnecting) {
       return {
-        sucess: false,
+        success: false,
         message: 'Cliente MQTT já está conectando.',
         timestamp: new Date(),
       };
@@ -95,7 +95,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
       this.isConnected = true;
 
       return {
-        sucess: true,
+        success: true,
         message: 'Conexão MQTT realizada com sucesso',
         timestamp: new Date(),
       };
@@ -109,7 +109,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
       this.forceClearCient();
 
       return {
-        sucess: false,
+        success: false,
         message: 'Falha ao conectar ao broker MQTT.',
         error: errorMessage,
         timestamp: new Date(),
@@ -127,7 +127,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
       await this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
 
       return {
-        sucess: true,
+        success: true,
         message: 'Cliente MQTT já estava desconectado',
         timestamp: new Date(),
       };
@@ -144,7 +144,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     await this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
 
     return {
-      sucess: true,
+      success: true,
       message: 'Cliente MQTT desconectado com sucesso.',
       timestamp: new Date(),
     };
@@ -166,7 +166,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
     if (!client) {
       throw new ServiceUnavailableException(
-        'Cliente MQTT ainda não foi iniciaizado.',
+        'Cliente MQTT ainda não foi inicializado.',
       );
     }
 
@@ -189,7 +189,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     });
 
     return {
-      sucess: true,
+      success: true,
       message: `Mensagem publicada no tópico ${topic}`,
       timestamp: new Date(),
     };
@@ -204,7 +204,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
     if (!client) {
       throw new ServiceUnavailableException(
-        'Cliente MQTT ainda não foi iniciaizado.',
+        'Cliente MQTT ainda não foi inicializado.',
       );
     }
 
@@ -226,7 +226,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     });
 
     return {
-      sucess: true,
+      success: true,
       message: `Inscrição realizada no tópico ${subscription.topic}`,
       timestamp: new Date(),
     };

@@ -4061,7 +4061,7 @@ jest-worker@30.4.1:
     merge-stream "^2.0.0"
     supports-color "^8.1.1"
 
-"jest@^29.0.0 || ^30.0.0", jest@^30.0.0:
+"jest@^29.0.0 || ^30.0.0", jest@^30.4.2:
   version "30.4.2"
   resolved "https://registry.npmjs.org/jest/-/jest-30.4.2.tgz"
   integrity sha512-Yi1jqNC/Oq0N4hBgNH/YvBpP1P57QqundgytzYqy3yqAa7NZPNjSoi4SGbRAXDMdBzNE6xBCi5U7RgfrvMEUVQ==
@@ -5770,7 +5770,7 @@ ts-api-utils@^2.5.0:
   resolved "https://registry.npmjs.org/ts-api-utils/-/ts-api-utils-2.5.0.tgz"
   integrity sha512-OJ/ibxhPlqrMM0UiNHJ/0CKQkoKF243/AEmplt3qpRgkW8VG7IfOS41h7V8TjITqdByHzrjcS/2si+y4lIh8NA==
 
-ts-jest@^29.2.5:
+ts-jest@^29.4.11:
   version "29.4.11"
   resolved "https://registry.npmjs.org/ts-jest/-/ts-jest-29.4.11.tgz"
   integrity sha512-IrFl7l9AuB/qrNw5quqvAv/hmKMb8dhWOH4jQOGo0Oq8tCeo1O86/iTFG1FaRimgUkF13l4PcepO8ATFT6Ns4g==

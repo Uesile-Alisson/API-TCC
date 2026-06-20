@@ -6,7 +6,14 @@ import { MqttConfigService } from './config/mqtt-config.service';
 import { MqttClientService } from './connection/mqtt-client.service';
 import { MqttHealthService } from './connection/mqtt-health.service';
 import { MqttSocketGateway } from './socket/mqtt-socket.gateway';
+import { MqttSocketService } from './socket/mqtt-socket.service';
 import { CommandService } from './commands/command.service';
+import { AcoplamentoMangueiraHandler } from './handlers/acoplamento-mangueira.handler';
+import { AlarmsHandler } from './handlers/alarms.handler';
+import { HandlersService } from './handlers/mqtt-handlers.service';
+import { HeartbeatHandler } from './handlers/heartbeat.handler';
+import { ReadingHandler } from './handlers/reading.handler';
+import { StatusHandler } from './handlers/status.handler';
 import {
   AcoplamentoContextCacheService,
   ReadingContextCacheService,
@@ -35,7 +42,15 @@ import {
     MqttClientService,
     MqttHealthService,
     MqttSocketGateway,
+    MqttSocketService,
     CommandService,
+    // Fluxo ativo que registra listeners no MqttClientService e roteia mensagens MQTT recebidas.
+    HandlersService,
+    ReadingHandler,
+    StatusHandler,
+    HeartbeatHandler,
+    AlarmsHandler,
+    AcoplamentoMangueiraHandler,
     SystemConfigCacheService,
     ReadingContextCacheService,
     AcoplamentoContextCacheService,

@@ -60,7 +60,7 @@ export class AlarmsHandler implements MqttMessageHandler<MqttAlarmHandlerResult 
       severidade: alarm.severidade,
       status_alarme: alarm.status_alarme,
       origem_alarme: alarm.origem_alarme,
-      valor_detectado: alarm.valor_detectado?.toString() ?? null,
+      valor_detectado: alarm.valor_detectado?.toNumber() ?? null,
       unidade: alarm.unidade,
       ocorrido_em: alarm.ocorrido_em,
       resolvido_em: alarm.resolvido_em,

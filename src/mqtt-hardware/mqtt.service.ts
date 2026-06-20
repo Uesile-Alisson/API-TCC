@@ -11,7 +11,7 @@ import { MqttConfigService } from './config/mqtt-config.service';
 import { UpdateMqttConfigDTO } from './dto/update-mqtt-config.dto';
 import { MqttClientService } from './connection/mqtt-client.service';
 import { MqttHealthService } from './connection/mqtt-health.service';
-import type { HardwareState } from './interfaces/hardware-state.interface'; 
+import type { HardwareState } from './interfaces/hardware-state.interface';
 
 type SanitizedMqttConfig = {
   id_mqtt_configuracao: number;
@@ -131,7 +131,7 @@ export class MqttService {
   async getConfig(): Promise<SanitizedMqttConfig> {
     const config = await this.mqttConfigService.getConfig();
 
-    return this.sanitetizeConfig(config);
+    return this.sanitizeConfig(config);
   }
 
   async updateConfig(
@@ -148,7 +148,7 @@ export class MqttService {
         `Usuário alteração: ${idUsuarioAlteracao}`,
     );
 
-    return this.sanitetizeConfig(updatedConfig);
+    return this.sanitizeConfig(updatedConfig);
   }
 
   async testConnection(): Promise<MqttConnectionTestResponse> {
@@ -165,9 +165,9 @@ export class MqttService {
     const result = await this.mqttClientService.connect();
 
     return {
-      connected: result.sucess,
+      connected: result.success,
       checked_at: result.timestamp,
-      message: result.sucess
+      message: result.success
         ? 'Conexão MQTT realizada com sucesso.'
         : (result.error ?? result.message),
     };
@@ -177,7 +177,7 @@ export class MqttService {
     const result = await this.mqttClientService.reconnect();
 
     return {
-      success: result.sucess,
+      success: result.success,
       message: result.message,
       error: result.error ?? null,
       executed_at: result.timestamp,
@@ -188,7 +188,7 @@ export class MqttService {
     const result = await this.mqttClientService.disconnect();
 
     return {
-      success: result.sucess,
+      success: result.success,
       message: result.message,
       error: result.error ?? null,
       executed_at: result.timestamp,
@@ -296,7 +296,7 @@ export class MqttService {
 
     const result = await this.mqttClientService.connect();
 
-    if (!result.sucess) {
+    if (!result.success) {
       throw new ServiceUnavailableException(
         result.error ??
           'Não foi possível executar o comando porque o backend não está conectado ao broker MQTT.',
@@ -304,7 +304,7 @@ export class MqttService {
     }
   }
 
-  private sanitetizeConfig(config: MqttConfigEntity): SanitizedMqttConfig {
+  private sanitizeConfig(config: MqttConfigEntity): SanitizedMqttConfig {
     return {
       id_usuario_alteracao: config.id_usuario_alteracao ?? null,
       id_mqtt_configuracao: config.id_mqtt_configuracao,

@@ -14,6 +14,9 @@ import { MailService } from '@/mail/mail.service';
 
 @Injectable()
 export class AuthService {
+  private readonly passwordRecoveryMessage =
+    'Se os dados informados estiverem corretos, enviaremos as instruções de recuperação de senha.';
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -106,12 +109,14 @@ export class AuthService {
 
     if (!user) {
       return {
-        message: 'Se o e-mail existir, um ink de redefinição será enviado.',
+        message: this.passwordRecoveryMessage,
       };
     }
 
     if (user.niveisacessos.nome === 'ADMINISTRADOR') {
-      throw new UnauthorizedException('Usuário não tem permissão.');
+      return {
+        message: this.passwordRecoveryMessage,
+      };
     }
 
     const resetToken = await this.jwt.signAsync(
@@ -127,8 +132,7 @@ export class AuthService {
     await this.mailService.sendPasswordResetEmail(user.email!, resetToken);
 
     return {
-      message: 'Se o e-mail existir, um ink de redefinição será enviado.',
-      resetToken,
+      message: this.passwordRecoveryMessage,
     };
   }
 

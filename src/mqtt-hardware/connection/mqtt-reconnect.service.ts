@@ -11,7 +11,7 @@ export class MqttReconnectService {
   async reconnectNow(): Promise<MqttOperationResult> {
     if (this.isReconnecting) {
       return {
-        sucess: false,
+        success: false,
         message: 'Reconexão MQTT já está em andamento.',
         timestamp: new Date(),
       };
@@ -24,7 +24,7 @@ export class MqttReconnectService {
 
       const result = await this.mqttClientService.reconnect();
 
-      if (result.sucess) {
+      if (result.success) {
         this.logger.log('Reconexão MQTT concluída com sucesso');
       } else {
         this.logger.warn(
@@ -39,7 +39,7 @@ export class MqttReconnectService {
       this.logger.error(`Erro durante reconexão MQTT manual: ${errorMessage}`);
 
       return {
-        sucess: false,
+        success: false,
         message: 'Erro durante reconexão MQTT manual.',
         error: errorMessage,
         timestamp: new Date(),

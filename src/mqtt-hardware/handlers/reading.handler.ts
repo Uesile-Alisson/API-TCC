@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { leiturasensores, Prisma, statussensor } from '@prisma/client';
+import {
+  leiturasensores,
+  Prisma,
+  statussensor,
+  tipoleiturasensor,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Esp32ReadingDTO } from '../dto/esp32-reading.dto';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
@@ -71,7 +76,7 @@ export class ReadingHandler implements MqttMessageHandler<MqttReadingHandlerResu
       id_processo: processoTanqueSensor.processostanques.id_processo,
       id_tanque: processoTanqueSensor.processostanques.id_tanque,
       id_sensor: processoTanqueSensor.id_sensor,
-      valor_vacuo: leitura.valor_vacuo.toString(),
+      valor_vacuo: this.decimalToNumber(leitura.valor_vacuo),
       leitura_em: leitura.leitura_em,
       recebido_em: leitura.recebido_em,
       topic,
@@ -148,7 +153,10 @@ export class ReadingHandler implements MqttMessageHandler<MqttReadingHandlerResu
       const leitura = await tx.leiturasensores.create({
         data: {
           id_processo_tanque_sensor: dto.id_processo_tanque_sensor,
+          tipo_leitura: tipoleiturasensor.VACUO,
+          valor: valor_vacuo,
           valor_vacuo,
+          unidade_medida: dto.unidade_medida,
           leitura_em,
           recebido_em,
         },
@@ -177,6 +185,18 @@ export class ReadingHandler implements MqttMessageHandler<MqttReadingHandlerResu
     return new Prisma.Decimal(valorVacuo);
   }
 
+  private decimalToNumber(value: Prisma.Decimal | number | null): number {
+    if (value === null) {
+      throw new Error('Valor de vácuo obrigatório não informado.');
+    }
+
+    if (typeof value === 'number') {
+      return value;
+    }
+
+    return value.toNumber();
+  }
+
   private logReadingCreated(
     leitura: leiturasensores,
     processoTanqueSensor: ProcessoTanqueSensorWithRelations,
@@ -191,7 +211,7 @@ export class ReadingHandler implements MqttMessageHandler<MqttReadingHandlerResu
         `Processo: ${processoTanqueSensor.processostanques.id_processo}. ` +
         `Tanque: ${processoTanqueSensor.processostanques.id_tanque}. ` +
         `Sensor: ${processoTanqueSensor.id_sensor}. ` +
-        `Valor vácuo: ${leitura.valor_vacuo.toString()}. ` +
+        `Valor vácuo: ${this.decimalToNumber(leitura.valor_vacuo)}. ` +
         `Leitura em: ${leitura.leitura_em.toISOString()}. ` +
         `Recebido em: ${leitura.recebido_em.toISOString()}.`,
     );

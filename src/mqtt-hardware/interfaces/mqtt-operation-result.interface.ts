@@ -1,5 +1,5 @@
 export interface MqttOperationResult {
-  sucess: boolean;
+  success: boolean;
   message: string;
   error?: string;
   timestamp: Date;

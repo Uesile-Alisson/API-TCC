@@ -209,7 +209,7 @@ export class MqttController {
     return {
       motivo: dto.motivo,
       qos: dto.qos,
-      solicitado_por: String(user.login ?? 'sistema'),
+      solicitado_por: this.resolveUserId(user),
     };
   }
 

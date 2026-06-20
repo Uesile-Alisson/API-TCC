@@ -103,7 +103,7 @@ export class ReadingEventHandler {
         id_mqtt_mensagem: input.id_mqtt_mensagem ?? null,
         id_leitura_sensor: input.id_leitura_sensor,
         id_processo_tanque_sensor: input.id_processo_tanque_sensor,
-        valor_vacuo: input.valor_vacuo,
+        valor_vacuo: input.valor_vacuo.toNumber(),
         leitura_em: input.leitura_em,
         recebido_em: input.recebido_em,
         enviado_em: new Date(),

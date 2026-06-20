@@ -4,14 +4,28 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { statusconexaomqtt } from '@prisma/client';
+import { severidadealarme, statusconexaomqtt } from '@prisma/client';
 import { MqttClientService } from '../connection/mqtt-client.service';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
+import {
+  AlarmCreatedSocketPayload,
+  HardwareStatusSocketPayload,
+  HeartbeatSocketPayload,
+  SensorAcoplamentoSocketPayload,
+  SensorReadingSocketPayload,
+} from '../interfaces/mqtt-socket-events.interface';
 import { MqttSocketService } from '../socket/mqtt-socket.service';
 import { TopicMatcher } from '../topics/topic-matcher';
 import { AcoplamentoMangueiraHandler } from './acoplamento-mangueira.handler';
 import { AlarmsHandler } from './alarms.handler';
 import { HeartbeatHandler } from './heartbeat.handler';
+import {
+  MqttAcoplamentoMangueiraHandlerResult,
+  MqttAlarmHandlerResult,
+  MqttHeartbeatHandlerResult,
+  MqttReadingHandlerResult,
+  MqttStatusHandlerResult,
+} from './interfaces/mqtt-handler-results.interfaces';
 import { ReadingHandler } from './reading.handler';
 import { StatusHandler } from './status.handler';
 
@@ -96,7 +110,9 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
   private async handleHeartbeatMessage(message: MqttMessage): Promise<void> {
     const result = await this.heartbeatHandler.handle(message);
 
-    this.mqttSocketService.publishedHeartbeatUpdated(result);
+    this.mqttSocketService.publishedHeartbeatUpdated(
+      this.toHeartbeatSocketPayload(result),
+    );
   }
 
   private async handleReadingMessage(message: MqttMessage): Promise<void> {
@@ -106,7 +122,9 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
       return;
     }
 
-    this.mqttSocketService.publishedSensorReadingCreated(result);
+    this.mqttSocketService.publishedSensorReadingCreated(
+      this.toSensorReadingSocketPayload(result),
+    );
   }
 
   private async handleStatusMessage(message: MqttMessage): Promise<void> {
@@ -116,7 +134,9 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
       return;
     }
 
-    this.mqttSocketService.publishedHardwareStatusUpdated(result);
+    this.mqttSocketService.publishedHardwareStatusUpdated(
+      this.toHardwareStatusSocketPayload(result),
+    );
   }
 
   private async handleAlarmMessage(message: MqttMessage): Promise<void> {
@@ -126,7 +146,9 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
       return;
     }
 
-    this.mqttSocketService.publishedAlarmCreated(result);
+    this.mqttSocketService.publishedAlarmCreated(
+      this.toAlarmSocketPayload(result),
+    );
   }
 
   private async handleAcoplamentoMessage(message: MqttMessage): Promise<void> {
@@ -136,7 +158,103 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
       return;
     }
 
-    this.mqttSocketService.publishedSensorAcoplamentoUpdated(result);
+    this.mqttSocketService.publishedSensorAcoplamentoUpdated(
+      this.toSensorAcoplamentoSocketPayload(result),
+    );
+  }
+
+  private toHeartbeatSocketPayload(
+    result: MqttHeartbeatHandlerResult,
+  ): HeartbeatSocketPayload {
+    return {
+      esp32_online: true,
+      receivedAt: result.receivedAt,
+      lastHeartbeatAt: result.heartbeat_at,
+      device_id: result.device_id,
+      heartbeat_at: result.heartbeat_at,
+    };
+  }
+
+  private toSensorReadingSocketPayload(
+    result: MqttReadingHandlerResult,
+  ): SensorReadingSocketPayload {
+    return {
+      id_mqtt_mensagem: null,
+      id_leitura_sensor: result.id_leitura_sensor,
+      id_processo_tanque_sensor: result.id_processo_tanque_sensor,
+      id_sensor: result.id_sensor,
+      id_tanque: result.id_tanque,
+      valor_vacuo: result.valor_vacuo,
+      leitura_em: result.leitura_em,
+      recebido_em: result.recebido_em,
+    };
+  }
+
+  private toHardwareStatusSocketPayload(
+    result: MqttStatusHandlerResult,
+  ): HardwareStatusSocketPayload {
+    return {
+      id_mqtt_mensagem: null,
+      esp32_online: true,
+      status_bomba_principal: null,
+      status_bomba_auxiliar: null,
+      status_geral_sistema: result.status_geral_sistema,
+      processo_em_execucao: false,
+      id_processo: null,
+      id_processo_tanque: null,
+      id_processo_tanque_sensor: null,
+      erro: null,
+      recebido_em: result.receivedAt,
+      enviado_em: new Date(),
+      mensagem: result.mensagem,
+      device_id: result.device_id,
+    };
+  }
+
+  private toAlarmSocketPayload(
+    result: MqttAlarmHandlerResult,
+  ): AlarmCreatedSocketPayload {
+    return {
+      id_alarme: result.id_alarme,
+      titulo: result.titulo,
+      descricao: result.descricao,
+      tipo_alarme: result.tipo_alarme,
+      severidade: result.severidade,
+      status_alarme: result.status_alarme,
+      origem_alarme: result.origem_alarme,
+      valor_detectado: result.valor_detectado,
+      unidade: result.unidade,
+      ocorrido_em: result.ocorrido_em,
+      resolvido_em: result.resolvido_em,
+      id_processo: result.id_processo,
+      id_processo_tanque: result.id_processo_tanque,
+      id_processo_tanque_sensor: result.id_processo_tanque_sensor,
+      id_mqtt_mensagem: null,
+      topic: result.topic,
+      shouldTriggerEmergencyStop:
+        result.severidade === severidadealarme.CRITICO,
+    };
+  }
+
+  private toSensorAcoplamentoSocketPayload(
+    result: MqttAcoplamentoMangueiraHandlerResult,
+  ): SensorAcoplamentoSocketPayload {
+    return {
+      id_sensor: result.id_sensor,
+      id_tanque: result.id_tanque,
+      id_processo_tanque_sensor: null,
+      id_processo: null,
+      id_processo_tanque: null,
+      sinal_detectado: result.sinal_detectado,
+      status_anterior: result.status_anterior,
+      status_acoplamento: result.status_acoplamento,
+      status_mudou: result.status_mudou,
+      processo_em_execucao: false,
+      ultima_verificacao: result.verificado_em,
+      verificado_em: result.verificado_em,
+      topic: result.topic,
+      receivedAt: result.receivedAt,
+    };
   }
 
   private handleConnectionStatusChange(

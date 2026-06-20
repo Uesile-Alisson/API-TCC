@@ -29,7 +29,7 @@ export class MailService {
     const resetLink = `${resetPasswordUrl}?token=${token}`;
 
     await this.transportar.sendMail({
-      from: this.configService.getOrThrow<string>('MWIL_FROM'),
+      from: this.configService.getOrThrow<string>('MAIL_FROM'),
       to: email,
       subject: 'Redefinição senha - TSEA',
       html: `

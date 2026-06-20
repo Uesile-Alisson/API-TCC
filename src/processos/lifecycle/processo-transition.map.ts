@@ -4,12 +4,23 @@ export const PROCESSO_ALLOWED_TRANSITIONS: Record<
   statusprocesso,
   statusprocesso[]
 > = {
-  CONFIGURADO: ['EM_EXECUCAO', 'INTERROMPIDO'],
-  EM_EXECUCAO: ['PAUSADO', 'CONCLUIDO', 'INTERROMPIDO', 'FALHA'],
-  PAUSADO: ['EM_EXECUCAO', 'INTERROMPIDO'],
-  CONCLUIDO: [],
-  INTERROMPIDO: [],
-  FALHA: [],
+  [statusprocesso.CONFIGURADO]: [
+    statusprocesso.EM_EXECUCAO,
+    statusprocesso.INTERROMPIDO,
+  ],
+  [statusprocesso.EM_EXECUCAO]: [
+    statusprocesso.PAUSADO,
+    statusprocesso.CONCLUIDO,
+    statusprocesso.INTERROMPIDO,
+    statusprocesso.FALHA,
+  ],
+  [statusprocesso.PAUSADO]: [
+    statusprocesso.EM_EXECUCAO,
+    statusprocesso.INTERROMPIDO,
+  ],
+  [statusprocesso.CONCLUIDO]: [],
+  [statusprocesso.INTERROMPIDO]: [],
+  [statusprocesso.FALHA]: [],
 };
 
 export const PROCESSO_FINAL_STATUSES: statusprocesso[] = [

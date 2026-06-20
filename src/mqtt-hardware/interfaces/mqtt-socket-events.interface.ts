@@ -28,7 +28,7 @@ export interface SensorReadingSocketPayload extends SocketBasePayload {
   id_mqtt_mensagem?: number | null;
   id_leitura_sensor: number;
   id_processo_tanque_sensor: number;
-  valor_vacuo: Decimal;
+  valor_vacuo: number;
   leitura_em: Date;
   recebido_em: Date;
   id_sensor?: number;
