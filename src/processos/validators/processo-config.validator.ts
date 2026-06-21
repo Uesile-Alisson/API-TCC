@@ -79,8 +79,8 @@ export class ProcessoConfigValidator {
       throw new BadRequestException(`${fieldname} deve ser um número válido.`);
     }
 
-    if (vacuo_alvo >= 0) {
-      throw new BadRequestException(`${fieldname} deve ser menor que zero.`);
+    if (vacuo_alvo <= 0) {
+      throw new BadRequestException(`${fieldname} deve ser maior que zero.`);
     }
   }
 

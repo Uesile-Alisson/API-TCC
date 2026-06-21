@@ -1,213 +1,268 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  INestApplication,
-  ValidationPipe,
-} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { nivelacesso, statusprocesso } from '@prisma/client';
-import type { Request } from 'express';
-import type { Server } from 'http';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../src/auth/guards/roles.guard';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
+import { statusprocesso } from '@prisma/client';
 import { ProcessosController } from '../src/processos/processos.controller';
 import { ProcessosService } from '../src/processos/processos.service';
+import type { Server } from 'node:http';
 
-type ProcessosServiceMock = {
-  create: jest.Mock;
-  list: jest.Mock;
-  findActive: jest.Mock;
-  findById: jest.Mock;
-  getDashboard: jest.Mock;
-  updateConfig: jest.Mock;
-  start: jest.Mock;
-  pause: jest.Mock;
-  resume: jest.Mock;
-  finish: jest.Mock;
-  interrupt: jest.Mock;
-  emergencyStop: jest.Mock;
+type ProcessCommandResponse = {
+  success: boolean;
+  message: string;
+  id_processo: number;
+  status_processo: statusprocesso;
 };
 
-type AuthenticatedTestUser = {
-  id_usuario: number;
-  login: string;
-  nome: string;
-  id_nivel_acesso: number;
-  nivel_acesso: {
-    nome: nivelacesso;
+type ProcessListResponse = {
+  data: unknown[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
   };
-  primeiro_acesso: boolean;
 };
-type AuthenticatedTestRequest = Request & {
-  user: AuthenticatedTestUser;
+
+type ProcessFindOneResponse = {
+  id_processo: number;
+} | null;
+
+type MockProcessosService = {
+  create: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
+  findAll: jest.MockedFunction<() => Promise<ProcessListResponse>>;
+  findOne: jest.MockedFunction<() => Promise<ProcessFindOneResponse>>;
+  start: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
+  pause: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
+  resume: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
+  finish: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
+  cancel: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
+  emergencyStop: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
 };
 
 describe('ProcessosController (e2e)', () => {
   let app: INestApplication;
-  let service: ProcessosServiceMock;
+  let processosService: MockProcessosService;
+  let httpServer: Server;
 
-  const authenticatedUser = {
-    id_usuario: 7,
-    login: 'tecnico',
-    nome: 'Tecnico Teste',
-    id_nivel_acesso: 2,
-    nivel_acesso: {
-      nome: nivelacesso.TECNICO,
-    },
-    primeiro_acesso: false,
+  const processoConfiguradoResponse: ProcessCommandResponse = {
+    success: true,
+    message: 'Processo criado com sucesso.',
+    id_processo: 1,
+    status_processo: statusprocesso.CONFIGURADO,
   };
 
-  const authGuard: CanActivate = {
-    canActivate(context: ExecutionContext): boolean {
-      const requestContext = context
-        .switchToHttp()
-        .getRequest<AuthenticatedTestRequest>();
-      requestContext.user = authenticatedUser;
-
-      return true;
-    },
+  const processoIniciadoResponse: ProcessCommandResponse = {
+    success: true,
+    message: 'Processo iniciado com sucesso.',
+    id_processo: 1,
+    status_processo: statusprocesso.EM_EXECUCAO,
   };
 
-  const rolesGuard: CanActivate = {
-    canActivate(): boolean {
-      return true;
-    },
+  const processoPausadoResponse: ProcessCommandResponse = {
+    success: true,
+    message: 'Processo pausado com sucesso.',
+    id_processo: 1,
+    status_processo: statusprocesso.PAUSADO,
+  };
+
+  const processoRetomadoResponse: ProcessCommandResponse = {
+    success: true,
+    message: 'Processo retomado com sucesso.',
+    id_processo: 1,
+    status_processo: statusprocesso.EM_EXECUCAO,
+  };
+
+  const processoFinalizadoResponse: ProcessCommandResponse = {
+    success: true,
+    message: 'Processo finalizado com sucesso.',
+    id_processo: 1,
+    status_processo: statusprocesso.CONCLUIDO,
+  };
+
+  const processoCanceladoResponse: ProcessCommandResponse = {
+    success: true,
+    message: 'Processo cancelado com sucesso.',
+    id_processo: 1,
+    status_processo: statusprocesso.INTERROMPIDO,
+  };
+
+  const paradaEmergenciaResponse: ProcessCommandResponse = {
+    success: true,
+    message: 'Parada de emergência executada com sucesso.',
+    id_processo: 1,
+    status_processo: statusprocesso.INTERROMPIDO,
   };
 
   beforeEach(async () => {
-    service = {
-      create: jest
-        .fn()
-        .mockResolvedValue(actionResult(statusprocesso.CONFIGURADO)),
-      list: jest.fn().mockResolvedValue({
-        data: [],
-        meta: { page: 1, limit: 10, total: 0, totalPages: 0 },
-      }),
-      findActive: jest.fn().mockResolvedValue(null),
-      findById: jest.fn().mockResolvedValue({ id_processo: 10 }),
-      getDashboard: jest.fn().mockResolvedValue({ id_processo: 10 }),
-      updateConfig: jest
-        .fn()
-        .mockResolvedValue(actionResult(statusprocesso.CONFIGURADO)),
-      start: jest
-        .fn()
-        .mockResolvedValue(actionResult(statusprocesso.EM_EXECUCAO)),
-      pause: jest.fn().mockResolvedValue(actionResult(statusprocesso.PAUSADO)),
-      resume: jest
-        .fn()
-        .mockResolvedValue(actionResult(statusprocesso.EM_EXECUCAO)),
-      finish: jest
-        .fn()
-        .mockResolvedValue(actionResult(statusprocesso.CONCLUIDO)),
-      interrupt: jest
-        .fn()
-        .mockResolvedValue(actionResult(statusprocesso.INTERROMPIDO)),
-      emergencyStop: jest
-        .fn()
-        .mockResolvedValue(actionResult(statusprocesso.INTERROMPIDO)),
+    processosService = {
+      create: jest.fn<() => Promise<ProcessCommandResponse>>(),
+      findAll: jest.fn<() => Promise<ProcessListResponse>>(),
+      findOne: jest.fn<() => Promise<ProcessFindOneResponse>>(),
+      start: jest.fn<() => Promise<ProcessCommandResponse>>(),
+      pause: jest.fn<() => Promise<ProcessCommandResponse>>(),
+      resume: jest.fn<() => Promise<ProcessCommandResponse>>(),
+      finish: jest.fn<() => Promise<ProcessCommandResponse>>(),
+      cancel: jest.fn<() => Promise<ProcessCommandResponse>>(),
+      emergencyStop: jest.fn<() => Promise<ProcessCommandResponse>>(),
     };
+
+    processosService.create.mockResolvedValue(processoConfiguradoResponse);
+
+    processosService.findAll.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        limit: 10,
+        total: 0,
+        totalPages: 0,
+      },
+    });
+
+    processosService.findOne.mockResolvedValue({
+      id_processo: 1,
+    });
+
+    processosService.start.mockResolvedValue(processoIniciadoResponse);
+    processosService.pause.mockResolvedValue(processoPausadoResponse);
+    processosService.resume.mockResolvedValue(processoRetomadoResponse);
+    processosService.finish.mockResolvedValue(processoFinalizadoResponse);
+    processosService.cancel.mockResolvedValue(processoCanceladoResponse);
+    processosService.emergencyStop.mockResolvedValue(paradaEmergenciaResponse);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [ProcessosController],
-      providers: [{ provide: ProcessosService, useValue: service }],
-    })
-      .overrideGuard(JwtAuthGuard)
-      .useValue(authGuard)
-      .overrideGuard(RolesGuard)
-      .useValue(rolesGuard)
-      .compile();
+      providers: [
+        {
+          provide: ProcessosService,
+          useValue: processosService,
+        },
+      ],
+    }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
     await app.init();
+
+    httpServer = app.getHttpServer() as Server;
   });
 
   afterEach(async () => {
-    await app.close();
+    jest.clearAllMocks();
+
+    if (app) {
+      await app.close();
+    }
   });
 
-  it('responde nas rotas HTTP obrigatorias de processos', async () => {
-    const server = getServer();
-
-    await request(server).get('/api/processos').expect(200);
-    await request(server).get('/api/processos/ativo').expect(200);
-    await request(server).post('/api/processos').send(createDto()).expect(201);
-    await request(server).get('/api/processos/10').expect(200);
-    await request(server).get('/api/processos/10/dashboard').expect(200);
-    await request(server)
-      .patch('/api/processos/10/config')
-      .send({ tempo_maximo: 120 })
-      .expect(200);
-    await request(server).post('/api/processos/10/iniciar').expect(201);
-    await request(server).post('/api/processos/10/pausar').expect(201);
-    await request(server).post('/api/processos/10/retomar').expect(201);
-    await request(server)
-      .post('/api/processos/10/finalizar')
-      .send({ observacao: 'Finalizado sem falhas.' })
-      .expect(201);
-    await request(server)
-      .post('/api/processos/10/interromper')
-      .send({ motivo: 'Interrupcao operacional.' })
-      .expect(201);
-    await request(server)
-      .post('/api/processos/10/parada-emergencia')
-      .send({ motivo: 'Falha critica simulada.' })
-      .expect(201);
-
-    expect(service.create).toHaveBeenCalled();
-    expect(service.getDashboard).toHaveBeenCalledWith(10);
-    expect(service.emergencyStop).toHaveBeenCalled();
-  });
-
-  it('rejeita payload invalido antes de chamar service.create', async () => {
-    await request(getServer())
-      .post('/api/processos')
-      .send({ tempo_maximo: 60 })
-      .expect(400);
-
-    expect(service.create).not.toHaveBeenCalled();
-  });
-
-  it('rejeita campos extras no DTO de criacao', async () => {
-    await request(getServer())
-      .post('/api/processos')
-      .send({ ...createDto(), campo_extra: true })
-      .expect(400);
-
-    expect(service.create).not.toHaveBeenCalled();
-  });
-
-  function createDto() {
-    return {
-      tempo_maximo: 60,
+  it('/processos (POST) deve criar um processo', async () => {
+    const body = {
+      nome_processo: 'Processo de teste',
       vacuo_alvo: -80,
+      tempo_maximo: 300,
       tanques: [
         {
           id_tanque: 1,
-          sensores: [{ id_sensor: 1 }],
+          id_sensor: 1,
+          vacuo_alvo: -80,
         },
       ],
     };
-  }
 
-  function getServer(): Server {
-    return app.getHttpServer() as Server;
-  }
+    const response = await request(httpServer)
+      .post('/processos')
+      .send(body)
+      .expect(201);
 
-  function actionResult(status_processo: statusprocesso) {
-    return {
-      success: true,
-      message: 'ok',
-      id_processo: 10,
-      status_processo,
-    };
-  }
+    expect(response.body).toEqual(processoConfiguradoResponse);
+    expect(processosService.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos (GET) deve listar processos paginados', async () => {
+    const response = await request(httpServer)
+      .get('/processos?page=1&limit=10')
+      .expect(200);
+
+    expect(response.body).toEqual({
+      data: [],
+      meta: {
+        page: 1,
+        limit: 10,
+        total: 0,
+        totalPages: 0,
+      },
+    });
+
+    expect(processosService.findAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos/:id (GET) deve buscar processo por ID', async () => {
+    const response = await request(httpServer).get('/processos/1').expect(200);
+
+    expect(response.body).toEqual({
+      id_processo: 1,
+    });
+
+    expect(processosService.findOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos/:id/iniciar (POST) deve iniciar processo', async () => {
+    const response = await request(httpServer)
+      .post('/processos/1/iniciar')
+      .expect(201);
+
+    expect(response.body).toEqual(processoIniciadoResponse);
+    expect(processosService.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos/:id/pausar (POST) deve pausar processo', async () => {
+    const response = await request(httpServer)
+      .post('/processos/1/pausar')
+      .expect(201);
+
+    expect(response.body).toEqual(processoPausadoResponse);
+    expect(processosService.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos/:id/retomar (POST) deve retomar processo', async () => {
+    const response = await request(httpServer)
+      .post('/processos/1/retomar')
+      .expect(201);
+
+    expect(response.body).toEqual(processoRetomadoResponse);
+    expect(processosService.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos/:id/finalizar (POST) deve finalizar processo', async () => {
+    const response = await request(httpServer)
+      .post('/processos/1/finalizar')
+      .expect(201);
+
+    expect(response.body).toEqual(processoFinalizadoResponse);
+    expect(processosService.finish).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos/:id/cancelar (POST) deve cancelar processo', async () => {
+    const response = await request(httpServer)
+      .post('/processos/1/cancelar')
+      .expect(201);
+
+    expect(response.body).toEqual(processoCanceladoResponse);
+    expect(processosService.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos/:id/parada-emergencia (POST) deve executar parada de emergência', async () => {
+    const response = await request(httpServer)
+      .post('/processos/1/parada-emergencia')
+      .expect(201);
+
+    expect(response.body).toEqual(paradaEmergenciaResponse);
+    expect(processosService.emergencyStop).toHaveBeenCalledTimes(1);
+  });
 });

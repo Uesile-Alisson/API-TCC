@@ -90,7 +90,13 @@ type ProcessoOperationalRecord = Prisma.processosGetPayload<{
 
 type ProcessoDetails = Prisma.processosGetPayload<{
   include: {
-    usuarios: true;
+    usuarios: {
+      select: {
+        id_usuario: true;
+        nome: true;
+        login: true;
+      };
+    };
     processostanques: {
       include: {
         tanques: true;
@@ -145,7 +151,13 @@ export class ProcessosRepository {
     return this.prisma.processos.findUnique({
       where: { id_processo },
       include: {
-        usuarios: true,
+        usuarios: {
+          select: {
+            id_usuario: true,
+            nome: true,
+            login: true,
+          },
+        },
         processostanques: {
           include: {
             tanques: true,

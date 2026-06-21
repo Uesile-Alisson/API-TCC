@@ -14,7 +14,7 @@ describe('ProcessoConfigValidator', () => {
     expect(() =>
       validator.validateCreate({
         tempo_maximo: 60,
-        vacuo_alvo: -80,
+        vacuo_alvo: 80,
         tanques: [],
       }),
     ).toThrow(BadRequestException);
@@ -66,7 +66,7 @@ describe('ProcessoConfigValidator', () => {
     expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
   });
 
-  it('bloqueia vacuo_alvo maior ou igual a zero', () => {
+  it('bloqueia vacuo_alvo menor ou igual a zero', () => {
     const dto = buildValidDto({ vacuo_alvo: 0 });
 
     expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
@@ -81,7 +81,7 @@ describe('ProcessoConfigValidator', () => {
   ): CreateProcessoDTO {
     return {
       tempo_maximo: 120,
-      vacuo_alvo: -80,
+      vacuo_alvo: 80,
       tanques: [
         {
           id_tanque: 1,
