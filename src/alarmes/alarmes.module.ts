@@ -1,0 +1,24 @@
+import { Module } from '@nestjs/common';
+import { PrismaModule } from '../prisma/prisma.module';
+import { AlarmesController } from './alarmes.controller';
+import { AlarmesService } from './alarmes.service';
+import { AlarmeLogService } from './logs';
+import { AlarmeMapper } from './mappers';
+import { AlarmesRepository } from './repositories';
+import { AlarmesSocketGateway } from './socket';
+import { AlarmeStateValidator } from './validators';
+
+@Module({
+  imports: [PrismaModule],
+  controllers: [AlarmesController],
+  providers: [
+    AlarmesService,
+    AlarmesRepository,
+    AlarmeMapper,
+    AlarmeStateValidator,
+    AlarmeLogService,
+    AlarmesSocketGateway,
+  ],
+  exports: [AlarmesService, AlarmesRepository],
+})
+export class AlarmesModule {}
