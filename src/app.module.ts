@@ -7,6 +7,7 @@ import { MqttModule } from './mqtt-hardware/mqtt.module';
 import { ProcessosModule } from './processos/processos.module';
 import { AlarmesModule } from './alarmes/alarmes.module';
 import { LeiturasEventosModule } from './leituras-eventos/leituras-eventos.module';
+import { HistoricoModule } from './historico/historico.module';
 import { DynamicModule, Module, Type } from '@nestjs/common';
 
 const optionalModules: Array<Type<unknown> | DynamicModule> = [];
@@ -26,6 +27,7 @@ if (process.env.MONGODB_ENABLED === 'true') {
     ProcessosModule,
     AlarmesModule,
     LeiturasEventosModule,
+    HistoricoModule,
     ...optionalModules,
   ],
   controllers: [],
