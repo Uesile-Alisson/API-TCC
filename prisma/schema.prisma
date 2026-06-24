@@ -335,9 +335,17 @@ model relatorios {
   hash_arquivo      String?
   tamanho_bytes     BigInt?
   gerado_em         DateTime         @default(now()) @db.Timestamp(6)
+  gridfs_file_id    String?          @db.VarChar(50)
+  content_type      String?          @db.VarChar(120)
+  bucket_name       String?          @default("relatorios") @db.VarChar(80)
+  storage_provider  String?          @default("GRIDFS") @db.VarChar(30)
   alarmes           alarmes?         @relation(fields: [id_alarme], references: [id_alarme], map: "fk_relatorio_alarme")
   processos         processos?       @relation(fields: [id_processo], references: [id_processo], map: "fk_relatorio_processo")
   usuarios          usuarios         @relation(fields: [id_usuario], references: [id_usuario], map: "fk_relatorio_usuario")
+
+  @@index([bucket_name], map: "idx_relatorios_bucket_name")
+  @@index([gridfs_file_id], map: "idx_relatorios_gridfs_file_id")
+  @@index([storage_provider], map: "idx_relatorios_storage_provider")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
