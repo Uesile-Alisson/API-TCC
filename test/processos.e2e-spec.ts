@@ -9,7 +9,10 @@ import {
   it,
   jest,
 } from '@jest/globals';
-import { statusprocesso } from '@prisma/client';
+import { nivelacesso, statusprocesso } from '@prisma/client';
+import type { NextFunction, Request, Response } from 'express';
+import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../src/auth/guards/roles.guard';
 import { ProcessosController } from '../src/processos/processos.controller';
 import { ProcessosService } from '../src/processos/processos.service';
 import type { Server } from 'node:http';
@@ -37,15 +40,26 @@ type ProcessFindOneResponse = {
 
 type MockProcessosService = {
   create: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
-  findAll: jest.MockedFunction<() => Promise<ProcessListResponse>>;
-  findOne: jest.MockedFunction<() => Promise<ProcessFindOneResponse>>;
+  list: jest.MockedFunction<() => Promise<ProcessListResponse>>;
+  findById: jest.MockedFunction<() => Promise<ProcessFindOneResponse>>;
   start: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
   pause: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
   resume: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
   finish: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
-  cancel: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
+  interrupt: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
   emergencyStop: jest.MockedFunction<() => Promise<ProcessCommandResponse>>;
 };
+
+const tecnicoUser = {
+  sub: 1,
+  login: 'tecnico',
+  id_nivel_acesso: 2,
+  nivel_acesso: nivelacesso.TECNICO,
+};
+
+interface RequestWithUser extends Request {
+  user?: typeof tecnicoUser;
+}
 
 describe('ProcessosController (e2e)', () => {
   let app: INestApplication;
@@ -104,19 +118,19 @@ describe('ProcessosController (e2e)', () => {
   beforeEach(async () => {
     processosService = {
       create: jest.fn<() => Promise<ProcessCommandResponse>>(),
-      findAll: jest.fn<() => Promise<ProcessListResponse>>(),
-      findOne: jest.fn<() => Promise<ProcessFindOneResponse>>(),
+      list: jest.fn<() => Promise<ProcessListResponse>>(),
+      findById: jest.fn<() => Promise<ProcessFindOneResponse>>(),
       start: jest.fn<() => Promise<ProcessCommandResponse>>(),
       pause: jest.fn<() => Promise<ProcessCommandResponse>>(),
       resume: jest.fn<() => Promise<ProcessCommandResponse>>(),
       finish: jest.fn<() => Promise<ProcessCommandResponse>>(),
-      cancel: jest.fn<() => Promise<ProcessCommandResponse>>(),
+      interrupt: jest.fn<() => Promise<ProcessCommandResponse>>(),
       emergencyStop: jest.fn<() => Promise<ProcessCommandResponse>>(),
     };
 
     processosService.create.mockResolvedValue(processoConfiguradoResponse);
 
-    processosService.findAll.mockResolvedValue({
+    processosService.list.mockResolvedValue({
       data: [],
       meta: {
         page: 1,
@@ -126,7 +140,7 @@ describe('ProcessosController (e2e)', () => {
       },
     });
 
-    processosService.findOne.mockResolvedValue({
+    processosService.findById.mockResolvedValue({
       id_processo: 1,
     });
 
@@ -134,7 +148,7 @@ describe('ProcessosController (e2e)', () => {
     processosService.pause.mockResolvedValue(processoPausadoResponse);
     processosService.resume.mockResolvedValue(processoRetomadoResponse);
     processosService.finish.mockResolvedValue(processoFinalizadoResponse);
-    processosService.cancel.mockResolvedValue(processoCanceladoResponse);
+    processosService.interrupt.mockResolvedValue(processoCanceladoResponse);
     processosService.emergencyStop.mockResolvedValue(paradaEmergenciaResponse);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -145,9 +159,20 @@ describe('ProcessosController (e2e)', () => {
           useValue: processosService,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     app = moduleFixture.createNestApplication();
+    app.use(
+      (req: RequestWithUser, _res: Response, next: NextFunction): void => {
+        req.user = tecnicoUser;
+        next();
+      },
+    );
     await app.init();
 
     httpServer = app.getHttpServer() as Server;
@@ -199,7 +224,7 @@ describe('ProcessosController (e2e)', () => {
       },
     });
 
-    expect(processosService.findAll).toHaveBeenCalledTimes(1);
+    expect(processosService.list).toHaveBeenCalledTimes(1);
   });
 
   it('/processos/:id (GET) deve buscar processo por ID', async () => {
@@ -209,7 +234,7 @@ describe('ProcessosController (e2e)', () => {
       id_processo: 1,
     });
 
-    expect(processosService.findOne).toHaveBeenCalledTimes(1);
+    expect(processosService.findById).toHaveBeenCalledTimes(1);
   });
 
   it('/processos/:id/iniciar (POST) deve iniciar processo', async () => {
@@ -248,13 +273,13 @@ describe('ProcessosController (e2e)', () => {
     expect(processosService.finish).toHaveBeenCalledTimes(1);
   });
 
-  it('/processos/:id/cancelar (POST) deve cancelar processo', async () => {
+  it('/processos/:id/interromper (POST) deve interromper processo', async () => {
     const response = await request(httpServer)
-      .post('/processos/1/cancelar')
+      .post('/processos/1/interromper')
       .expect(201);
 
     expect(response.body).toEqual(processoCanceladoResponse);
-    expect(processosService.cancel).toHaveBeenCalledTimes(1);
+    expect(processosService.interrupt).toHaveBeenCalledTimes(1);
   });
 
   it('/processos/:id/parada-emergencia (POST) deve executar parada de emergência', async () => {

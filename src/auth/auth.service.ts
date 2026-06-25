@@ -5,12 +5,14 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from '@/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { SignInDTO } from './dto/sign-in.dto';
 import { FirstAcessDTO } from './dto/first-acess.dto';
 import { ForgotPasswordDTO } from './dto/forgot-password.dto';
 import { ResetPasswordDTO } from './dto/reset-password.dto';
-import { MailService } from '@/mail/mail.service';
+import { MailService } from '../mail/mail.service';
+import type { AuthenticatedUser } from './types/authenticated-user.type';
+import type { MeResponse } from './types/me-response.type';
 
 @Injectable()
 export class AuthService {
@@ -171,6 +173,41 @@ export class AuthService {
 
     return {
       message: 'Senha redenifina com sucesso.',
+    };
+  }
+
+  async me(user: AuthenticatedUser): Promise<MeResponse> {
+    const usuario = await this.prisma.usuarios.findUnique({
+      where: {
+        id_usuario: user.id_usuario,
+      },
+      select: {
+        id_usuario: true,
+        nome: true,
+        login: true,
+        email: true,
+        id_nivel_acesso: true,
+        primeiro_acesso: true,
+        niveisacessos: {
+          select: {
+            nome: true,
+          },
+        },
+      },
+    });
+
+    if (!usuario) {
+      throw new UnauthorizedException('UsuÃ¡rio autenticado nÃ£o encontrado.');
+    }
+
+    return {
+      id_usuario: usuario.id_usuario,
+      nome: usuario.nome,
+      login: usuario.login,
+      email: usuario.email,
+      id_nivel_acesso: usuario.id_nivel_acesso,
+      nivel_acesso: usuario.niveisacessos.nome,
+      primeiro_acesso: usuario.primeiro_acesso,
     };
   }
 
