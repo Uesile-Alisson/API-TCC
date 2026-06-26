@@ -111,7 +111,7 @@ export class RelatoriosController {
 
   @Get(':id_relatorio/preview')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
-  @ApiOperation({ summary: 'Abre preview PDF de um relatório.' })
+  @ApiOperation({ summary: 'Abre preview PDF ou XLSX de um relatório.' })
   async previewRelatorio(
     @Param('id_relatorio', ParseIntPipe) id_relatorio: number,
     @CurrentUser() user: CurrentRelatoriosUserPayload,

@@ -9,7 +9,6 @@ import {
   RELATORIO_DEFAULT_PAGE,
   RELATORIO_MAX_LIMIT,
   RELATORIO_MESSAGES,
-  RELATORIO_MIME_TYPES,
 } from './constants';
 import type {
   GenerateAlarmReportDto,
@@ -281,7 +280,7 @@ export class RelatoriosService {
     return {
       stream: file.stream,
       filename: file.nome_arquivo,
-      content_type: RELATORIO_MIME_TYPES[formatorelatorio.PDF],
+      content_type: file.content_type,
       content_length: file.content_length,
       disposition: this.buildPreviewDisposition(file.nome_arquivo),
     };

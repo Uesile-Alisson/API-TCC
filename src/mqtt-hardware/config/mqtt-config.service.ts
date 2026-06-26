@@ -11,6 +11,7 @@ import { CreateMqttConfigDTO } from '../dto/create-mqtt-config.dto';
 import { UpdateMqttConfigDTO } from '../dto/update-mqtt-config.dto';
 import { TopicValidator } from '../topics/topic-validator';
 import { ActiveMqttConfig } from '../interfaces/active-mqtt-config.interface';
+import { normalizeMqttBrokerUrl } from './mqtt-broker-url.util';
 
 @Injectable()
 export class MqttConfigService {
@@ -40,10 +41,11 @@ export class MqttConfigService {
     this.validateDtoTopics(dto);
 
     const createdConfig = await this.prisma.$transaction(async (tx) => {
+      const brokerUrl = normalizeMqttBrokerUrl(dto.broker_url, dto.porta);
       const config = await tx.mqttconfiguracoes.create({
         data: {
           id_usuario_alteracao: idUsuarioAlteracao ?? null,
-          broker_url: dto.broker_url,
+          broker_url: brokerUrl,
           porta: dto.porta,
           usuario_mqtt: dto.usuario_mqtt ?? null,
           senha_mqtt_hash: null,
@@ -79,6 +81,13 @@ export class MqttConfigService {
   ): Promise<ActiveMqttConfig> {
     const currentConfig = await this.getConfig();
     this.validateDtoTopics(dto);
+    const brokerUrl =
+      dto.broker_url !== undefined
+        ? normalizeMqttBrokerUrl(
+            dto.broker_url,
+            dto.porta ?? currentConfig.porta,
+          )
+        : undefined;
 
     const updatedConfig = await this.prisma.$transaction(async (tx) => {
       const config = await tx.mqttconfiguracoes.update({
@@ -87,7 +96,7 @@ export class MqttConfigService {
         },
         data: {
           id_usuario_alteracao: idUsuarioAlteracao,
-          broker_url: dto.broker_url,
+          broker_url: brokerUrl,
           porta: dto.porta,
           senha_mqtt_hash: dto.senha_mqtt,
           usuario_mqtt: dto.usuario_mqtt,
@@ -221,6 +230,12 @@ export class MqttConfigService {
       throw new BadRequestException('Porta Mqtt inválida.');
     }
 
+    try {
+      normalizeMqttBrokerUrl(config.broker_url, config.porta);
+    } catch (error) {
+      throw new BadRequestException(this.getErrorMessage(error));
+    }
+
     TopicValidator.validateTopics(config.topico_alarmes, 'topico_alarmes');
     TopicValidator.validateTopics(config.topico_comandos, 'topico_comandos');
     TopicValidator.validateTopics(config.topico_heartbeat, 'topico_heartbeat');
@@ -239,6 +254,14 @@ export class MqttConfigService {
         'timeout_comunicacao deve ser um inteiro igual ou maior a 1000 ms',
       );
     }
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return 'Broker MQTT invalido.';
   }
 
   private async ensureConfigDoesMotExist(): Promise<void> {

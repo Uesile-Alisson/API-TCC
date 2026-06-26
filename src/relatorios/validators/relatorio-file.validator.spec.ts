@@ -54,7 +54,7 @@ describe('RelatorioFileValidator', () => {
     ).toThrow(InternalServerErrorException);
   });
 
-  it('valida preview apenas para PDF', () => {
+  it('valida preview PDF e XLSX', () => {
     expect(() => validator.validatePreviewMetadata(metadata())).not.toThrow();
     expect(() =>
       validator.validatePreviewMetadata(
@@ -65,7 +65,7 @@ describe('RelatorioFileValidator', () => {
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         }),
       ),
-    ).toThrow(BadRequestException);
+    ).not.toThrow();
   });
 
   it('valida download PDF e XLSX', () => {
@@ -102,7 +102,8 @@ describe('RelatorioFileValidator', () => {
     );
   });
 
-  it('bloqueia tamanho negativo ou acima do limite', () => {
+  it('bloqueia tamanho zero, negativo ou acima do limite', () => {
+    expect(() => validator.validateFileSize(0)).toThrow(BadRequestException);
     expect(() => validator.validateFileSize(-1)).toThrow(BadRequestException);
     expect(() =>
       validator.validateFileSize(RELATORIO_MAX_FILE_SIZE_BYTES + 1),

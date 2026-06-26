@@ -84,12 +84,12 @@ describe('RelatorioMapper', () => {
     expect(responseRecord.senha_hash).toBeUndefined();
   });
 
-  it('calcula preview apenas para PDF com arquivo', () => {
+  it('calcula preview para PDF e XLSX com arquivo', () => {
     const pdf = mapper.toResponse(reportRecord(formatorelatorio.PDF));
     const xlsx = mapper.toResponse(reportRecord(formatorelatorio.XLSX));
 
     expect(pdf.preview_disponivel).toBe(true);
-    expect(xlsx.preview_disponivel).toBe(false);
+    expect(xlsx.preview_disponivel).toBe(true);
     expect(xlsx.download_disponivel).toBe(true);
   });
 

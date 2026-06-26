@@ -15,6 +15,10 @@ import { MqttOperationResult } from '../interfaces/mqtt-operation-result.interfa
 import { MqttPublishOptions } from '../interfaces/mqtt-publish-options.interface';
 import { MqttSubscriptions } from '../interfaces/mqtt-subscription.interface';
 import { MqttMessageValidator } from '../validators/mqtt-message.validator';
+import {
+  normalizeMqttBrokerUrl,
+  sanitizeMqttBrokerUrlForLog,
+} from '../config/mqtt-broker-url.util';
 
 type MqttMessageListenner = (message: MqttMessage) => Promise<void> | void;
 type MqttConnectionStatusListener = (
@@ -70,7 +74,9 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
       await this.updateConnectionStatus(statusconexaomqtt.RECONECTANDO);
 
-      this.logger.log(`Iniciando conexão MQTT em ${connectionUrl}`);
+      this.logger.log(
+        `Iniciando conexão MQTT em ${sanitizeMqttBrokerUrlForLog(connectionUrl)}`,
+      );
 
       this.client = mqtt.connect(connectionUrl, {
         clientId: clientOptions.clientId,
@@ -394,13 +400,7 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
   }
 
   private buildConnectionUrl(options: MqttClientOptions): string {
-    const url = new URL(options.brokerUrl);
-
-    if (!url.port) {
-      url.port = String(options.port);
-    }
-
-    return url.toString();
+    return normalizeMqttBrokerUrl(options.brokerUrl, options.port);
   }
 
   private buildDefaultSubscriptions(

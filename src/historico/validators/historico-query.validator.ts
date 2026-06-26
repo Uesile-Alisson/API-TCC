@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { statusprocesso } from '@prisma/client';
+import { statusprocesso } from '@prisma/client';
 import {
   HISTORICO_ALLOWED_DATE_FIELDS,
   HISTORICO_ALLOWED_FILTERS,
@@ -10,7 +10,6 @@ import {
   HISTORICO_GRAFICO_VACUO_MAX_LIMIT,
   HISTORICO_MAX_LIMIT,
   HISTORICO_MESSAGES,
-  HISTORICO_PROCESS_STATUS,
 } from '../constants';
 import type {
   HistoricoDashboardQueryDto,
@@ -108,8 +107,8 @@ export class HistoricoQueryValidator {
   private validateHistoricalStatus(status?: statusprocesso): void {
     if (
       status &&
-      !HISTORICO_PROCESS_STATUS.some(
-        (historicalStatus) => historicalStatus === status,
+      !Object.values(statusprocesso).some(
+        (allowedStatus) => allowedStatus === status,
       )
     ) {
       throw new BadRequestException(HISTORICO_MESSAGES.INVALID_STATUS);

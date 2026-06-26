@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { statusprocesso } from '@prisma/client';
-import { HISTORICO_MESSAGES, HISTORICO_PROCESS_STATUS } from '../constants';
+import { HISTORICO_MESSAGES } from '../constants';
 
 export interface HistoricoProcessoValidationInput {
   id_processo: number;
@@ -36,11 +36,7 @@ export class HistoricoProcessoValidator {
   validateIsHistoricalProcess(
     processo: HistoricoProcessoValidationInput,
   ): void {
-    if (
-      !HISTORICO_PROCESS_STATUS.some(
-        (status) => status === processo.status_processo,
-      )
-    ) {
+    if (!processo.status_processo) {
       throw new ConflictException(HISTORICO_MESSAGES.PROCESS_NOT_HISTORICAL);
     }
   }

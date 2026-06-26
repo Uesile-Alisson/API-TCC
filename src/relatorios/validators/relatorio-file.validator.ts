@@ -45,11 +45,6 @@ export class RelatorioFileValidator {
     const metadata = this.getFileMetadata(record);
 
     this.validateFileMetadata(metadata);
-
-    if (metadata.formato_relatorio !== formatorelatorio.PDF) {
-      throw new BadRequestException(RELATORIO_MESSAGES.FORMAT.PREVIEW_ONLY_PDF);
-    }
-
     this.validateContentTypeForFormat({
       contentType: metadata.content_type,
       formato: metadata.formato_relatorio,
@@ -150,7 +145,7 @@ export class RelatorioFileValidator {
 
     if (
       !Number.isFinite(normalizedSize) ||
-      normalizedSize < 0 ||
+      normalizedSize <= 0 ||
       normalizedSize > RELATORIO_MAX_FILE_SIZE_BYTES
     ) {
       throw new BadRequestException(

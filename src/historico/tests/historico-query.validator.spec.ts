@@ -31,12 +31,12 @@ describe('HistoricoQueryValidator', () => {
     ).toThrow(BadRequestException);
   });
 
-  it('validateListQuery lanca para status, ordenacao e direcao invalidos', () => {
+  it('validateListQuery aceita status ativo e lanca para ordenacao e direcao invalidos', () => {
     expect(() =>
       validator.validateListQuery({
         status_processo: statusprocesso.EM_EXECUCAO,
       }),
-    ).toThrow(BadRequestException);
+    ).not.toThrow();
     expect(() =>
       validator.validateListQuery({ order_by: 'senha_hash' }),
     ).toThrow(BadRequestException);

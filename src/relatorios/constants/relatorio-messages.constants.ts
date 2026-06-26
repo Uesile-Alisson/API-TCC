@@ -27,7 +27,8 @@ export const RELATORIO_MESSAGES = {
   FORMAT: {
     INVALID_FORMAT: 'Formato de relatório inválido.',
     CSV_NOT_SUPPORTED: 'CSV não é suportado pelo módulo Relatórios.',
-    PREVIEW_ONLY_PDF: 'Preview está disponível apenas para relatórios em PDF.',
+    PREVIEW_INVALID_FORMAT:
+      'Preview está disponível apenas para relatórios em PDF ou XLSX.',
   },
   PERMISSION: {
     FORBIDDEN_GENERATE: 'Usuário sem permissão para gerar relatórios.',

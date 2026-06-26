@@ -1,0 +1,39 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { statustanque } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { IsEnum, IsNumber, IsString, MaxLength, Min } from 'class-validator';
+
+export class CreateTanqueConfiguracaoDto {
+  @ApiProperty({ example: 'Tanque 01', maxLength: 80 })
+  @IsString({ message: 'nome deve ser texto.' })
+  @MaxLength(80, { message: 'nome deve ter no maximo 80 caracteres.' })
+  nome!: string;
+
+  @ApiProperty({ example: 1000, minimum: 0 })
+  @Type(() => Number)
+  @IsNumber(
+    { allowInfinity: false, allowNaN: false, maxDecimalPlaces: 2 },
+    { message: 'volume deve ser um numero valido.' },
+  )
+  @Min(0.01, { message: 'volume deve ser maior que 0.' })
+  volume!: number;
+
+  @ApiProperty({ example: 'L', maxLength: 20 })
+  @IsString({ message: 'unidade_volume deve ser texto.' })
+  @MaxLength(20, {
+    message: 'unidade_volume deve ter no maximo 20 caracteres.',
+  })
+  unidade_volume!: string;
+
+  @ApiProperty({ example: -80.5 })
+  @Type(() => Number)
+  @IsNumber(
+    { allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 },
+    { message: 'vacuo_padrao deve ser um numero valido.' },
+  )
+  vacuo_padrao!: number;
+
+  @ApiProperty({ enum: statustanque, example: statustanque.ATIVO })
+  @IsEnum(statustanque, { message: 'status_tanque deve ser valido.' })
+  status_tanque!: statustanque;
+}

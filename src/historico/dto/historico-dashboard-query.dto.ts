@@ -11,11 +11,7 @@ import {
   Min,
 } from 'class-validator';
 
-const HISTORICO_STATUS_PROCESSO = [
-  statusprocesso.CONCLUIDO,
-  statusprocesso.INTERROMPIDO,
-  statusprocesso.FALHA,
-] as const;
+const HISTORICO_STATUS_PROCESSO = Object.values(statusprocesso);
 
 const HISTORICO_CAMPOS_DATA = [
   'criado_em',
@@ -89,7 +85,7 @@ export class HistoricoDashboardQueryDto {
   })
   @IsOptional()
   @IsIn(HISTORICO_STATUS_PROCESSO, {
-    message: 'status_processo deve ser CONCLUIDO, INTERROMPIDO ou FALHA.',
+    message: 'status_processo deve ser um status valido de processo.',
   })
   status_processo?: statusprocesso;
 

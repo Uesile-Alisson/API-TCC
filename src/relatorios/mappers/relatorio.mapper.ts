@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { formatorelatorio } from '@prisma/client';
 
 import type {
   PaginationMeta,
@@ -118,8 +117,7 @@ export class RelatorioMapper {
 
     return {
       possui_arquivo: possuiArquivo,
-      preview_disponivel:
-        possuiArquivo && record.formato_relatorio === formatorelatorio.PDF,
+      preview_disponivel: possuiArquivo,
       download_disponivel: possuiArquivo,
     };
   }

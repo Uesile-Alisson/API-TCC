@@ -41,13 +41,41 @@ model alarmes {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model backups {
-  id_backup       Int       @id @default(autoincrement())
-  id_usuario      Int?
-  nome_arquivo    String    @db.VarChar(180)
-  caminho_arquivo String
-  restaurado_em   DateTime? @db.Timestamp(6)
-  criado_em       DateTime  @default(now()) @db.Timestamp(6)
-  usuarios        usuarios? @relation(fields: [id_usuario], references: [id_usuario], map: "fk_backup_usuario")
+  id_backup                      Int                         @id @default(autoincrement())
+  id_usuario                     Int?
+  id_usuario_restauracao         Int?
+  id_configuracao_sistema        Int?
+  id_mqtt_configuracao           Int?
+  id_mqtt_configuracao_historico Int?
+  tipo_backup                    tipobackup
+  origem_backup                  origembackup                @default(MANUAL)
+  status_backup                  statusbackup                @default(GERADO)
+  nome_arquivo                   String                      @db.VarChar(180)
+  caminho_arquivo                String?
+  snapshot                       Json
+  hash_arquivo                   String?                     @db.VarChar(128)
+  tamanho_bytes                  BigInt?
+  content_type                   String?                     @db.VarChar(120)
+  storage_provider               String                      @default("POSTGRES_JSON") @db.VarChar(30)
+  metadados                      Json?
+  erro                           String?
+  restaurado_em                  DateTime?                   @db.Timestamp(6)
+  criado_em                      DateTime                    @default(now()) @db.Timestamp(6)
+  configuracoessistema           configuracoessistema?       @relation(fields: [id_configuracao_sistema], references: [id_configuracao_sistema], map: "fk_backup_configuracao_sistema")
+  mqttconfiguracoes              mqttconfiguracoes?          @relation(fields: [id_mqtt_configuracao], references: [id_mqtt_configuracao], map: "fk_backup_mqtt_configuracao")
+  mqttconfiguracoeshistorico     mqttconfiguracoeshistorico? @relation(fields: [id_mqtt_configuracao_historico], references: [id_mqtt_configuracao_historico], map: "fk_backup_mqtt_configuracao_historico")
+  usuario_criacao                usuarios?                   @relation("backup_usuario_criacao", fields: [id_usuario], references: [id_usuario], map: "fk_backup_usuario")
+  usuario_restauracao            usuarios?                   @relation("backup_usuario_restauracao", fields: [id_usuario_restauracao], references: [id_usuario], map: "fk_backup_usuario_restauracao")
+
+  @@index([tipo_backup], map: "idx_backups_tipo_backup")
+  @@index([origem_backup], map: "idx_backups_origem_backup")
+  @@index([status_backup], map: "idx_backups_status_backup")
+  @@index([criado_em], map: "idx_backups_criado_em")
+  @@index([id_usuario], map: "idx_backups_id_usuario")
+  @@index([id_usuario_restauracao], map: "idx_backups_id_usuario_restauracao")
+  @@index([id_configuracao_sistema], map: "idx_backups_id_configuracao_sistema")
+  @@index([id_mqtt_configuracao], map: "idx_backups_id_mqtt_configuracao")
+  @@index([id_mqtt_configuracao_historico], map: "idx_backups_id_mqtt_configuracao_historico")
 }
 
 model bombas {
@@ -85,6 +113,7 @@ model configuracoessistema {
   tolerancia_volume_percentual   Decimal            @default(5.00) @db.Decimal(5, 2)
   vazao_minima_l_min             Decimal            @default(0.100) @db.Decimal(10, 3)
   vazao_maxima_l_min             Decimal            @default(5.000) @db.Decimal(10, 3)
+  backups                        backups[]
   bombas                         bombas[]
   usuarios                       usuarios?          @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_config_usuario")
 }
@@ -161,6 +190,7 @@ model mqttconfiguracoes {
   chave_configuracao         String                       @unique(map: "uq_mqtt_config_chave_configuracao") @default("MQTT_PRINCIPAL") @db.VarChar(50)
   usuario_mqtt               String?                      @db.VarChar(120)
   topico_acoplamentos        String                       @default("tsea/acoplamentos") @db.VarChar(150)
+  backups                    backups[]
   usuarios                   usuarios?                    @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_usuario")
   mqttconfiguracoeshistorico mqttconfiguracoeshistorico[]
   mqttmensagens              mqttmensagens[]
@@ -397,7 +427,8 @@ model usuarios {
   criado_em                  DateTime                     @default(now()) @db.Timestamp(6)
   atualizado_em              DateTime?                    @db.Timestamp(6)
   alarmes                    alarmes[]
-  backups                    backups[]
+  backups_criados            backups[]                    @relation("backup_usuario_criacao")
+  backups_restaurados        backups[]                    @relation("backup_usuario_restauracao")
   bombas                     bombas[]
   configuracoessistema       configuracoessistema[]
   logsoperacionais           logsoperacionais[]
@@ -432,6 +463,7 @@ model mqttconfiguracoeshistorico {
   atualizado_em                       DateTime?                             @db.Timestamp(6)
   registrado_em                       DateTime                              @default(now()) @db.Timestamp(6)
   topico_acoplamentos                 String                                @default("tsea/acoplamentos") @db.VarChar(150)
+  backups                             backups[]
   mqttconfiguracoes                   mqttconfiguracoes                     @relation(fields: [id_mqtt_configuracao], references: [id_mqtt_configuracao], map: "fk_mqtt_config_historico_config")
   usuarios                            usuarios?                             @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_historico_usuario")
   processosmqttconfiguracoeshistorico processosmqttconfiguracoeshistorico[]
@@ -518,6 +550,26 @@ enum direcaomqtt {
 enum formatorelatorio {
   PDF
   XLSX
+}
+
+enum origembackup {
+  MANUAL
+  AUTOMATICO
+  SISTEMA
+}
+
+enum statusbackup {
+  GERADO
+  RESTAURADO
+  FALHA_GERACAO
+  FALHA_RESTAURACAO
+  INVALIDO
+}
+
+enum tipobackup {
+  SISTEMA
+  MQTT
+  COMPLETO
 }
 
 enum modulosistema {

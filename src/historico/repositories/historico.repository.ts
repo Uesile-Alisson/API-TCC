@@ -11,7 +11,6 @@ import {
   HISTORICO_GRAFICO_VACUO_DEFAULT_LIMIT,
   HISTORICO_GRAFICO_VACUO_MAX_LIMIT,
   HISTORICO_MAX_LIMIT,
-  HISTORICO_PROCESS_STATUS,
   type HistoricoOrderByField,
   type HistoricoOrderDirection,
 } from '../constants';
@@ -319,9 +318,6 @@ export class HistoricoRepository {
     return this.prisma.processos.findFirst({
       where: {
         id_processo,
-        status_processo: {
-          in: [...HISTORICO_PROCESS_STATUS],
-        },
       },
       select: historicoProcessDetailsSelect,
     });
@@ -430,22 +426,13 @@ export class HistoricoRepository {
   }
 
   async countHistoricalProcesses(): Promise<number> {
-    return this.prisma.processos.count({
-      where: {
-        status_processo: {
-          in: [...HISTORICO_PROCESS_STATUS],
-        },
-      },
-    });
+    return this.prisma.processos.count();
   }
 
   async existsHistoricalProcess(id_processo: number): Promise<boolean> {
     const process = await this.prisma.processos.findFirst({
       where: {
         id_processo,
-        status_processo: {
-          in: [...HISTORICO_PROCESS_STATUS],
-        },
       },
       select: {
         id_processo: true,
@@ -486,14 +473,14 @@ export class HistoricoRepository {
   private buildHistoricalProcessWhere(
     query: ListHistoricoProcessosQueryDto,
   ): Prisma.processosWhereInput {
-    const where: Prisma.processosWhereInput = {
-      status_processo: query.status_processo ?? {
-        in: [...HISTORICO_PROCESS_STATUS],
-      },
-    };
+    const where: Prisma.processosWhereInput = {};
     const andConditions: Prisma.processosWhereInput[] = [];
 
     this.applyProcessDateFilter(where, query);
+
+    if (query.status_processo) {
+      where.status_processo = query.status_processo;
+    }
 
     if (query.id_usuario !== undefined) {
       where.id_usuario = query.id_usuario;

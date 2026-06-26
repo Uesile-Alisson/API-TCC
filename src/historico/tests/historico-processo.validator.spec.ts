@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { statusprocesso } from '@prisma/client';
 import { HistoricoProcessoValidator } from '../validators';
@@ -24,7 +20,7 @@ describe('HistoricoProcessoValidator', () => {
     expect(() => validator.validateExists(null, 10)).toThrow(NotFoundException);
   });
 
-  it('validateIsHistoricalProcess aceita CONCLUIDO, INTERROMPIDO e FALHA', () => {
+  it('validateIsHistoricalProcess aceita todos os processos registrados', () => {
     expect(() =>
       validator.validateIsHistoricalProcess(
         makeProcess(statusprocesso.CONCLUIDO),
@@ -38,24 +34,21 @@ describe('HistoricoProcessoValidator', () => {
     expect(() =>
       validator.validateIsHistoricalProcess(makeProcess(statusprocesso.FALHA)),
     ).not.toThrow();
-  });
-
-  it('validateIsHistoricalProcess lanca ConflictException para status ativo', () => {
     expect(() =>
       validator.validateIsHistoricalProcess(
         makeProcess(statusprocesso.CONFIGURADO),
       ),
-    ).toThrow(ConflictException);
+    ).not.toThrow();
     expect(() =>
       validator.validateIsHistoricalProcess(
         makeProcess(statusprocesso.EM_EXECUCAO),
       ),
-    ).toThrow(ConflictException);
+    ).not.toThrow();
     expect(() =>
       validator.validateIsHistoricalProcess(
         makeProcess(statusprocesso.PAUSADO),
       ),
-    ).toThrow(ConflictException);
+    ).not.toThrow();
   });
 
   it('validateHistoricalProcess chama fluxo completo', () => {
@@ -72,7 +65,7 @@ describe('HistoricoProcessoValidator', () => {
         makeProcess(statusprocesso.EM_EXECUCAO),
         10,
       ),
-    ).toThrow(ConflictException);
+    ).not.toThrow();
   });
 });
 

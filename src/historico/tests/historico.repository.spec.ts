@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { statusprocesso, statustanqueprocesso } from '@prisma/client';
 import type { Mock } from 'jest-mock';
 import { PrismaService } from '../../prisma/prisma.service';
-import { HISTORICO_PROCESS_STATUS } from '../constants';
 import { HistoricoRepository } from '../repositories';
 
 type AsyncMock<T = unknown> = Mock<(...args: unknown[]) => Promise<T>>;
@@ -84,16 +83,14 @@ describe('HistoricoRepository', () => {
     repository = new HistoricoRepository(prisma as unknown as PrismaService);
   });
 
-  it('findHistoricalProcesses monta filtros historicos, paginacao e select seguro', async () => {
+  it('findHistoricalProcesses lista processos registrados, paginacao e select seguro', async () => {
     await repository.findHistoricalProcesses({ page: 2, limit: 5 });
 
     expect(prisma.processos.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.processos.count).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     const args = firstProcessFindManyArg();
-    expect(args.where).toEqual({
-      status_processo: { in: [...HISTORICO_PROCESS_STATUS] },
-    });
+    expect(args.where).toEqual({});
     expect(args.skip).toBe(5);
     expect(args.take).toBe(5);
     expect(args.orderBy).toEqual({ finalizado_em: 'desc' });
@@ -134,14 +131,13 @@ describe('HistoricoRepository', () => {
     });
   });
 
-  it('findHistoricalProcessById busca somente processo historico e permite null', async () => {
+  it('findHistoricalProcessById busca processo registrado e permite null', async () => {
     await repository.findHistoricalProcessById(10);
 
     expect(prisma.processos.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           id_processo: 10,
-          status_processo: { in: [...HISTORICO_PROCESS_STATUS] },
         },
       }),
     );
