@@ -25,6 +25,7 @@ import {
   ProcessoSensorOperationalContext,
   ProcessoTanqueOperationalContext,
 } from './interfaces';
+import type { ProcessoPrecheckValve } from './precheck';
 
 export interface PaginatedResult<T> {
   data: T[];
@@ -137,6 +138,25 @@ type ProcessoWithBasicRelations = Prisma.processosGetPayload<{
   };
 }>;
 
+type ProcessoValveRecord = Prisma.valvulasGetPayload<{
+  include: {
+    bombas: {
+      select: {
+        id_bomba: true;
+        nome: true;
+        status_padrao: true;
+        tipo_bomba: true;
+      };
+    };
+    tanques: {
+      select: {
+        id_tanque: true;
+        nome: true;
+      };
+    };
+  };
+}>;
+
 @Injectable()
 export class ProcessosRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -203,6 +223,61 @@ export class ProcessosRepository {
     });
 
     return processo?.id_processo ?? null;
+  }
+
+  async findValvesByProcessId(
+    id_processo: number,
+  ): Promise<ProcessoPrecheckValve[]> {
+    const processoTanques = await this.prisma.processostanques.findMany({
+      where: { id_processo },
+      select: { id_tanque: true },
+    });
+    const tanqueIds = processoTanques.map((tanque) => tanque.id_tanque);
+
+    if (tanqueIds.length === 0) {
+      return [];
+    }
+
+    const valvulas = await this.prisma.valvulas.findMany({
+      where: {
+        id_tanque: {
+          in: tanqueIds,
+        },
+      },
+      include: {
+        bombas: {
+          select: {
+            id_bomba: true,
+            nome: true,
+            status_padrao: true,
+            tipo_bomba: true,
+          },
+        },
+        tanques: {
+          select: {
+            id_tanque: true,
+            nome: true,
+          },
+        },
+      },
+      orderBy: {
+        id_valvula: 'asc',
+      },
+    });
+
+    return valvulas.map((valvula) => this.mapPrecheckValve(valvula));
+  }
+
+  async findValveByProcessId(
+    id_processo: number,
+    id_valvula: number,
+  ): Promise<ProcessoPrecheckValve | null> {
+    const valvulas: ProcessoPrecheckValve[] =
+      await this.findValvesByProcessId(id_processo);
+
+    return (
+      valvulas.find((valvula) => valvula.id_valvula === id_valvula) ?? null
+    );
   }
 
   async list(
@@ -788,6 +863,10 @@ export class ProcessosRepository {
       modelo_sensor: sensor.sensores.modelo,
       unidade_medida: sensor.sensores.unidade_medida,
       status_sensor: sensor.sensores.status_sensor,
+      ultima_leitura: sensor.sensores.ultima_leitura,
+      ultimo_valor_lido: this.decimalToNumber(
+        sensor.sensores.ultimo_valor_lido,
+      ),
       ativo_no_processo: sensor.ativo,
       acoplamento: this.mapOperationalAcoplamento(
         sensor.sensores.sensoresacoplamentomangueiras,
@@ -822,6 +901,33 @@ export class ProcessosRepository {
       severidade: alarme.severidade,
       status_alarme: alarme.status_alarme,
       ocorrido_em: alarme.ocorrido_em,
+    };
+  }
+
+  private mapPrecheckValve(
+    valvula: ProcessoValveRecord,
+  ): ProcessoPrecheckValve {
+    return {
+      id_valvula: valvula.id_valvula,
+      id_bomba: valvula.id_bomba,
+      id_tanque: valvula.id_tanque,
+      numero_saida_manifold: valvula.numero_saida_manifold,
+      nome_valvula: valvula.nome_valvula,
+      status_valvula: valvula.status_valvula,
+      ativo: valvula.ativo,
+      ultimo_acionamento: valvula.ultimo_acionamento,
+      bomba: {
+        id_bomba: valvula.bombas.id_bomba,
+        nome: valvula.bombas.nome,
+        status_padrao: valvula.bombas.status_padrao,
+        tipo_bomba: valvula.bombas.tipo_bomba,
+      },
+      tanque: valvula.tanques
+        ? {
+            id_tanque: valvula.tanques.id_tanque,
+            nome: valvula.tanques.nome,
+          }
+        : null,
     };
   }
 

@@ -1,13 +1,18 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { nivelacesso } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import type { AuthenticatedUser } from '@/auth/types/authenticated-user.type';
 import { CreateUserDTO } from './dto/create-user.dto';
 import { UpdateUserDTO } from './dto/update-user.dto';
 import { UpdateUserRolesDTO } from './dto/update-user.roles';
+
+type UserWithAccessLevel = Awaited<ReturnType<UserService['findUser']>>;
 
 @Injectable()
 export class UserService {
@@ -40,8 +45,13 @@ export class UserService {
     };
   }
 
-  async updateUser(id_usuario: number, dto: UpdateUserDTO) {
-    await this.findUser(id_usuario);
+  async updateUser(
+    id_usuario: number,
+    dto: UpdateUserDTO,
+    currentUser: AuthenticatedUser,
+  ) {
+    const targetUser = await this.findUser(id_usuario);
+    this.ensureCanModifyTargetUser(currentUser, targetUser);
 
     if (dto.login) {
       await this.validateLoginAlreadyExists(dto.login, id_usuario);
@@ -58,8 +68,13 @@ export class UserService {
     });
   }
 
-  async updateUserRole(id_usuario: number, dto: UpdateUserRolesDTO) {
-    await this.findUser(id_usuario);
+  async updateUserRole(
+    id_usuario: number,
+    dto: UpdateUserRolesDTO,
+    currentUser: AuthenticatedUser,
+  ) {
+    const targetUser = await this.findUser(id_usuario);
+    this.ensureCanModifyTargetUser(currentUser, targetUser);
 
     await this.validateAccessLevelExists(dto.id_nivel_acesso);
 
@@ -72,8 +87,9 @@ export class UserService {
     });
   }
 
-  async removeUser(id_usuario: number) {
-    await this.findUser(id_usuario);
+  async removeUser(id_usuario: number, currentUser: AuthenticatedUser) {
+    const targetUser = await this.findUser(id_usuario);
+    this.ensureCanModifyTargetUser(currentUser, targetUser);
 
     await this.prisma.usuarios.delete({
       where: { id_usuario },
@@ -151,6 +167,25 @@ export class UserService {
   private generateTemporaryPassword(): string {
     const random = Math.random().toString(36).slice(-6);
     return `TSEA@${random}1`;
+  }
+
+  private ensureCanModifyTargetUser(
+    currentUser: AuthenticatedUser,
+    targetUser: UserWithAccessLevel,
+  ): void {
+    const currentUserRole = currentUser.nivel_acesso.nome;
+    const targetUserRole = targetUser.niveisacessos.nome;
+    const isAnotherUser = currentUser.id_usuario !== targetUser.id_usuario;
+
+    if (
+      currentUserRole === nivelacesso.ADMINISTRADOR &&
+      targetUserRole === nivelacesso.ADMINISTRADOR &&
+      isAnotherUser
+    ) {
+      throw new ForbiddenException(
+        'Não é permitido modificar outro usuário administrador.',
+      );
+    }
   }
 
   private defaultUserSelect() {

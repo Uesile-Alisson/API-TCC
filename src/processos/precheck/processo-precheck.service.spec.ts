@@ -1,0 +1,329 @@
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import {
+  StatusAcoplamentoMangueira,
+  StatusValvula,
+  nivelacesso,
+  statusbomba,
+  statusconexaomqtt,
+  statusgeralsistema,
+  statusprocesso,
+  statussensor,
+  statustanque,
+  statustanqueprocesso,
+  tipobomba,
+} from '@prisma/client';
+import type { Mock } from 'jest-mock';
+import { CommandService } from '../../mqtt-hardware/commands/command.service';
+import { MqttConfigService } from '../../mqtt-hardware/config/mqtt-config.service';
+import { ProcessoLogService } from '../logs';
+import { ProcessoMqttOrchestratorService } from '../mqtt';
+import { ProcessosRepository } from '../processos.repository';
+import { ProcessosSocketGateway } from '../socket';
+import { ProcessoStartValidator } from '../validators';
+import { ProcessoPrecheckService } from './processo-precheck.service';
+import { ProcessoPrecheckUser } from './processo-precheck.types';
+
+type SyncMock = Mock<(...args: unknown[]) => unknown>;
+type AsyncMock = Mock<(...args: unknown[]) => Promise<unknown>>;
+
+const syncMock = (): SyncMock => jest.fn<(...args: unknown[]) => unknown>();
+const asyncMock = (): AsyncMock =>
+  jest.fn<(...args: unknown[]) => Promise<unknown>>();
+
+describe('ProcessoPrecheckService', () => {
+  let service: ProcessoPrecheckService;
+  let repository: {
+    findOperationalContextById: AsyncMock;
+    findActiveProcessId: AsyncMock;
+    findValvesByProcessId: AsyncMock;
+    findValveByProcessId: AsyncMock;
+    findById: AsyncMock;
+  };
+  let startValidator: { validateCanStart: SyncMock };
+  let logs: { registerUserAction: AsyncMock };
+  let mqtt: { getHardwareReadiness: SyncMock };
+  let socket: { emitPrecheckResult: SyncMock };
+  let commandService: {
+    abrirValvula: AsyncMock;
+    fecharValvula: AsyncMock;
+  };
+  let mqttConfig: { getConfig: AsyncMock };
+
+  const user: ProcessoPrecheckUser = {
+    sub: 7,
+    login: 'tecnico',
+    id_nivel_acesso: 2,
+    nivel_acesso: nivelacesso.TECNICO,
+  };
+
+  beforeEach(() => {
+    repository = {
+      findOperationalContextById: asyncMock().mockResolvedValue(makeContext()),
+      findActiveProcessId: asyncMock().mockResolvedValue(null),
+      findValvesByProcessId: asyncMock().mockResolvedValue([makeValve()]),
+      findValveByProcessId: asyncMock().mockResolvedValue(makeValve()),
+      findById: asyncMock().mockResolvedValue({
+        id_processo: 10,
+        status_processo: statusprocesso.CONFIGURADO,
+      }),
+    };
+    startValidator = {
+      validateCanStart: syncMock(),
+    };
+    logs = {
+      registerUserAction: asyncMock().mockResolvedValue({}),
+    };
+    mqtt = {
+      getHardwareReadiness: syncMock().mockReturnValue(makeReadiness()),
+    };
+    socket = {
+      emitPrecheckResult: syncMock(),
+    };
+    commandService = {
+      abrirValvula: asyncMock().mockResolvedValue({
+        correlation_id: 'cmd-1',
+        comando: 'ABRIR_VALVULA',
+      }),
+      fecharValvula: asyncMock().mockResolvedValue({
+        correlation_id: 'cmd-2',
+        comando: 'FECHAR_VALVULA',
+      }),
+    };
+    mqttConfig = {
+      getConfig: asyncMock().mockResolvedValue({
+        topico_comandos: 'tsea/comandos',
+        topico_status: 'tsea/status',
+        topico_heartbeat: 'tsea/heartbeat',
+      }),
+    };
+
+    service = new ProcessoPrecheckService(
+      repository as unknown as ProcessosRepository,
+      startValidator as unknown as ProcessoStartValidator,
+      logs as unknown as ProcessoLogService,
+      mqtt as unknown as ProcessoMqttOrchestratorService,
+      socket as unknown as ProcessosSocketGateway,
+      commandService as unknown as CommandService,
+      mqttConfig as unknown as MqttConfigService,
+    );
+  });
+
+  it('GET prechecagem retorna checklist sem acionar hardware, log ou socket', async () => {
+    const result = await service.consultar(10, {
+      ...user,
+      nivel_acesso: nivelacesso.OPERADOR,
+    });
+
+    expect(result.id_processo).toBe(10);
+    expect(result.itens.length).toBeGreaterThan(0);
+    expect(commandService.abrirValvula).not.toHaveBeenCalled();
+    expect(commandService.fecharValvula).not.toHaveBeenCalled();
+    expect(logs.registerUserAction).not.toHaveBeenCalled();
+    expect(socket.emitPrecheckResult).not.toHaveBeenCalled();
+  });
+
+  it('POST executar emite socket, registra log e reprova valvula sem ACK', async () => {
+    const result = await service.executar(10, user);
+
+    expect(result.aprovado).toBe(false);
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          grupo: 'VALVULAS',
+          status: 'NAO_CONFIRMADO',
+        }),
+      ]),
+    );
+    expect(logs.registerUserAction).toHaveBeenCalled();
+    expect(socket.emitPrecheckResult).toHaveBeenCalled();
+  });
+
+  it('reprova quando MQTT esta offline', async () => {
+    mqtt.getHardwareReadiness.mockReturnValueOnce({
+      ...makeReadiness(),
+      mqttConnected: false,
+      communicationReady: false,
+    });
+
+    const result = await service.executar(10, user);
+
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codigo: 'MQTT_CONECTADO',
+          status: 'REPROVADO',
+        }),
+      ]),
+    );
+  });
+
+  it('reprova acoplamento desacoplado por tanque', async () => {
+    const context = makeContext();
+    (
+      context.tanques[0].sensores[0].acoplamento as {
+        status_acoplamento: StatusAcoplamentoMangueira;
+      }
+    ).status_acoplamento = StatusAcoplamentoMangueira.DESACOPLADA;
+    repository.findOperationalContextById.mockResolvedValueOnce(context);
+
+    const result = await service.validarAcoplamentoTanque(10, 30);
+
+    expect(result.status).toBe('REPROVADO');
+  });
+
+  it('bloqueia sensor nao vinculado ao processo', async () => {
+    await expect(service.validarSensor(10, 999)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('bloqueia validar valvula quando ha processo ativo', async () => {
+    repository.findActiveProcessId.mockResolvedValueOnce(10);
+
+    await expect(service.validarValvula(10, 99)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('bloqueia abrir valvula sem processo ativo', async () => {
+    await expect(service.abrirValvula(10, 99, user)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('publica abrir valvula com processo em execucao e retorna nao confirmado sem ACK', async () => {
+    repository.findById.mockResolvedValueOnce({
+      id_processo: 10,
+      status_processo: statusprocesso.EM_EXECUCAO,
+    });
+    repository.findActiveProcessId.mockResolvedValueOnce(10);
+
+    const result = await service.abrirValvula(10, 99, user);
+
+    expect(commandService.abrirValvula).toHaveBeenCalled();
+    expect(result.status).toBe('NAO_CONFIRMADO');
+  });
+
+  function makeReadiness() {
+    return {
+      mqttConnected: true,
+      esp32Online: true,
+      communicationReady: true,
+      currentStatus: {
+        mqttConnected: true,
+        esp32Online: true,
+        lastHeartbeatAt: new Date(),
+        lastStatusAt: new Date(),
+        lastReadingAt: new Date(),
+        currentStatus: statusgeralsistema.OPERACIONAL,
+        lastError: null,
+        updatedAt: new Date(),
+      },
+    };
+  }
+
+  function makeValve() {
+    return {
+      id_valvula: 99,
+      id_bomba: 5,
+      id_tanque: 30,
+      numero_saida_manifold: 1,
+      nome_valvula: 'Valvula 1',
+      status_valvula: StatusValvula.FECHADA,
+      ativo: true,
+      ultimo_acionamento: null,
+      bomba: {
+        id_bomba: 5,
+        nome: 'Bomba principal',
+        status_padrao: statusbomba.ATIVA,
+        tipo_bomba: tipobomba.PRINCIPAL,
+      },
+      tanque: {
+        id_tanque: 30,
+        nome: 'Tanque A',
+      },
+    };
+  }
+
+  function makeContext() {
+    return {
+      id_processo: 10,
+      id_usuario: 7,
+      nome_processo: 'Processo teste',
+      status_processo: statusprocesso.CONFIGURADO,
+      vacuo_alvo: -80,
+      vacuo_inicial: null,
+      vacuo_final: null,
+      vacuo_medio: null,
+      eficiencia: null,
+      tempo_maximo: 60,
+      tempo_execucao: null,
+      iniciado_em: null,
+      pausado_em: null,
+      retomado_em: null,
+      finalizado_em: null,
+      parada_emergencia: false,
+      criado_em: new Date(),
+      tanques: [
+        {
+          id_processo_tanque: 20,
+          id_tanque: 30,
+          nome_tanque: 'Tanque A',
+          volume: 100,
+          unidade_volume: 'L',
+          status_tanque: statustanque.ATIVO,
+          vacuo_alvo: -80,
+          vacuo_inicial: null,
+          vacuo_final: null,
+          vacuo_medio: null,
+          eficiencia: null,
+          status_tanque_processo: statustanqueprocesso.CONFIGURADO,
+          iniciado_em: null,
+          finalizado_em: null,
+          sensores: [
+            {
+              id_processo_tanque_sensor: 40,
+              id_sensor: 50,
+              nome_sensor: 'Sensor A',
+              modelo_sensor: 'MPX',
+              unidade_medida: 'kPa',
+              status_sensor: statussensor.ATIVO,
+              ultima_leitura: new Date(),
+              ultimo_valor_lido: -70,
+              ativo_no_processo: true,
+              acoplamento: {
+                id_sensor: 50,
+                id_tanque: 30,
+                status_acoplamento: StatusAcoplamentoMangueira.ACOPLADA,
+                sinal_detectado: true,
+                ultima_verificacao: new Date(),
+                ultimo_evento_em: new Date(),
+                ativo: true,
+              },
+            },
+          ],
+        },
+      ],
+      safety: {
+        hardware: {
+          mqtt_connected: true,
+          mqtt_status: statusconexaomqtt.CONECTADO,
+          esp32_online: true,
+          esp32_status: statusgeralsistema.OPERACIONAL,
+          last_heartbeat_at: new Date(),
+          last_status_at: new Date(),
+          last_reading_at: new Date(),
+          communication_ready: true,
+        },
+        has_critical_alarm: false,
+        critical_alarms: [],
+        all_tanks_ready: true,
+        all_sensors_ready: true,
+        all_acoplamentos_ready: true,
+        can_start: true,
+        blocking_reasons: [],
+      },
+    };
+  }
+});

@@ -80,6 +80,102 @@ export class ProcessosController {
     return this.processosService.getDashboard(id_processo);
   }
 
+  @Get(':id/prechecagem')
+  @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Consulta pre-checagem operacional do processo.' })
+  consultarPrechecagem(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.consultarPrechecagem(
+      id_processo,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/prechecagem/executar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Executa pre-checagem operacional do processo.' })
+  executarPrechecagem(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.executarPrechecagem(
+      id_processo,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/tanques/:id_tanque/acoplamento/validar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Valida acoplamento de um tanque do processo.' })
+  validarAcoplamentoTanque(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_tanque', ParseIntPipe) id_tanque: number,
+  ) {
+    return this.processosService.validarAcoplamentoTanque(
+      id_processo,
+      id_tanque,
+    );
+  }
+
+  @Post(':id/sensores/:id_sensor/validar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Valida sensor de um processo.' })
+  validarSensor(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_sensor', ParseIntPipe) id_sensor: number,
+  ) {
+    return this.processosService.validarSensor(id_processo, id_sensor);
+  }
+
+  @Get(':id/valvulas')
+  @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Lista valvulas vinculadas ao processo.' })
+  listarValvulas(@Param('id', ParseIntPipe) id_processo: number) {
+    return this.processosService.listarValvulas(id_processo);
+  }
+
+  @Post(':id/valvulas/:id_valvula/validar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Valida uma valvula do processo.' })
+  validarValvula(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_valvula', ParseIntPipe) id_valvula: number,
+  ) {
+    return this.processosService.validarValvula(id_processo, id_valvula);
+  }
+
+  @Post(':id/valvulas/:id_valvula/abrir')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Abre uma valvula do processo.' })
+  abrirValvula(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_valvula', ParseIntPipe) id_valvula: number,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.abrirValvula(
+      id_processo,
+      id_valvula,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/valvulas/:id_valvula/fechar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Fecha uma valvula do processo.' })
+  fecharValvula(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_valvula', ParseIntPipe) id_valvula: number,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.fecharValvula(
+      id_processo,
+      id_valvula,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
   @Patch(':id/config')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Atualiza configuração de um processo.' })

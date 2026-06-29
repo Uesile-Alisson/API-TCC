@@ -20,6 +20,7 @@ import { ProcessoLifecycleService } from './lifecycle';
 import { ProcessoLogService } from './logs';
 import { ProcessoMetricsService } from './metrics';
 import { ProcessoMqttOrchestratorService } from './mqtt';
+import { ProcessoPrecheckService } from './precheck';
 import { ProcessosRepository } from './processos.repository';
 import { ProcessosService } from './processos.service';
 import { ProcessosSocketGateway } from './socket';
@@ -105,6 +106,17 @@ describe('ProcessosService', () => {
     executeEmergencyStop: AsyncMock;
     shutdownAllActuators: AsyncMock;
   };
+  let precheck: {
+    consultar: AsyncMock;
+    executar: AsyncMock;
+    executarObrigatoriaParaInicio: AsyncMock;
+    validarAcoplamentoTanque: AsyncMock;
+    validarSensor: AsyncMock;
+    listarValvulas: AsyncMock;
+    validarValvula: AsyncMock;
+    abrirValvula: AsyncMock;
+    fecharValvula: AsyncMock;
+  };
   let socket: {
     emitProcessCreated: SyncMock;
     emitProcessStarted: SyncMock;
@@ -116,6 +128,7 @@ describe('ProcessosService', () => {
     emitConfigUpdated: SyncMock;
     emitMetricsUpdated: SyncMock;
     emitStatusChanged: SyncMock;
+    emitPrecheckResult: SyncMock;
   };
 
   const user: CurrentUserPayload = {
@@ -235,6 +248,19 @@ describe('ProcessosService', () => {
         message: 'ok',
       }),
     };
+    precheck = {
+      consultar: asyncMock(),
+      executar: asyncMock(),
+      executarObrigatoriaParaInicio: asyncMock().mockResolvedValue({
+        aprovado: true,
+      }),
+      validarAcoplamentoTanque: asyncMock(),
+      validarSensor: asyncMock(),
+      listarValvulas: asyncMock(),
+      validarValvula: asyncMock(),
+      abrirValvula: asyncMock(),
+      fecharValvula: asyncMock(),
+    };
     socket = {
       emitProcessCreated: syncMock(),
       emitProcessStarted: syncMock(),
@@ -246,6 +272,7 @@ describe('ProcessosService', () => {
       emitConfigUpdated: syncMock(),
       emitMetricsUpdated: syncMock(),
       emitStatusChanged: syncMock(),
+      emitPrecheckResult: syncMock(),
     };
 
     service = new ProcessosService(
@@ -259,6 +286,7 @@ describe('ProcessosService', () => {
       logs as unknown as ProcessoLogService,
       mqtt as unknown as ProcessoMqttOrchestratorService,
       socket as unknown as ProcessosSocketGateway,
+      precheck as unknown as ProcessoPrecheckService,
     );
   });
 
@@ -379,6 +407,10 @@ describe('ProcessosService', () => {
 
     const result = await service.start(10, user);
 
+    expect(precheck.executarObrigatoriaParaInicio).toHaveBeenCalledWith(
+      10,
+      user,
+    );
     expect(startValidator.validateCanStart).toHaveBeenCalled();
     expect(mqtt.prepareHardwareForStart).toHaveBeenCalled();
     expect(mqtt.startVacuumOperation).toHaveBeenCalled();
@@ -388,6 +420,18 @@ describe('ProcessosService', () => {
     expect(socket.emitProcessStarted).toHaveBeenCalled();
     expect(socket.emitStatusChanged).toHaveBeenCalled();
     expect(result.status_processo).toBe(statusprocesso.EM_EXECUCAO);
+  });
+
+  it('start nao altera status quando pre-checagem reprova', async () => {
+    precheck.executarObrigatoriaParaInicio.mockRejectedValueOnce(
+      new ConflictException('Pre-checagem operacional reprovada.'),
+    );
+
+    await expect(service.start(10, user)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(repository.applyLifecycleTransition).not.toHaveBeenCalled();
+    expect(mqtt.prepareHardwareForStart).not.toHaveBeenCalled();
   });
 
   it('start lanca ConflictException se MQTT falhar', async () => {
@@ -627,6 +671,8 @@ describe('ProcessosService', () => {
               modelo_sensor: 'MPX',
               unidade_medida: 'kPa',
               status_sensor: statussensor.ATIVO,
+              ultima_leitura: new Date(),
+              ultimo_valor_lido: -70,
               ativo_no_processo: true,
               acoplamento: null,
             },

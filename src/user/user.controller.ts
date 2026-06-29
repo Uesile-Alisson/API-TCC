@@ -18,6 +18,8 @@ import { UpdateUserDTO } from './dto/update-user.dto';
 import { UpdateUserRolesDTO } from './dto/update-user.roles';
 import { UserService } from './user.service';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '@/auth/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '@/auth/types/authenticated-user.type';
 
 @ApiTags('Users')
 @ApiBearerAuth('access-token')
@@ -49,8 +51,9 @@ export class UserController {
   updateUser(
     @Param('id', ParseIntPipe) id_usuario: number,
     @Body() dto: UpdateUserDTO,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.userService.updateUser(id_usuario, dto);
+    return this.userService.updateUser(id_usuario, dto, currentUser);
   }
 
   @Patch(':id/role')
@@ -58,13 +61,17 @@ export class UserController {
   updateUserRole(
     @Param('id', ParseIntPipe) id_usuario: number,
     @Body() dto: UpdateUserRolesDTO,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.userService.updateUserRole(id_usuario, dto);
+    return this.userService.updateUserRole(id_usuario, dto, currentUser);
   }
 
   @Delete(':id')
   @UserRoles(nivelacesso.ADMINISTRADOR)
-  removeUser(@Param('id', ParseIntPipe) id_usuario: number) {
-    return this.userService.removeUser(id_usuario);
+  removeUser(
+    @Param('id', ParseIntPipe) id_usuario: number,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.userService.removeUser(id_usuario, currentUser);
   }
 }

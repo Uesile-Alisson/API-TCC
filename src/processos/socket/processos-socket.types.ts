@@ -1,5 +1,6 @@
 import { statusprocesso } from '@prisma/client';
 import { ProcessoDashboardData, ProcessoMetrics } from '../interfaces';
+import type { ProcessoPrecheckResultado } from '../precheck';
 
 export interface ProcessoSocketBasePayload {
   id_processo: number;
@@ -38,6 +39,8 @@ export interface ProcessoFailureSocketPayload extends ProcessoSocketBasePayload 
   motivo?: string | null;
   message: string;
 }
+
+export type ProcessoPrecheckSocketPayload = ProcessoPrecheckResultado;
 
 export interface ProcessoJoinRoomPayload {
   id_processo: number;

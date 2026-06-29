@@ -24,6 +24,7 @@ import type {
   ProcessoRoomResponsePayload,
   ProcessoStatusChangedPayload,
 } from './processos-socket.types';
+import type { ProcessoPrecheckResultado } from '../precheck';
 
 @WebSocketGateway({
   namespace: 'processos',
@@ -161,6 +162,13 @@ export class ProcessosSocketGateway
     this.emitToAllAndProcessRoom(
       PROCESSOS_SOCKET_EVENTS.STATUS_CHANGED,
       payload,
+    );
+  }
+
+  emitPrecheckResult(resultado: ProcessoPrecheckResultado): void {
+    this.emitToAllAndProcessRoom(
+      PROCESSOS_SOCKET_EVENTS.PRECHECK_RESULT,
+      resultado,
     );
   }
 

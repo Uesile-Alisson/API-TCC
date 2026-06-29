@@ -18,6 +18,7 @@ export const PROCESSOS_SOCKET_EVENTS = {
   METRICS_UPDATED: 'process:metrics-updated',
   DASHBOARD_UPDATED: 'process:dashboard-updated',
   STATUS_CHANGED: 'process:status-changed',
+  PRECHECK_RESULT: 'process:precheck-result',
   ERROR: 'process:error',
 } as const;
 

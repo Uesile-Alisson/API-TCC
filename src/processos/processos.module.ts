@@ -6,6 +6,7 @@ import { ProcessoLifecycleService } from './lifecycle';
 import { ProcessoLogService } from './logs';
 import { ProcessoMetricsService } from './metrics';
 import { ProcessoMqttOrchestratorService } from './mqtt';
+import { ProcessoPrecheckService } from './precheck';
 import { ProcessosController } from './processos.controller';
 import { ProcessosRepository } from './processos.repository';
 import { ProcessosService } from './processos.service';
@@ -28,6 +29,7 @@ import {
     ProcessoLogService,
     ProcessoMetricsService,
     ProcessoMqttOrchestratorService,
+    ProcessoPrecheckService,
     ProcessosSocketGateway,
     ProcessoConfigValidator,
     ProcessoStateValidator,
@@ -42,6 +44,7 @@ import {
     ProcessoLogService,
     ProcessoMetricsService,
     ProcessoMqttOrchestratorService,
+    ProcessoPrecheckService,
     ProcessosSocketGateway,
     ProcessoConfigValidator,
     ProcessoStateValidator,

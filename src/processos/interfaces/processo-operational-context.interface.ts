@@ -46,6 +46,8 @@ export interface ProcessoSensorOperationalContext {
   modelo_sensor: string;
   unidade_medida: string;
   status_sensor: statussensor;
+  ultima_leitura: Date | null;
+  ultimo_valor_lido: number | null;
   ativo_no_processo: boolean;
   acoplamento: ProcessoAcoplamentoOperationalContext | null;
 }

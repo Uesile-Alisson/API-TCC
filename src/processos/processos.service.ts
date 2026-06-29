@@ -31,6 +31,7 @@ import {
   ProcessoMqttHardwareReadiness,
   ProcessoMqttOrchestratorService,
 } from './mqtt';
+import { ProcessoPrecheckService } from './precheck';
 import { ProcessosRepository } from './processos.repository';
 import { ProcessosSocketGateway } from './socket';
 import {
@@ -72,6 +73,7 @@ export class ProcessosService {
     private readonly processoLogService: ProcessoLogService,
     private readonly processoMqttOrchestratorService: ProcessoMqttOrchestratorService,
     private readonly processosSocketGateway: ProcessosSocketGateway,
+    private readonly processoPrecheckService: ProcessoPrecheckService,
   ) {}
 
   async create(dto: CreateProcessoDTO, user: CurrentUserPayload) {
@@ -178,6 +180,11 @@ export class ProcessosService {
   }
 
   async start(id_processo: number, user: CurrentUserPayload) {
+    await this.processoPrecheckService.executarObrigatoriaParaInicio(
+      id_processo,
+      user,
+    );
+
     const context = await this.getRequiredOperationalContext(id_processo);
     const activeProcessId =
       await this.processosRepository.findActiveProcessId();
@@ -597,6 +604,57 @@ export class ProcessosService {
 
   async getDashboard(id_processo: number) {
     return this.findById(id_processo);
+  }
+
+  async consultarPrechecagem(id_processo: number, user: CurrentUserPayload) {
+    return this.processoPrecheckService.consultar(id_processo, user);
+  }
+
+  async executarPrechecagem(id_processo: number, user: CurrentUserPayload) {
+    return this.processoPrecheckService.executar(id_processo, user);
+  }
+
+  async validarAcoplamentoTanque(id_processo: number, id_tanque: number) {
+    return this.processoPrecheckService.validarAcoplamentoTanque(
+      id_processo,
+      id_tanque,
+    );
+  }
+
+  async validarSensor(id_processo: number, id_sensor: number) {
+    return this.processoPrecheckService.validarSensor(id_processo, id_sensor);
+  }
+
+  async listarValvulas(id_processo: number) {
+    return this.processoPrecheckService.listarValvulas(id_processo);
+  }
+
+  async validarValvula(id_processo: number, id_valvula: number) {
+    return this.processoPrecheckService.validarValvula(id_processo, id_valvula);
+  }
+
+  async abrirValvula(
+    id_processo: number,
+    id_valvula: number,
+    user: CurrentUserPayload,
+  ) {
+    return this.processoPrecheckService.abrirValvula(
+      id_processo,
+      id_valvula,
+      user,
+    );
+  }
+
+  async fecharValvula(
+    id_processo: number,
+    id_valvula: number,
+    user: CurrentUserPayload,
+  ) {
+    return this.processoPrecheckService.fecharValvula(
+      id_processo,
+      id_valvula,
+      user,
+    );
   }
 
   private async getRequiredProcess(
