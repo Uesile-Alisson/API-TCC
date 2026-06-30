@@ -11,6 +11,7 @@ import { HistoricoModule } from './historico/historico.module';
 import { RelatoriosModule } from './relatorios/relatorios.module';
 import { ConfiguracoesModule } from './configuracoes/configuracoes.module';
 import { DynamicModule, Module, Type } from '@nestjs/common';
+import { SecurityModule } from './security/security.module';
 
 const optionalModules: Array<Type<unknown> | DynamicModule> = [];
 
@@ -23,6 +24,7 @@ if (process.env.MONGODB_ENABLED === 'true') {
       isGlobal: true,
     }),
     PrismaModule,
+    SecurityModule,
     AuthModule,
     UserModule,
     MqttModule,

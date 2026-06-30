@@ -3,6 +3,10 @@ import { AppModule } from '@/app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { setServers } from 'node:dns';
+import {
+  SqlInjectionDetectorService,
+  SqlInjectionInputPipe,
+} from './security/sql-injection';
 
 setServers(['8.8.8.8', '1.1.1.1']);
 
@@ -16,7 +20,10 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
 
+  const sqlInjectionDetector = app.get(SqlInjectionDetectorService);
+
   app.useGlobalPipes(
+    new SqlInjectionInputPipe(sqlInjectionDetector),
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,

@@ -387,11 +387,15 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
   }
 
   private buildClientOptions(config: ActiveMqttConfig): MqttClientOptions {
+    const mqttUsername =
+      config.usuario_mqtt?.trim() || process.env.MQTT_USERNAME || undefined;
+    const mqttPassword = process.env.MQTT_PASSWORD?.trim() || undefined;
+
     return {
       brokerUrl: config.broker_url,
       port: config.porta,
-      username: config.usuario_mqtt ?? undefined,
-      password: undefined,
+      username: mqttUsername,
+      password: mqttPassword,
       reconnectPeriod: 5000,
       connectTimeout: config.timeout_comunicacao,
       clean: true,
