@@ -8,6 +8,7 @@ import { MqttHealthService } from './connection/mqtt-health.service';
 import { MqttSocketGateway } from './socket/mqtt-socket.gateway';
 import { MqttSocketService } from './socket/mqtt-socket.service';
 import { CommandService } from './commands/command.service';
+import { ValvulaHardwareStatusService } from './valvulas/valvula-hardware-status.service';
 import { AcoplamentoMangueiraHandler } from './handlers/acoplamento-mangueira.handler';
 import { AlarmsHandler } from './handlers/alarms.handler';
 import { HandlersService } from './handlers/mqtt-handlers.service';
@@ -44,6 +45,7 @@ import {
     MqttSocketGateway,
     MqttSocketService,
     CommandService,
+    ValvulaHardwareStatusService,
     // Fluxo ativo que registra listeners no MqttClientService e roteia mensagens MQTT recebidas.
     HandlersService,
     ReadingHandler,

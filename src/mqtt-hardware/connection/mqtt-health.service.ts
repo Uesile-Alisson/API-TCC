@@ -101,12 +101,12 @@ export class MqttHealthService implements OnModuleDestroy, OnModuleInit {
 
   private handleMqttMessage(message: MqttMessage): void {
     if (TopicMatcher.isHeartbeat(message.topic)) {
-      this.handleHeartbeatMessage();
+      this.handleHeartbeatMessage(message);
       return;
     }
 
     if (TopicMatcher.isStatus(message.topic)) {
-      this.handleStatusMessage();
+      this.handleStatusMessage(message);
       return;
     }
 
@@ -121,23 +121,37 @@ export class MqttHealthService implements OnModuleDestroy, OnModuleInit {
     }
   }
 
-  private handleHeartbeatMessage(): void {
+  private handleHeartbeatMessage(message: MqttMessage): void {
+    const now = new Date();
+    const esp32Online = message.payload.status !== 'OFFLINE';
+
     this.updateState({
       mqttConnected: this.mqttClientService.getConnectionState(),
-      esp32Online: true,
-      currentStatus: statusgeralsistema.OPERACIONAL,
-      lastReadingAt: new Date(),
-      lastError: null,
+      esp32Online,
+      currentStatus: esp32Online
+        ? statusgeralsistema.OPERACIONAL
+        : statusgeralsistema.FALHA,
+      lastHeartbeatAt: now,
+      lastError: esp32Online ? null : 'Heartbeat informou ESP32 offline.',
     });
   }
 
-  private handleStatusMessage(): void {
+  private handleStatusMessage(message: MqttMessage): void {
+    const now = new Date();
+    const esp32Online =
+      typeof message.payload.esp32_on === 'boolean'
+        ? message.payload.esp32_on
+        : true;
+
     this.updateState({
       mqttConnected: this.mqttClientService.getConnectionState(),
-      esp32Online: true,
-      currentStatus: statusgeralsistema.OPERACIONAL,
-      lastReadingAt: new Date(),
-      lastError: null,
+      esp32Online,
+      currentStatus: esp32Online
+        ? statusgeralsistema.OPERACIONAL
+        : statusgeralsistema.FALHA,
+      lastStatusAt: now,
+      lastHeartbeatAt: esp32Online ? now : this.state.lastHeartbeatAt,
+      lastError: esp32Online ? null : 'Status informou ESP32 offline.',
     });
   }
 

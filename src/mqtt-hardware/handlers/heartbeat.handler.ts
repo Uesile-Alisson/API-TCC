@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MqttConfigService } from '../config/mqtt-config.service';
+import { StatusHeartbeat } from '../enums/esp32-heartbeat.enum';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
 import { MqttPayloadValidator } from '../validators/mqtt-payload.validator';
 import { MqttMessageHandler } from './interfaces/mqtt-message-handler.interface';
@@ -15,7 +16,10 @@ export class HeartbeatHandler implements MqttMessageHandler<MqttHeartbeatHandler
     MqttPayloadValidator.validateHeartbeat(message.payload);
 
     const heartbeatAt = this.resolveHeartbeatDate(message);
-    const deviceId = this.extractOpitionalString(message.payload, 'device_id');
+    const deviceId =
+      this.extractOpitionalString(message.payload, 'device_id') ??
+      this.extractOpitionalString(message.payload, 'device_is');
+    const esp32Online = message.payload.status !== StatusHeartbeat.OFFLINE;
 
     await this.mqttConfigService.updateLastSync();
 
@@ -25,18 +29,25 @@ export class HeartbeatHandler implements MqttMessageHandler<MqttHeartbeatHandler
       heartbeatAt,
     });
 
-    return this.buildHeartbeatHandlerResult({ deviceId, heartbeatAt, message });
+    return this.buildHeartbeatHandlerResult({
+      deviceId,
+      esp32Online,
+      heartbeatAt,
+      message,
+    });
   }
 
   private buildHeartbeatHandlerResult(params: {
     deviceId: string | null;
+    esp32Online: boolean;
     heartbeatAt: Date;
     message: MqttMessage;
   }): MqttHeartbeatHandlerResult {
-    const { deviceId, heartbeatAt, message } = params;
+    const { deviceId, esp32Online, heartbeatAt, message } = params;
 
     return {
       device_id: deviceId,
+      esp32_online: esp32Online,
       heartbeat_at: heartbeatAt,
       receivedAt: message.receivedAt,
       topic: message.topic,

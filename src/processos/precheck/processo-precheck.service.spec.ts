@@ -139,6 +139,79 @@ describe('ProcessoPrecheckService', () => {
     expect(socket.emitPrecheckResult).toHaveBeenCalled();
   });
 
+  it('aprova valvula ativa com ACK recente e status FECHADA', async () => {
+    repository.findValvesByProcessId.mockResolvedValueOnce([
+      makeValve({ ultimo_acionamento: new Date() }),
+    ]);
+
+    const result = await service.executar(10, user);
+
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          grupo: 'VALVULAS',
+          status: 'APROVADO',
+        }),
+      ]),
+    );
+  });
+
+  it('reprova valvula inativa', async () => {
+    repository.findValvesByProcessId.mockResolvedValueOnce([
+      makeValve({ ativo: false }),
+    ]);
+
+    const result = await service.executar(10, user);
+
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          grupo: 'VALVULAS',
+          status: 'REPROVADO',
+        }),
+      ]),
+    );
+  });
+
+  it('mantem NAO_CONFIRMADO quando ACK da valvula esta vencido', async () => {
+    repository.findValvesByProcessId.mockResolvedValueOnce([
+      makeValve({
+        ultimo_acionamento: new Date(Date.now() - 120_000),
+      }),
+    ]);
+
+    const result = await service.executar(10, user);
+
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          grupo: 'VALVULAS',
+          status: 'NAO_CONFIRMADO',
+        }),
+      ]),
+    );
+  });
+
+  it('reprova valvula com ACK recente em status ABERTA', async () => {
+    repository.findValvesByProcessId.mockResolvedValueOnce([
+      makeValve({
+        status_valvula: StatusValvula.ABERTA,
+        ultimo_acionamento: new Date(),
+      }),
+    ]);
+
+    const result = await service.executar(10, user);
+
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          grupo: 'VALVULAS',
+          status: 'REPROVADO',
+        }),
+      ]),
+    );
+  });
+
   it('reprova quando MQTT esta offline', async () => {
     mqtt.getHardwareReadiness.mockReturnValueOnce({
       ...makeReadiness(),
@@ -223,7 +296,35 @@ describe('ProcessoPrecheckService', () => {
     };
   }
 
-  function makeValve() {
+  type ValveFixture = {
+    id_valvula: number;
+    id_bomba: number;
+    id_tanque: number;
+    numero_saida_manifold: number;
+    nome_valvula: string;
+    status_valvula: StatusValvula;
+    ativo: boolean;
+    ultimo_acionamento: Date | null;
+    bomba: {
+      id_bomba: number;
+      nome: string;
+      status_padrao: statusbomba;
+      tipo_bomba: tipobomba;
+    };
+    tanque: {
+      id_tanque: number;
+      nome: string;
+    };
+  };
+
+  function makeValve(overrides: Partial<ValveFixture> = {}): ValveFixture {
+    return {
+      ...makeValveBase(),
+      ...overrides,
+    };
+  }
+
+  function makeValveBase(): ValveFixture {
     return {
       id_valvula: 99,
       id_bomba: 5,

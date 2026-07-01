@@ -37,7 +37,7 @@ export class Esp32StatusDTO {
 
   @IsOptional()
   @IsInt()
-  sensores_ativos?: string;
+  sensores_ativos?: number;
 
   @IsOptional()
   @IsObject()
@@ -49,5 +49,5 @@ export class Esp32StatusDTO {
 
   @IsDateString()
   @IsNotEmpty()
-  enviado_em!: Date;
+  enviado_em!: Date | string;
 }

@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { formatorelatorio, tiporelatorio } from '@prisma/client';
+import {
+  formatorelatorio,
+  statusprocesso,
+  statustanqueprocesso,
+  tiporelatorio,
+} from '@prisma/client';
 import { createHash } from 'node:crypto';
 import type { Buffer } from 'node:buffer';
 import type { Workbook, Worksheet } from 'exceljs';
@@ -117,15 +122,24 @@ export class ProcessXlsxReportGenerator {
         },
         {
           indicador: 'Eficiência média',
-          valor: this.normalizeNumber(data.resumo.eficiencia_media),
+          valor: this.normalizeProcessNumber(
+            data,
+            data.resumo.eficiencia_media,
+          ),
         },
         {
           indicador: 'Vácuo médio geral',
-          valor: this.normalizeNumber(data.resumo.vacuo_medio_geral),
+          valor: this.normalizeProcessNumber(
+            data,
+            data.resumo.vacuo_medio_geral,
+          ),
         },
         {
           indicador: 'Tempo execução total',
-          valor: this.normalizeNumber(data.resumo.tempo_execucao_total),
+          valor: this.normalizeProcessNumber(
+            data,
+            data.resumo.tempo_execucao_total,
+          ),
         },
       ],
     });
@@ -174,24 +188,27 @@ export class ProcessXlsxReportGenerator {
         { campo: 'Vácuo Alvo', valor: data.processo.vacuo_alvo },
         {
           campo: 'Vácuo Inicial',
-          valor: this.normalizeNumber(data.processo.vacuo_inicial),
+          valor: this.normalizeProcessNumber(data, data.processo.vacuo_inicial),
         },
         {
           campo: 'Vácuo Final',
-          valor: this.normalizeNumber(data.processo.vacuo_final),
+          valor: this.normalizeProcessNumber(data, data.processo.vacuo_final),
         },
         {
           campo: 'Vácuo Médio',
-          valor: this.normalizeNumber(data.processo.vacuo_medio),
+          valor: this.normalizeProcessNumber(data, data.processo.vacuo_medio),
         },
         {
           campo: 'Eficiência',
-          valor: this.normalizeNumber(data.processo.eficiencia),
+          valor: this.normalizeProcessNumber(data, data.processo.eficiencia),
         },
         { campo: 'Tempo Máximo', valor: data.processo.tempo_maximo },
         {
           campo: 'Tempo Execução',
-          valor: this.normalizeNumber(data.processo.tempo_execucao),
+          valor: this.normalizeProcessNumber(
+            data,
+            data.processo.tempo_execucao,
+          ),
         },
         {
           campo: 'Parada Emergência',
@@ -207,27 +224,19 @@ export class ProcessXlsxReportGenerator {
         },
         {
           campo: 'Iniciado em',
-          valor: this.xlsxReportGenerator.formatDateTime(
-            data.processo.iniciado_em,
-          ),
+          valor: this.formatProcessDate(data, data.processo.iniciado_em),
         },
         {
           campo: 'Pausado em',
-          valor: this.xlsxReportGenerator.formatDateTime(
-            data.processo.pausado_em,
-          ),
+          valor: this.formatProcessDate(data, data.processo.pausado_em),
         },
         {
           campo: 'Retomado em',
-          valor: this.xlsxReportGenerator.formatDateTime(
-            data.processo.retomado_em,
-          ),
+          valor: this.formatProcessDate(data, data.processo.retomado_em),
         },
         {
           campo: 'Finalizado em',
-          valor: this.xlsxReportGenerator.formatDateTime(
-            data.processo.finalizado_em,
-          ),
+          valor: this.formatProcessDate(data, data.processo.finalizado_em),
         },
       ],
     });
@@ -357,39 +366,37 @@ export class ProcessXlsxReportGenerator {
         header: 'Vácuo Inicial',
         key: 'vacuo_inicial',
         width: 16,
-        value: (row) => this.normalizeNumber(row.vacuo_inicial),
+        value: (row) => this.normalizeTankNumber(row, row.vacuo_inicial),
       },
       {
         header: 'Vácuo Final',
         key: 'vacuo_final',
         width: 16,
-        value: (row) => this.normalizeNumber(row.vacuo_final),
+        value: (row) => this.normalizeTankNumber(row, row.vacuo_final),
       },
       {
         header: 'Vácuo Médio',
         key: 'vacuo_medio',
         width: 16,
-        value: (row) => this.normalizeNumber(row.vacuo_medio),
+        value: (row) => this.normalizeTankNumber(row, row.vacuo_medio),
       },
       {
         header: 'Eficiência',
         key: 'eficiencia',
         width: 16,
-        value: (row) => this.normalizeNumber(row.eficiencia),
+        value: (row) => this.normalizeTankNumber(row, row.eficiencia),
       },
       {
         header: 'Iniciado em',
         key: 'iniciado_em',
         width: 22,
-        value: (row) =>
-          this.xlsxReportGenerator.formatDateTime(row.iniciado_em),
+        value: (row) => this.formatTankDate(row, row.iniciado_em),
       },
       {
         header: 'Finalizado em',
         key: 'finalizado_em',
         width: 22,
-        value: (row) =>
-          this.xlsxReportGenerator.formatDateTime(row.finalizado_em),
+        value: (row) => this.formatTankDate(row, row.finalizado_em),
       },
       { header: 'Total Sensores', key: 'total_sensores', width: 16 },
       { header: 'Total Leituras', key: 'total_leituras', width: 16 },
@@ -514,6 +521,62 @@ export class ProcessXlsxReportGenerator {
 
   private normalizeNumber(value: number | null | undefined): string | number {
     return this.xlsxReportGenerator.formatNumber(value);
+  }
+
+  private normalizeProcessNumber(
+    data: ProcessReportData,
+    value: number | null | undefined,
+  ): string | number {
+    if (this.isConfiguredProcess(data) && this.isMissingNumber(value)) {
+      return 'Não iniciado';
+    }
+
+    return this.normalizeNumber(value);
+  }
+
+  private normalizeTankNumber(
+    tank: ProcessReportTankInfo,
+    value: number | null | undefined,
+  ): string | number {
+    if (this.isConfiguredTank(tank) && this.isMissingNumber(value)) {
+      return 'Não iniciado';
+    }
+
+    return this.normalizeNumber(value);
+  }
+
+  private formatProcessDate(
+    data: ProcessReportData,
+    value: Date | null | undefined,
+  ): string {
+    if (this.isConfiguredProcess(data) && !value) {
+      return 'Não iniciado';
+    }
+
+    return this.xlsxReportGenerator.formatDateTime(value);
+  }
+
+  private formatTankDate(
+    tank: ProcessReportTankInfo,
+    value: Date | null | undefined,
+  ): string {
+    if (this.isConfiguredTank(tank) && !value) {
+      return 'Não iniciado';
+    }
+
+    return this.xlsxReportGenerator.formatDateTime(value);
+  }
+
+  private isConfiguredProcess(data: ProcessReportData): boolean {
+    return data.processo.status_processo === statusprocesso.CONFIGURADO;
+  }
+
+  private isConfiguredTank(tank: ProcessReportTankInfo): boolean {
+    return tank.status_tanque_processo === statustanqueprocesso.CONFIGURADO;
+  }
+
+  private isMissingNumber(value: number | null | undefined): boolean {
+    return value === null || value === undefined || Number.isNaN(value);
   }
 
   private joinTextList(values: readonly string[]): string {

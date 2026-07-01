@@ -1,10 +1,20 @@
-import { IsDateString, IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { StatusHeartbeat } from '../enums/esp32-heartbeat.enum';
 
 export class Esp32HeartbeatDTO {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  device_is!: string;
+  device_id?: string;
+
+  @IsOptional()
+  @IsString()
+  device_is?: string;
 
   @IsString()
   @IsNotEmpty()

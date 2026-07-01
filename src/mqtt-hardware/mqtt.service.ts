@@ -74,6 +74,8 @@ export type MqttHardwareStatusResponse = {
     ativo: boolean;
   };
   hardware: HardwareState;
+  status_conexao: statusconexaomqtt;
+  esp32_online: boolean;
   consultado_em: Date;
 };
 
@@ -123,6 +125,8 @@ export class MqttService {
         ultima_falha: config.ultima_falha ?? null,
         ativo: config.ativo,
       },
+      status_conexao: config.status_conexao,
+      esp32_online: hardware.esp32Online,
       hardware,
       consultado_em: new Date(),
     };

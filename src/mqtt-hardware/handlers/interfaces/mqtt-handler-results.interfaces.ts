@@ -39,12 +39,14 @@ export interface MqttReadingHandlerResult {
 
 export interface MqttHeartbeatHandlerResult {
   device_id: string | null;
+  esp32_online: boolean;
   heartbeat_at: Date;
   receivedAt: Date;
   topic: string;
 }
 
 export interface MqttStatusHandlerResult {
+  esp32_online: boolean;
   status_geral_sistema: statusgeralsistema;
   mensagem: string | null;
   device_id: string | null;

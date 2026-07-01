@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { formatorelatorio, tiporelatorio } from '@prisma/client';
+import {
+  formatorelatorio,
+  statusprocesso,
+  statustanqueprocesso,
+  tiporelatorio,
+} from '@prisma/client';
 import { createHash } from 'node:crypto';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
@@ -98,18 +103,15 @@ export class ProcessPdfReportGenerator {
       ['Total de alarmes', data.resumo.total_alarmes],
       [
         'Eficiência média',
-        this.pdfReportGenerator.formatNumber(data.resumo.eficiencia_media),
+        this.formatProcessNumber(data, data.resumo.eficiencia_media),
       ],
       [
         'Vácuo médio geral',
-        this.pdfReportGenerator.formatNumber(data.resumo.vacuo_medio_geral),
+        this.formatProcessNumber(data, data.resumo.vacuo_medio_geral),
       ],
       [
         'Tempo de execução total',
-        this.pdfReportGenerator.formatNumber(
-          data.resumo.tempo_execucao_total,
-          0,
-        ),
+        this.formatProcessNumber(data, data.resumo.tempo_execucao_total, 0),
       ],
     ]);
   }
@@ -125,27 +127,24 @@ export class ProcessPdfReportGenerator {
       ],
       [
         'Vácuo inicial',
-        this.pdfReportGenerator.formatNumber(data.processo.vacuo_inicial),
+        this.formatProcessNumber(data, data.processo.vacuo_inicial),
       ],
       [
         'Vácuo final',
-        this.pdfReportGenerator.formatNumber(data.processo.vacuo_final),
+        this.formatProcessNumber(data, data.processo.vacuo_final),
       ],
       [
         'Vácuo médio',
-        this.pdfReportGenerator.formatNumber(data.processo.vacuo_medio),
+        this.formatProcessNumber(data, data.processo.vacuo_medio),
       ],
-      [
-        'Eficiência',
-        this.pdfReportGenerator.formatNumber(data.processo.eficiencia),
-      ],
+      ['Eficiência', this.formatProcessNumber(data, data.processo.eficiencia)],
       [
         'Tempo máximo',
         this.pdfReportGenerator.formatNumber(data.processo.tempo_maximo, 0),
       ],
       [
         'Tempo execução',
-        this.pdfReportGenerator.formatNumber(data.processo.tempo_execucao, 0),
+        this.formatProcessNumber(data, data.processo.tempo_execucao, 0),
       ],
       [
         'Parada emergência',
@@ -155,13 +154,10 @@ export class ProcessPdfReportGenerator {
         'Criado em',
         this.pdfReportGenerator.formatDateTime(data.processo.criado_em),
       ],
-      [
-        'Iniciado em',
-        this.pdfReportGenerator.formatDateTime(data.processo.iniciado_em),
-      ],
+      ['Iniciado em', this.formatProcessDate(data, data.processo.iniciado_em)],
       [
         'Finalizado em',
-        this.pdfReportGenerator.formatDateTime(data.processo.finalizado_em),
+        this.formatProcessDate(data, data.processo.finalizado_em),
       ],
     ]);
   }
@@ -185,10 +181,10 @@ export class ProcessPdfReportGenerator {
         tank.nome_tanque,
         tank.status_tanque_processo,
         this.pdfReportGenerator.formatNumber(tank.vacuo_alvo),
-        this.pdfReportGenerator.formatNumber(tank.vacuo_inicial),
-        this.pdfReportGenerator.formatNumber(tank.vacuo_final),
-        this.pdfReportGenerator.formatNumber(tank.vacuo_medio),
-        this.pdfReportGenerator.formatNumber(tank.eficiencia),
+        this.formatTankNumber(tank, tank.vacuo_inicial),
+        this.formatTankNumber(tank, tank.vacuo_final),
+        this.formatTankNumber(tank, tank.vacuo_medio),
+        this.formatTankNumber(tank, tank.eficiencia),
         tank.total_leituras,
         tank.total_alarmes,
       ]),
@@ -396,5 +392,53 @@ export class ProcessPdfReportGenerator {
 
   private calculateHash(buffer: Buffer): string {
     return createHash('sha256').update(buffer).digest('hex');
+  }
+
+  private formatProcessNumber(
+    data: ProcessReportData,
+    value: number | null | undefined,
+    fractionDigits = 2,
+  ): string {
+    if (this.isConfiguredProcess(data) && this.isMissingNumber(value)) {
+      return 'Não iniciado';
+    }
+
+    return this.pdfReportGenerator.formatNumber(value, fractionDigits);
+  }
+
+  private formatTankNumber(
+    tank: ProcessReportData['tanques'][number],
+    value: number | null | undefined,
+  ): string {
+    if (this.isConfiguredTank(tank) && this.isMissingNumber(value)) {
+      return 'Não iniciado';
+    }
+
+    return this.pdfReportGenerator.formatNumber(value);
+  }
+
+  private formatProcessDate(
+    data: ProcessReportData,
+    value: Date | null | undefined,
+  ): string {
+    if (this.isConfiguredProcess(data) && !value) {
+      return 'Não iniciado';
+    }
+
+    return this.pdfReportGenerator.formatDateTime(value);
+  }
+
+  private isConfiguredProcess(data: ProcessReportData): boolean {
+    return data.processo.status_processo === statusprocesso.CONFIGURADO;
+  }
+
+  private isConfiguredTank(
+    tank: ProcessReportData['tanques'][number],
+  ): boolean {
+    return tank.status_tanque_processo === statustanqueprocesso.CONFIGURADO;
+  }
+
+  private isMissingNumber(value: number | null | undefined): boolean {
+    return value === null || value === undefined || Number.isNaN(value);
   }
 }

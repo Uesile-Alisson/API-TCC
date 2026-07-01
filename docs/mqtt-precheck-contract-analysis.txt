@@ -1,0 +1,612 @@
+ANALISE DO CONTRATO MQTT E PRE-CHECAGEM DE PROCESSO - TSEA
+
+Escopo executado:
+- Apenas analise da API NestJS.
+- Nenhum codigo, schema Prisma, migration, script MQTT ou package.json foi alterado.
+- Arquivo criado: docs/mqtt-precheck-contract-analysis.txt.
+
+Fontes principais analisadas:
+- src/processos/processos.controller.ts
+- src/processos/processos.service.ts
+- src/processos/processos.repository.ts
+- src/processos/precheck/processo-precheck.service.ts
+- src/processos/precheck/processo-precheck.types.ts
+- src/processos/validators/processo-start.validator.ts
+- src/processos/validators/processo-safety.validator.ts
+- src/processos/mqtt/processo-mqtt-orchestrator.service.ts
+- src/mqtt-hardware/mqtt.module.ts
+- src/mqtt-hardware/mqtt.service.ts
+- src/mqtt-hardware/connection/mqtt-client.service.ts
+- src/mqtt-hardware/connection/mqtt-health.service.ts
+- src/mqtt-hardware/handlers/*.ts
+- src/mqtt-hardware/dto/*.ts
+- src/mqtt-hardware/validators/*.ts
+- src/mqtt-hardware/topics/*.ts
+- src/mqtt-hardware/commands/*.ts
+- src/mqtt-hardware/events/cache/*.ts
+- src/mqtt-hardware/events/classifiers/*.ts
+- prisma/schema.prisma
+- prisma/seed.ts
+
+1. VISAO GERAL DO FLUXO DE INICIO DO PROCESSO
+
+Fluxo HTTP principal:
+- ProcessosController.start em src/processos/processos.controller.ts recebe POST /processos/:id/iniciar.
+- ProcessosService.start em src/processos/processos.service.ts executa primeiro ProcessoPrecheckService.executarObrigatoriaParaInicio.
+- Se a pre-checagem reprovar, executarObrigatoriaParaInicio lanca ConflictException com message "Pre-checagem operacional reprovada." e o checklist.
+- Se a pre-checagem aprovar, ProcessosService.start carrega o contexto operacional via ProcessosRepository.findOperationalContextById.
+- O contexto e enriquecido com ProcessoMqttOrchestratorService.getHardwareReadiness, que vem de MqttHealthService.getCurrentState.
+- ProcessoStartValidator.validateCanStart roda as regras antigas/preservadas.
+- ProcessoMqttOrchestratorService.prepareHardwareForStart publica comandos seguros:
+  - DESLIGAR_TODAS_BOMBAS
+  - FECHAR_TODAS_VALVULAS
+  - SINCRONIZAR_HARDWARE
+- ProcessoMqttOrchestratorService.startVacuumOperation atualmente retorna sucesso com Promise.resolve e mensagem informando que o mapeamento de bomba sera informado por contexto operacional futuro. Nao ha comando MQTT real de iniciar bomba nesse metodo no codigo atual.
+- ProcessoLifecycleService aplica transicao para EM_EXECUCAO.
+- Eventos/logs/socket de processo iniciado sao emitidos.
+
+Fluxo MQTT de entrada:
+- MqttClientService.connect em src/mqtt-hardware/connection/mqtt-client.service.ts conecta ao broker e assina:
+  - topico_alarmes
+  - topico_status
+  - topico_heartbeat
+  - topico_leituras
+  - topico_acoplamentos
+- MqttMessageValidator.normalizeIncomingMessage valida topico, QoS e JSON.
+- HandlersService em src/mqtt-hardware/handlers/mqtt-handlers.service.ts roteia mensagens por TopicMatcher.
+- MqttHealthService tambem escuta mensagens e atualiza o estado em memoria usado pela pre-checagem.
+
+2. REGRAS EXATAS PARA APROVAR A PRE-CHECAGEM
+
+Metodo central:
+- ProcessoPrecheckService.buildPrecheck em src/processos/precheck/processo-precheck.service.ts.
+- O resultado e montado por ProcessoPrecheckMapper.buildResultado.
+- INCERTO: nao foi necessario alterar/abrir o mapper para confirmar a formula exata de "aprovado", mas pelo uso dos itens, qualquer item bloqueante reprovado tende a reprovar o resultado.
+
+Itens obrigatorios observados:
+- USUARIO_TOKEN_VALIDO: user.sub > 0.
+- USUARIO_NIVEL_VALIDO: nivel_acesso presente.
+- USUARIO_PERMISSAO_EXECUTAR: ao executar pre-checagem obrigatoria/inicio, somente TECNICO ou ADMINISTRADOR.
+- PROCESSO_EXISTE: processo encontrado.
+- PROCESSO_STATUS_CONFIGURADO: status_processo deve ser CONFIGURADO.
+- PROCESSO_ATIVO_CONCORRENTE: nao pode existir outro processo ativo diferente do processo atual.
+- PROCESSO_CONFIG_MINIMA: deve haver pelo menos um tanque.
+- TANQUES: cada tanque deve estar com status_tanque ATIVO.
+- SENSORES: cada sensor do processo deve estar ativo no vinculo, status_sensor ATIVO, e com leitura recente para aprovar totalmente.
+- ACOPLAMENTO: cada tanque precisa ter acoplamento carregado, ativo, status_acoplamento ACOPLADA, sinal_detectado true e verificacao recente.
+- VALVULAS: valvulas ativas ficam como NAO_CONFIRMADO porque ACK fisico ainda nao esta disponivel; inativas reprovam.
+- BOMBAS: bombas vinculadas por valvulas precisam estar com status_padrao ATIVA.
+- MQTT_CONFIGURACAO: configuracao MQTT principal encontrada.
+- MQTT_CONECTADO: readiness.mqttConnected true.
+- ESP32_ONLINE: readiness.esp32Online true.
+- ESP32_COMUNICACAO_PRONTA: readiness.communicationReady true.
+- PROCESSO_VALIDATORS_EXISTENTES: ProcessoStartValidator.validateCanStart tambem deve passar.
+
+Regras antigas preservadas:
+- ProcessoStartValidator.validateCanStart em src/processos/validators/processo-start.validator.ts exige:
+  - status do processo iniciavel via ProcessoStateValidator;
+  - ausencia de outro processo ativo concorrente;
+  - pelo menos um tanque;
+  - pelo menos um sensor;
+  - nenhum tanque sem sensor;
+  - ProcessoSafetyValidator.validateSafeToStart.
+- ProcessoSafetyValidator em src/processos/validators/processo-safety.validator.ts bloqueia:
+  - MQTT desconectado;
+  - ESP32 offline;
+  - communication_ready false;
+  - status geral FALHA ou BLOQUEADO;
+  - alarme critico ativo;
+  - tanque INATIVO, MANUTENCAO ou FALHA;
+  - sensor inativo, em FALHA ou DESCONECTADO;
+  - acoplamento ausente, inativo, diferente de ACOPLADA ou sem sinal fisico;
+  - parada_emergencia registrada no processo.
+
+Recencia:
+- PROCESSO_PRECHECK_SENSOR_RECENCIA_SEGUNDOS e PROCESSO_PRECHECK_ACOPLAMENTO_RECENCIA_SEGUNDOS ficam em src/processos/precheck/processo-precheck.constants.ts.
+- Sensores usam sensor.ultima_leitura, atualizado pelo ReadingHandler.
+- Acoplamentos usam ultima_verificacao ou ultimo_evento_em, atualizado pelo AcoplamentoMangueiraHandler.
+
+3. CONTRATO MQTT REAL ACEITO PELA API
+
+Topicos padrao:
+- Definidos em src/mqtt-hardware/topics/mqtt-topics.ts:
+  - tsea/leituras
+  - tsea/comandos
+  - tsea/status
+  - tsea/alarmes
+  - tsea/heartbeat
+  - tsea/acoplamentos
+- Seed principal em prisma/seed.ts usa os mesmos topicos.
+- MqttConfigService aceita topicos configuraveis em mqttconfiguracoes, mas TopicMatcher compara principalmente com constantes e tambem aceita alguns sufixos:
+  - leitura: topic === tsea/leituras ou contem "/leituras"
+  - status: topic === tsea/status ou termina com "/status"
+  - alarme: topic === tsea/alarmes ou termina com "/alarmes"
+  - heartbeat: topic === tsea/heartbeat
+  - acoplamento: topic === tsea/acoplamentos
+  - comando: topic === tsea/comandos ou termina com "/comandos"
+
+Formato geral:
+- Payload deve ser JSON objeto, nao array e nao vazio.
+- MqttPayloadValidator usa class-validator com whitelist, forbidNonWhitelisted e forbidUnknownValues.
+- Campos extras sao rejeitados.
+- QoS aceito na entrada: 0, 1 ou 2.
+
+Heartbeat - topico tsea/heartbeat:
+- DTO: src/mqtt-hardware/dto/esp32-heartbeat.dto.ts.
+- Campos aceitos:
+  - device_id?: string
+  - device_is?: string
+  - status: ONLINE | OFFLINE | INICIALIZANDO
+  - enviado_em: string ISO date
+- Handler ativo: HeartbeatHandler.
+- MqttHealthService considera ESP32 online quando payload.status !== "OFFLINE".
+
+Status - topico tsea/status:
+- DTO: src/mqtt-hardware/dto/esp32-status.dto.ts.
+- Campos aceitos:
+  - esp32_on: boolean
+  - status_geral: OPERACIONAL | MANUTENCAO | ALERTA | FALHA | BLOQUEADO
+  - mensagem?: string
+  - device_id?: string
+  - bomba_principal?: string
+  - bomba_auxiliar?: string
+  - sensores_ativos?: number inteiro
+  - valvulas?: objeto
+  - tanques?: objeto
+  - enviado_em: string ISO date
+- Handler ativo: StatusHandler.
+- StatusHandler atualiza configuracoessistema.status_geral_sistema quando ha configuracao do sistema.
+- MqttHealthService usa esp32_on para atualizar esp32Online e lastStatusAt.
+
+Leituras - topico tsea/leituras:
+- DTO: src/mqtt-hardware/dto/esp32-reading.dto.ts.
+- Campos aceitos:
+  - id_processo_tanque_sensor: number inteiro
+  - valor_vacuo: number
+  - unidade_medida: string
+  - leitura_em: string ISO date
+- Handler ativo: ReadingHandler.
+- Requer que processostanquessensores.id_processo_tanque_sensor exista, esteja ativo, nao removido, e o sensor nao esteja excluido.
+- Persiste em leiturasensores com tipo_leitura VACUO.
+- Atualiza sensores.ultimo_valor_lido, sensores.ultima_leitura e sensores.status_sensor ATIVO.
+
+Acoplamentos - topico tsea/acoplamentos:
+- DTO: src/mqtt-hardware/dto/esp32-acoplamento.dto.ts.
+- Campos aceitos:
+  - id_sensor: number inteiro >= 1
+  - id_tanque: number inteiro >= 1
+  - sinal_detectado: boolean
+  - verificado_em?: Date transformavel por class-transformer
+- Handler ativo: AcoplamentoMangueiraHandler.
+- Requer sensoresacoplamentomangueiras por id_sensor.
+- Requer ativo true.
+- Requer id_tanque igual ao cadastrado.
+- Atualiza status_acoplamento para ACOPLADA quando sinal_detectado true, DESACOPLADA quando false.
+- Atualiza ultima_verificacao e, se mudou status, ultimo_evento_em.
+
+Alarmes - topico tsea/alarmes:
+- DTO: src/mqtt-hardware/dto/esp32-alarm.dto.ts.
+- Campos aceitos:
+  - id_processo?: number inteiro
+  - id_processo_tanque?: number inteiro
+  - id_processo_tanque_sensor?: number inteiro
+  - tipo_alarme: SENSOR | BOMBA | MQTT | ESP32 | SISTEMA | VALVULA | PROCESSO
+  - origem_alarme?: SENSOR | ESP32 | MQTT | BACKEND | SISTEMA
+  - severidade: INFO | MEDIO | CRITICO
+  - titulo: string
+  - descricao: string
+  - valor_detectado?: number
+  - unidade?: string
+  - ocorrido_em: string ISO date
+- Handler ativo: AlarmsHandler.
+- Pelo menos uma referencia de origem deve existir: id_processo, id_processo_tanque ou id_processo_tanque_sensor.
+- Se uma referencia for informada, ela deve existir no banco.
+- Persiste alarmes com status_alarme ATIVO.
+
+Comandos - topico tsea/comandos:
+- A API publica neste topico; o ESP32 deve consumir.
+- Estrutura publicada por CommandPayloadBuilder:
+  - comando
+  - correlation_id
+  - enviado_em
+  - solicitado_por
+  - motivo
+  - parametros
+- Comandos conhecidos:
+  - LIGAR_BOMBA
+  - DESLIGAR_BOMBA
+  - DESLIGAR_TODAS_BOMBAS
+  - ABRIR_VALVULA
+  - FECHAR_VALVULA
+  - ABRIR_TODAS_VALVULAS
+  - FECHAR_TODAS_VALVULAS
+  - PARADA_EMERGENCIA
+  - SINCRONIZAR_HARDWARE
+  - REINICIAR_COMUNICACAO
+
+4. CONTRATO ESPECIFICO PARA SCRIPT "ONLINE / PRE-CHECAGEM"
+
+Objetivo do script:
+- Fazer a API considerar o broker conectado, ESP32 online, comunicacao pronta, sensores recentes e acoplamentos acoplados.
+
+Pre-condicoes fora do script:
+- A API precisa estar conectada ao broker MQTT.
+- A configuracao MQTT principal precisa existir.
+- O processo precisa estar CONFIGURADO.
+- Tanques/sensores/valvulas/bombas precisam existir e estar ativos conforme seed ou banco real.
+- Nao pode haver alarme CRITICO ATIVO relacionado ao processo/sistema.
+
+Mensagens MQTT recomendadas:
+
+1) Heartbeat online:
+Topico: tsea/heartbeat
+QoS: 0
+Payload:
+{
+  "device_id": "esp32-tsea-01",
+  "status": "ONLINE",
+  "enviado_em": "2026-07-01T12:00:00.000Z"
+}
+
+Efeito esperado:
+- MqttHealthService define esp32Online true, currentStatus OPERACIONAL, lastHeartbeatAt agora.
+- HeartbeatHandler emite feedback via socket.
+
+2) Status operacional:
+Topico: tsea/status
+QoS: 1
+Payload:
+{
+  "esp32_on": true,
+  "status_geral": "OPERACIONAL",
+  "mensagem": "ESP32 operacional para pre-checagem",
+  "device_id": "esp32-tsea-01",
+  "sensores_ativos": 3,
+  "valvulas": {},
+  "tanques": {},
+  "enviado_em": "2026-07-01T12:00:00.000Z"
+}
+
+Efeito esperado:
+- MqttHealthService define esp32Online true e lastStatusAt.
+- StatusHandler tenta atualizar configuracoessistema.status_geral_sistema para OPERACIONAL.
+- ATENCAO: no codigo atual, esse payload pode acionar o erro statusAt.toISOString is not a function no StatusHandler, explicado na secao 8.
+
+3) Acoplamento acoplado por tanque/sensor de acoplamento:
+Topico: tsea/acoplamentos
+QoS: 1
+Payload:
+{
+  "id_sensor": 0,
+  "id_tanque": 0,
+  "sinal_detectado": true,
+  "verificado_em": "2026-07-01T12:00:00.000Z"
+}
+
+Substituir id_sensor e id_tanque por IDs reais de sensoresacoplamentomangueiras.
+Efeito esperado:
+- status_acoplamento ACOPLADA.
+- sinal_detectado true.
+- ultima_verificacao recente.
+
+4) Leitura recente por sensor de vacuo do processo:
+Topico: tsea/leituras
+QoS: 0
+Payload:
+{
+  "id_processo_tanque_sensor": 0,
+  "valor_vacuo": -80,
+  "unidade_medida": "kPa",
+  "leitura_em": "2026-07-01T12:00:00.000Z"
+}
+
+Substituir id_processo_tanque_sensor por IDs reais de processostanquessensores do processo.
+Efeito esperado:
+- cria leiturasensores.
+- atualiza sensores.ultima_leitura.
+- permite que SENSOR_*_RESPOSTA aprove se a leitura estiver dentro da janela de recencia.
+
+5. CONTRATO PARA SCRIPT "PROCESSO SUCESSO"
+
+Objetivo:
+- Deixar o backend apto a passar na pre-checagem e iniciar o processo via HTTP real.
+
+Sequencia recomendada:
+1. Publicar heartbeat ONLINE em tsea/heartbeat.
+2. Publicar status OPERACIONAL em tsea/status, observando o risco atual do toISOString.
+3. Publicar acoplamento sinal_detectado true para cada tanque/sensor de acoplamento.
+4. Publicar leitura VACUO recente para cada processostanquessensores do processo.
+5. Chamar HTTP POST /processos/:id/iniciar com usuario TECNICO ou ADMINISTRADOR.
+
+Resultado esperado na API:
+- Pre-checagem aprovada se todos os demais dados do banco estiverem consistentes.
+- API publica no topico de comandos:
+  - DESLIGAR_TODAS_BOMBAS
+  - FECHAR_TODAS_VALVULAS
+  - SINCRONIZAR_HARDWARE
+- Processo muda para EM_EXECUCAO.
+
+Contrato de comandos que o ESP32 deve aceitar no topico tsea/comandos:
+{
+  "comando": "SINCRONIZAR_HARDWARE",
+  "correlation_id": "cmd_sincronizar-hardware_...",
+  "enviado_em": "2026-07-01T12:00:00.000Z",
+  "solicitado_por": null,
+  "motivo": "Processo 0: Sincronizar hardware do processo.",
+  "parametros": {}
+}
+
+Para DESLIGAR_TODAS_BOMBAS e FECHAR_TODAS_VALVULAS, a estrutura e a mesma, mudando apenas comando e motivo.
+
+INCERTO:
+- Nao ha ACK de comando implementado no contrato ativo. O proprio ProcessoPrecheckService informa que validacao fisica de valvula depende de protocolo/ACK do ESP32 ainda nao disponivel.
+- startVacuumOperation nao publica comando de ligar bomba no codigo atual.
+
+6. CONTRATO PARA SCRIPT "PROCESSO FALHA"
+
+Falhas que bloqueiam pre-checagem/inicio:
+- Heartbeat OFFLINE em tsea/heartbeat:
+{
+  "device_id": "esp32-tsea-01",
+  "status": "OFFLINE",
+  "enviado_em": "2026-07-01T12:00:00.000Z"
+}
+
+- Status FALHA em tsea/status:
+{
+  "esp32_on": false,
+  "status_geral": "FALHA",
+  "mensagem": "Falha simulada no hardware",
+  "device_id": "esp32-tsea-01",
+  "enviado_em": "2026-07-01T12:00:00.000Z"
+}
+
+- Acoplamento desacoplado:
+{
+  "id_sensor": 0,
+  "id_tanque": 0,
+  "sinal_detectado": false,
+  "verificado_em": "2026-07-01T12:00:00.000Z"
+}
+
+- Alarme critico ativo:
+{
+  "id_processo": 0,
+  "tipo_alarme": "ESP32",
+  "origem_alarme": "ESP32",
+  "severidade": "CRITICO",
+  "titulo": "Falha critica simulada",
+  "descricao": "Falha critica enviada pelo ESP32 para validar bloqueio.",
+  "valor_detectado": 1,
+  "unidade": "flag",
+  "ocorrido_em": "2026-07-01T12:00:00.000Z"
+}
+
+Efeitos esperados:
+- Heartbeat OFFLINE/status FALHA deixam readiness reprovado.
+- Acoplamento false deixa ACOPLAMENTO reprovado.
+- Alarme CRITICO ATIVO entra em ProcessosRepository.findOperationalContextById e ProcessoSafetyValidator bloqueia inicio.
+
+INCERTO:
+- O codigo ativo de HandlersService nao chama diretamente HardwareStatusEventHandler/HeartbeatEventHandler/ReadingEventHandler/AcoplamentoEventHandler. Esses event handlers e classifiers estao registrados no modulo, mas o roteamento MQTT ativo lido chama os handlers simples em src/mqtt-hardware/handlers. Portanto, criacao automatica de alarme por classifier/event handler a partir de status/heartbeat nao esta comprovada pelo fluxo ativo atual.
+- Nao foi encontrado, no fluxo MQTT ativo analisado, um handler que marque automaticamente processos como FALHA ao receber status FALHA. A falha bloqueia inicio e pode criar alarme se enviada pelo topico de alarmes.
+
+7. IDS REAIS NECESSARIOS PARA OS SCRIPTS
+
+IDs necessarios:
+- id_processo: usado em POST /processos/:id/iniciar e em payloads de alarme.
+- id_processo_tanque_sensor: usado no payload de leitura em tsea/leituras.
+- id_sensor: usado no payload de acoplamento em tsea/acoplamentos.
+- id_tanque: usado no payload de acoplamento em tsea/acoplamentos.
+- id_processo_tanque: opcional em alarmes, caso o script queira apontar para tanque do processo.
+- id_valvula/id_bomba: necessarios apenas se o script quiser interpretar comandos de valvula/bomba publicados pela API.
+
+Onde esses IDs existem:
+- prisma/schema.prisma:
+  - processos.id_processo
+  - processostanques.id_processo_tanque
+  - processostanquessensores.id_processo_tanque_sensor
+  - sensores.id_sensor
+  - tanques.id_tanque
+  - valvulas.id_valvula
+  - bombas.id_bomba
+  - sensoresacoplamentomangueiras.id_sensor e id_tanque
+
+Seeds conhecidos:
+- prisma/seed.ts cria tanques:
+  - Tanque Regulador TR-01
+  - Tanque Regulador TR-02
+  - Tanque Regulador TR-03
+- prisma/seed.ts cria processo:
+  - Processo de Vacuo - Reguladores TR-01 a TR-03
+- prisma/seed.ts cria configuracao MQTT principal:
+  - chave_configuracao MQTT_PRINCIPAL
+  - topicos tsea/*
+- prisma/seed.ts cria acoplamentos inicialmente ACOPLADA e sinal_detectado true.
+- prisma/seed.ts cria leituras iniciais recentes em seedInitialReadings, mas a recencia depende do horario de execucao do seed.
+
+INCERTO:
+- Os valores numericos reais dependem do banco atual e de dados ja existentes. Como esta tarefa proibiu alterar codigo/scripts e pediu analise, este documento nao executou consulta de banco para fixar IDs numericos.
+- Para um script real, a forma segura e buscar IDs por nome no banco antes de publicar, por exemplo:
+  - processo por nome_processo.
+  - processostanques por id_processo.
+  - processostanquessensores por id_processo_tanque.
+  - sensoresacoplamentomangueiras por id_tanque/id_sensor.
+
+8. ANALISE DO ERRO statusAt.toISOString is not a function
+
+Local provavel:
+- src/mqtt-hardware/handlers/status.handler.ts.
+
+Caminho:
+- StatusHandler.handle chama validatePayload.
+- validatePayload usa MqttPayloadValidator.validateStatus.
+- MqttPayloadValidator usa plainToInstance(Esp32StatusDTO, payload) e validateSync.
+- Esp32StatusDTO.enviado_em esta tipado como Date, mas decorado com @IsDateString, sem @Type(() => Date).
+- Portanto, quando payload.enviado_em chega como string ISO valida, dto.enviado_em continua sendo string.
+- StatusHandler.resolveStatusDate retorna dto.enviado_em ?? message.receivedAt.
+- statusAt pode ser string.
+- StatusHandler.logStatusProcessed chama statusAt.toISOString().
+- Se statusAt for string, ocorre "statusAt.toISOString is not a function".
+
+Conclusao:
+- A causa nao e o payload ISO em si; o payload ISO e exigido por @IsDateString.
+- A causa e a divergencia entre DTO tipado como Date e transformacao real ausente.
+- O mesmo padrao existe em Esp32ReadingDTO.leitura_em tipado como Date com @IsDateString, mas o log de leitura usa datas retornadas do Prisma depois da criacao. O risco principal comprovado esta no StatusHandler.
+
+Sem alterar codigo, mitigacao operacional:
+- Para validar apenas online/pre-checagem, heartbeat ONLINE ja atualiza MqttHealthService para esp32Online true e currentStatus OPERACIONAL.
+- Ainda assim, status MQTT e parte do contrato real e o bug deve ser corrigido em tarefa separada se o script precisar publicar tsea/status sem erro.
+
+9. DIFERENCA ENTRE CAMPOS HTTP E MQTT
+
+HTTP:
+- POST /processos/:id/iniciar nao recebe corpo de configuracao do processo.
+- O id_processo vem na rota.
+- O usuario vem do JWT via CurrentUser.
+- A API busca todo o contexto no banco.
+- A API publica comandos MQTT no topico de comandos.
+
+MQTT:
+- Mensagens recebidas sao JSON em topicos.
+- Os IDs precisam estar no payload quando o handler precisa correlacionar com banco.
+- Leituras usam id_processo_tanque_sensor, nao id_sensor isolado.
+- Acoplamento usa id_sensor + id_tanque, nao id_processo_tanque_sensor.
+- Alarmes podem usar id_processo, id_processo_tanque ou id_processo_tanque_sensor, mas precisam de pelo menos uma referencia.
+- Comandos publicados pela API usam "comando" e "parametros"; nao usam os DTOs HTTP.
+
+Campos que aparecem no HTTP/estado mas nao sao aceitos nos DTOs MQTT:
+- status_bomba_principal/status_bomba_auxiliar aparecem em socket payload interno, mas Esp32StatusDTO aceita bomba_principal e bomba_auxiliar como string.
+- processo_em_execucao, id_processo_tanque e id_processo_tanque_sensor aparecem nas interfaces de eventos/classifiers, mas nao no Esp32StatusDTO ativo.
+- Campos extras em payload MQTT sao rejeitados pelo forbidNonWhitelisted.
+
+10. RISCOS E PONTOS INCERTOS
+
+Riscos:
+- statusAt.toISOString quebra processamento de status MQTT quando enviado_em chega como string ISO.
+- Nao ha ACK fisico confiavel para valvulas/comandos; pre-checagem marca valvulas como NAO_CONFIRMADO.
+- startVacuumOperation ainda nao publica comando real de iniciar bomba/vacuo.
+- TopicMatcher usa constantes tsea/* para heartbeat/acoplamento; se a configuracao no banco alterar topicos para valores totalmente diferentes, INCERTO se todos os handlers reconheceriam corretamente os topicos.
+- MqttHealthService mantem estado em memoria; reinicio da API perde lastHeartbeatAt/lastStatusAt/lastReadingAt ate novas mensagens chegarem.
+- Leitura inicial do seed pode deixar de ser recente conforme o tempo passa.
+- Alarme critico ativo bloqueia inicio; scripts de sucesso precisam garantir que nao exista alarme CRITICO ATIVO pendente.
+
+Pontos INCERTO:
+- O mapper exato do resultado aprovado/reprovado nao foi detalhado aqui alem do comportamento inferido pelo uso dos itens.
+- Classifiers/event handlers em src/mqtt-hardware/events estao registrados no modulo, mas nao foi comprovado que o fluxo MQTT ativo os chama automaticamente.
+- IDs numericos reais nao foram consultados no banco nesta tarefa.
+
+11. PAYLOADS FINAIS RECOMENDADOS
+
+ONLINE / PRE-CHECAGEM:
+
+Topico: tsea/heartbeat
+QoS: 0
+{
+  "device_id": "esp32-tsea-01",
+  "status": "ONLINE",
+  "enviado_em": "2026-07-01T12:00:00.000Z"
+}
+
+Topico: tsea/acoplamentos
+QoS: 1
+Enviar um por tanque/sensor de acoplamento:
+{
+  "id_sensor": 0,
+  "id_tanque": 0,
+  "sinal_detectado": true,
+  "verificado_em": "2026-07-01T12:00:00.000Z"
+}
+
+Topico: tsea/leituras
+QoS: 0
+Enviar uma por processostanquessensores do processo:
+{
+  "id_processo_tanque_sensor": 0,
+  "valor_vacuo": -80,
+  "unidade_medida": "kPa",
+  "leitura_em": "2026-07-01T12:00:00.000Z"
+}
+
+Topico: tsea/status
+QoS: 1
+Usar apos corrigir o bug statusAt.toISOString, ou aceitar que o handler atual pode registrar erro:
+{
+  "esp32_on": true,
+  "status_geral": "OPERACIONAL",
+  "mensagem": "ESP32 operacional",
+  "device_id": "esp32-tsea-01",
+  "sensores_ativos": 3,
+  "valvulas": {},
+  "tanques": {},
+  "enviado_em": "2026-07-01T12:00:00.000Z"
+}
+
+PROCESSO SUCESSO:
+- Publicar ONLINE / PRE-CHECAGEM.
+- Chamar POST /processos/{id_processo}/iniciar autenticado como TECNICO ou ADMINISTRADOR.
+- ESP32 deve escutar tsea/comandos e aceitar:
+{
+  "comando": "DESLIGAR_TODAS_BOMBAS",
+  "correlation_id": "cmd_desligar-todas-bombas_...",
+  "enviado_em": "2026-07-01T12:00:00.000Z",
+  "solicitado_por": null,
+  "motivo": "Processo 0: Colocar hardware do processo em estado seguro.",
+  "parametros": {}
+}
+
+{
+  "comando": "FECHAR_TODAS_VALVULAS",
+  "correlation_id": "cmd_fechar-todas-valvulas_...",
+  "enviado_em": "2026-07-01T12:00:00.000Z",
+  "solicitado_por": null,
+  "motivo": "Processo 0: Colocar hardware do processo em estado seguro.",
+  "parametros": {}
+}
+
+{
+  "comando": "SINCRONIZAR_HARDWARE",
+  "correlation_id": "cmd_sincronizar-hardware_...",
+  "enviado_em": "2026-07-01T12:00:00.000Z",
+  "solicitado_por": null,
+  "motivo": "Processo 0: Sincronizar hardware do processo.",
+  "parametros": {}
+}
+
+PROCESSO FALHA / BLOQUEIO:
+
+Topico: tsea/heartbeat
+QoS: 0
+{
+  "device_id": "esp32-tsea-01",
+  "status": "OFFLINE",
+  "enviado_em": "2026-07-01T12:00:00.000Z"
+}
+
+Topico: tsea/acoplamentos
+QoS: 1
+{
+  "id_sensor": 0,
+  "id_tanque": 0,
+  "sinal_detectado": false,
+  "verificado_em": "2026-07-01T12:00:00.000Z"
+}
+
+Topico: tsea/alarmes
+QoS: 1
+{
+  "id_processo": 0,
+  "tipo_alarme": "ESP32",
+  "origem_alarme": "ESP32",
+  "severidade": "CRITICO",
+  "titulo": "Falha critica simulada",
+  "descricao": "Falha critica enviada pelo ESP32 para validar bloqueio.",
+  "valor_detectado": 1,
+  "unidade": "flag",
+  "ocorrido_em": "2026-07-01T12:00:00.000Z"
+}
+
+Observacao final:
+- Substituir todos os zeros por IDs reais do banco antes de publicar.
+- Nao adicionar campos extras aos JSONs; eles serao rejeitados.
+- Para status, corrigir primeiro a conversao de enviado_em para Date ou proteger o log antes de usar toISOString.

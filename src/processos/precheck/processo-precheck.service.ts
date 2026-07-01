@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   StatusAcoplamentoMangueira,
+  StatusValvula,
   nivelacesso,
   resultadooperacao,
   statusconexaomqtt,
@@ -33,6 +34,7 @@ import { ProcessoStartValidator } from '../validators';
 import {
   PROCESSO_PRECHECK_ACOPLAMENTO_RECENCIA_SEGUNDOS,
   PROCESSO_PRECHECK_SENSOR_RECENCIA_SEGUNDOS,
+  PROCESSO_PRECHECK_VALVULA_ACK_RECENCIA_SEGUNDOS,
 } from './processo-precheck.constants';
 import { ProcessoPrecheckMapper } from './processo-precheck.mapper';
 import {
@@ -632,6 +634,8 @@ export class ProcessoPrecheckService {
   private buildValveItems(
     valvulas: ProcessoPrecheckValve[],
   ): ProcessoPrecheckItem[] {
+    const now = new Date();
+
     if (valvulas.length === 0) {
       return [
         ProcessoPrecheckMapper.buildItem({
@@ -647,29 +651,100 @@ export class ProcessoPrecheckService {
     }
 
     return valvulas.map((valvula) => {
-      const active = valvula.ativo;
-      const status: ProcessoPrecheckItemStatus = active
-        ? 'NAO_CONFIRMADO'
-        : 'REPROVADO';
+      const evaluation = this.evaluateValvePrecheck(valvula, now);
 
       return ProcessoPrecheckMapper.buildItem({
         codigo: `VALVULA_${valvula.id_valvula}_VALIDACAO`,
         titulo: valvula.nome_valvula,
         grupo: 'VALVULAS',
-        status,
-        mensagem: active
-          ? 'Valvula esta cadastrada e ativa, mas validacao fisica depende de ACK real do ESP32.'
-          : 'Valvula esta inativa.',
-        evidencia: `status=${valvula.status_valvula}`,
+        status: evaluation.status,
+        mensagem: evaluation.mensagem,
+        evidencia: `status=${valvula.status_valvula}; ultimo_ack=${valvula.ultimo_acionamento?.toISOString() ?? 'ausente'}`,
         detalhes: {
           id_tanque: valvula.id_tanque,
           id_bomba: valvula.id_bomba,
-          ack_disponivel: false,
+          ack_disponivel: evaluation.ackDisponivel,
+          ack_recente: evaluation.ackRecente,
+          falha_fisica: valvula.status_valvula === StatusValvula.FALHA,
+          status_fisico_esperado: StatusValvula.FECHADA,
+          recencia_exigida_segundos:
+            PROCESSO_PRECHECK_VALVULA_ACK_RECENCIA_SEGUNDOS,
         },
         id_recurso: valvula.id_valvula,
         tipo_recurso: 'VALVULA',
       });
     });
+  }
+
+  private evaluateValvePrecheck(
+    valvula: ProcessoPrecheckValve,
+    now: Date,
+  ): {
+    status: ProcessoPrecheckItemStatus;
+    mensagem: string;
+    ackDisponivel: boolean;
+    ackRecente: boolean;
+  } {
+    if (!valvula.ativo) {
+      return {
+        status: 'REPROVADO',
+        mensagem: 'Valvula esta inativa.',
+        ackDisponivel: false,
+        ackRecente: false,
+      };
+    }
+
+    const ultimoAck = valvula.ultimo_acionamento;
+    const ackDisponivel = ultimoAck !== null;
+    const ackRecente = ultimoAck
+      ? now.getTime() - ultimoAck.getTime() <=
+        PROCESSO_PRECHECK_VALVULA_ACK_RECENCIA_SEGUNDOS * 1000
+      : false;
+
+    if (!ackDisponivel) {
+      return {
+        status: 'NAO_CONFIRMADO',
+        mensagem:
+          'Valvula ativa, mas ainda sem ACK/status fisico recebido do ESP32.',
+        ackDisponivel,
+        ackRecente,
+      };
+    }
+
+    if (!ackRecente) {
+      return {
+        status: 'NAO_CONFIRMADO',
+        mensagem:
+          'Valvula ativa, mas o ACK/status fisico do ESP32 esta vencido.',
+        ackDisponivel,
+        ackRecente,
+      };
+    }
+
+    if (valvula.status_valvula === StatusValvula.FALHA) {
+      return {
+        status: 'REPROVADO',
+        mensagem: 'Valvula reportou falha fisica pelo ESP32.',
+        ackDisponivel,
+        ackRecente,
+      };
+    }
+
+    if (valvula.status_valvula !== StatusValvula.FECHADA) {
+      return {
+        status: 'REPROVADO',
+        mensagem: `Valvula nao esta em estado seguro para inicio. Status fisico atual: ${valvula.status_valvula}.`,
+        ackDisponivel,
+        ackRecente,
+      };
+    }
+
+    return {
+      status: 'APROVADO',
+      mensagem: 'Valvula fechada com ACK fisico recente do ESP32.',
+      ackDisponivel,
+      ackRecente,
+    };
   }
 
   private buildBombItems(

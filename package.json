@@ -22,7 +22,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "sim:mqtt:preparo": "node scripts/mqtt-sim/01-preparar-online.mjs",
+    "sim:mqtt:sucesso": "node scripts/mqtt-sim/02-processo-sucesso.mjs",
+    "sim:mqtt:falha": "node scripts/mqtt-sim/03-processo-falha.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

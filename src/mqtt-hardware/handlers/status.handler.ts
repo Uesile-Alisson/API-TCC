@@ -5,6 +5,7 @@ import { MqttConfigService } from '../config/mqtt-config.service';
 import { Esp32StatusDTO } from '../dto/esp32-status.dto';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
 import { MqttPayloadValidator } from '../validators/mqtt-payload.validator';
+import { ValvulaHardwareStatusService } from '../valvulas/valvula-hardware-status.service';
 import { MqttMessageHandler } from './interfaces/mqtt-message-handler.interface';
 import { MqttStatusHandlerResult } from './interfaces/mqtt-handler-results.interfaces';
 
@@ -20,6 +21,7 @@ export class StatusHandler implements MqttMessageHandler<MqttStatusHandlerResult
   constructor(
     private readonly prisma: PrismaService,
     private readonly mqttConfigService: MqttConfigService,
+    private readonly valvulaHardwareStatusService: ValvulaHardwareStatusService,
   ) {}
 
   async handle(message: MqttMessage): Promise<MqttStatusHandlerResult | null> {
@@ -27,6 +29,10 @@ export class StatusHandler implements MqttMessageHandler<MqttStatusHandlerResult
     const statusAt = this.resolveStatusDate(dto, message);
 
     await this.updateMqttLastSync();
+    await this.valvulaHardwareStatusService.processStatusPayload(
+      dto.valvulas,
+      statusAt,
+    );
     const currentSystemConfig = await this.findcurrentSystemConfig();
 
     if (!currentSystemConfig) {
@@ -69,6 +75,7 @@ export class StatusHandler implements MqttMessageHandler<MqttStatusHandlerResult
     const { dto, message, statusAt, statusChanged } = params;
 
     return {
+      esp32_online: dto.esp32_on,
       status_geral_sistema: dto.status_geral,
       mensagem: dto.mensagem ?? null,
       device_id: dto.device_id ?? null,
@@ -84,7 +91,21 @@ export class StatusHandler implements MqttMessageHandler<MqttStatusHandlerResult
   }
 
   private resolveStatusDate(dto: Esp32StatusDTO, message: MqttMessage): Date {
-    return dto.enviado_em ?? message.receivedAt;
+    const value = dto.enviado_em;
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = new Date(value);
+
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return message.receivedAt;
   }
 
   private async updateMqttLastSync(): Promise<void> {

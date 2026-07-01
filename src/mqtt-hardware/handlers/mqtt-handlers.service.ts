@@ -167,7 +167,7 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
     result: MqttHeartbeatHandlerResult,
   ): HeartbeatSocketPayload {
     return {
-      esp32_online: true,
+      esp32_online: result.esp32_online,
       receivedAt: result.receivedAt,
       lastHeartbeatAt: result.heartbeat_at,
       device_id: result.device_id,
@@ -195,7 +195,7 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
   ): HardwareStatusSocketPayload {
     return {
       id_mqtt_mensagem: null,
-      esp32_online: true,
+      esp32_online: result.esp32_online,
       status_bomba_principal: null,
       status_bomba_auxiliar: null,
       status_geral_sistema: result.status_geral_sistema,

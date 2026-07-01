@@ -68,7 +68,11 @@ type ProcessoOperationalRecord = Prisma.processosGetPayload<{
     };
     processostanques: {
       include: {
-        tanques: true;
+        tanques: {
+          include: {
+            sensoresacoplamentomangueiras: true;
+          };
+        };
         processostanquessensores: {
           include: {
             sensores: {
@@ -412,7 +416,11 @@ export class ProcessosRepository {
         },
         processostanques: {
           include: {
-            tanques: true,
+            tanques: {
+              include: {
+                sensoresacoplamentomangueiras: true,
+              },
+            },
             processostanquessensores: {
               include: {
                 sensores: {
@@ -821,7 +829,7 @@ export class ProcessosRepository {
           tanque.sensores.every((sensor) => sensor.ativo_no_processo),
         ),
         all_acoplamentos_ready: tanques.every((tanque) =>
-          tanque.sensores.every((sensor) => sensor.acoplamento?.ativo === true),
+          tanque.sensores.some((sensor) => sensor.acoplamento?.ativo === true),
         ),
         can_start: false,
         blocking_reasons: [],
@@ -848,13 +856,17 @@ export class ProcessosRepository {
       iniciado_em: tanque.iniciado_em,
       finalizado_em: tanque.finalizado_em,
       sensores: tanque.processostanquessensores.map((sensor) =>
-        this.mapOperationalSensor(sensor),
+        this.mapOperationalSensor(
+          sensor,
+          tanque.tanques.sensoresacoplamentomangueiras,
+        ),
       ),
     };
   }
 
   private mapOperationalSensor(
     sensor: ProcessoOperationalRecord['processostanques'][number]['processostanquessensores'][number],
+    tanqueAcoplamento: ProcessoOperationalRecord['processostanques'][number]['tanques']['sensoresacoplamentomangueiras'],
   ): ProcessoSensorOperationalContext {
     return {
       id_processo_tanque_sensor: sensor.id_processo_tanque_sensor,
@@ -869,7 +881,7 @@ export class ProcessosRepository {
       ),
       ativo_no_processo: sensor.ativo,
       acoplamento: this.mapOperationalAcoplamento(
-        sensor.sensores.sensoresacoplamentomangueiras,
+        sensor.sensores.sensoresacoplamentomangueiras ?? tanqueAcoplamento,
       ),
     };
   }
