@@ -9,34 +9,80 @@ datasource db {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model alarmes {
-  id_alarme                 Int                       @id @default(autoincrement())
-  id_mqtt_mensagem          Int?
-  id_usuario_responsavel    Int?
-  titulo                    String                    @db.VarChar(120)
-  descricao                 String
-  tipo_alarme               tipoalarme
-  severidade                severidadealarme
-  status_alarme             statusalarme
-  origem_alarme             origemalarme
-  valor_detectado           Decimal?                  @db.Decimal(10, 3)
-  unidade                   String?                   @db.VarChar(20)
-  ocorrido_em               DateTime                  @db.Timestamp(6)
-  resolvido_em              DateTime?                 @db.Timestamp(6)
-  excluido_em               DateTime?                 @db.Timestamp(6)
-  id_processo_tanque_sensor Int?
-  id_processo               Int?
-  id_processo_tanque        Int?
-  mqttmensagens             mqttmensagens?            @relation(fields: [id_mqtt_mensagem], references: [id_mqtt_mensagem], map: "fk_alarme_mqtt_mensagem")
-  processos                 processos?                @relation(fields: [id_processo], references: [id_processo], map: "fk_alarme_processo")
-  processostanques          processostanques?         @relation(fields: [id_processo_tanque], references: [id_processo_tanque], map: "fk_alarme_processo_tanque")
-  processostanquessensores  processostanquessensores? @relation(fields: [id_processo_tanque_sensor], references: [id_processo_tanque_sensor], map: "fk_alarme_processo_tanque_sensor")
-  usuarios                  usuarios?                 @relation(fields: [id_usuario_responsavel], references: [id_usuario], map: "fk_alarme_usuario_responsavel")
-  relatorios                relatorios[]
+  id_alarme                       Int                             @id @default(autoincrement())
+  id_mqtt_mensagem                Int?
+  id_usuario_responsavel          Int?
+  titulo                          String                          @db.VarChar(120)
+  descricao                       String
+  tipo_alarme                     tipoalarme
+  severidade                      severidadealarme
+  status_alarme                   statusalarme
+  origem_alarme                   origemalarme
+  valor_detectado                 Decimal?                        @db.Decimal(10, 3)
+  unidade                         String?                         @db.VarChar(20)
+  ocorrido_em                     DateTime                        @db.Timestamp(6)
+  resolvido_em                    DateTime?                       @db.Timestamp(6)
+  normalizado_em                  DateTime?                       @db.Timestamp(6)
+  motivo_resolucao                motivoresolucaoalarme?
+  tentativas_recuperacao          Int                             @default(0)
+  ultima_tentativa_recuperacao_em DateTime?                       @db.Timestamp(6)
+  ultima_validacao_em             DateTime?                       @db.Timestamp(6)
+  bloqueante                      Boolean                         @default(false)
+  requer_intervencao              Boolean                         @default(false)
+  recuperacao_automatica          Boolean                         @default(false)
+  excluido_em                     DateTime?                       @db.Timestamp(6)
+  id_processo_tanque_sensor       Int?
+  id_processo                     Int?
+  id_processo_tanque              Int?
+  mqttmensagens                   mqttmensagens?                  @relation(fields: [id_mqtt_mensagem], references: [id_mqtt_mensagem], map: "fk_alarme_mqtt_mensagem")
+  processos                       processos?                      @relation(fields: [id_processo], references: [id_processo], map: "fk_alarme_processo")
+  processostanques                processostanques?               @relation(fields: [id_processo_tanque], references: [id_processo_tanque], map: "fk_alarme_processo_tanque")
+  processostanquessensores        processostanquessensores?       @relation(fields: [id_processo_tanque_sensor], references: [id_processo_tanque_sensor], map: "fk_alarme_processo_tanque_sensor")
+  usuarios                        usuarios?                       @relation(fields: [id_usuario_responsavel], references: [id_usuario], map: "fk_alarme_usuario_responsavel")
+  relatorios                      relatorios[]
+  reconhecimentos                 alarmesreconhecimentos[]
+  recuperacoestentativas          alarmesrecuperacoestentativas[]
 
   @@index([id_processo_tanque_sensor], map: "idx_alarmes_processo_tanque_sensor")
   @@index([id_processo], map: "idx_alarmes_id_processo")
   @@index([id_processo_tanque], map: "idx_alarmes_id_processo_tanque")
   @@index([id_processo_tanque_sensor], map: "idx_alarmes_id_processo_tanque_sensor")
+  @@index([status_alarme, severidade], map: "idx_alarmes_status_severidade")
+  @@index([bloqueante, status_alarme], map: "idx_alarmes_bloqueante_status")
+  @@index([recuperacao_automatica, status_alarme], map: "idx_alarmes_recuperacao_status")
+  @@index([normalizado_em], map: "idx_alarmes_normalizado_em")
+  @@index([ultima_validacao_em], map: "idx_alarmes_ultima_validacao")
+}
+
+model alarmesreconhecimentos {
+  id_alarme_reconhecimento Int      @id @default(autoincrement())
+  id_alarme                Int
+  id_usuario               Int
+  reconhecido_em           DateTime @default(now()) @db.Timestamp(6)
+  observacao               String?
+  status_processo_snapshot String?  @db.VarChar(40)
+  fase_processo_snapshot   String?  @db.VarChar(40)
+  alarmes                  alarmes  @relation(fields: [id_alarme], references: [id_alarme], onDelete: Cascade, map: "fk_alarme_reconhecimento_alarme")
+  usuarios                 usuarios @relation(fields: [id_usuario], references: [id_usuario], map: "fk_alarme_reconhecimento_usuario")
+
+  @@index([id_alarme], map: "idx_alarmes_reconhecimentos_alarme")
+  @@index([id_usuario], map: "idx_alarmes_reconhecimentos_usuario")
+  @@index([reconhecido_em], map: "idx_alarmes_reconhecimentos_data")
+}
+
+model alarmesrecuperacoestentativas {
+  id_alarme_recuperacao_tentativa Int                                 @id @default(autoincrement())
+  id_alarme                       Int
+  tipo_recuperacao                String                              @db.VarChar(80)
+  resultado                       resultadotentativarecuperacaoalarme
+  descricao                       String?
+  executado_em                    DateTime                            @default(now()) @db.Timestamp(6)
+  origem                          origemlogoperacional                @default(SISTEMA)
+  alarmes                         alarmes                             @relation(fields: [id_alarme], references: [id_alarme], onDelete: Cascade, map: "fk_alarme_recuperacao_tentativa_alarme")
+
+  @@index([id_alarme], map: "idx_alarmes_recuperacoes_alarme")
+  @@index([resultado], map: "idx_alarmes_recuperacoes_resultado")
+  @@index([executado_em], map: "idx_alarmes_recuperacoes_data")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -427,6 +473,7 @@ model usuarios {
   criado_em                  DateTime                     @default(now()) @db.Timestamp(6)
   atualizado_em              DateTime?                    @db.Timestamp(6)
   alarmes                    alarmes[]
+  alarmesreconhecimentos     alarmesreconhecimentos[]
   backups_criados            backups[]                    @relation("backup_usuario_criacao")
   backups_restaurados        backups[]                    @relation("backup_usuario_restauracao")
   bombas                     bombas[]
@@ -653,8 +700,22 @@ enum severidadeevento {
   CRITICO
 }
 
+enum motivoresolucaoalarme {
+  VALIDADO_PELO_SISTEMA
+  AUTO_RECUPERADO
+  FECHAMENTO_POS_PROCESSO
+  NORMALIZADO_CONFIRMADO_PELO_USUARIO
+}
+
+enum resultadotentativarecuperacaoalarme {
+  SUCESSO
+  FALHA
+  IGNORADA
+}
+
 enum statusalarme {
   ATIVO
+  NORMALIZADO
   RESOLVIDO
 }
 
