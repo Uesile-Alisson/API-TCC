@@ -8,6 +8,7 @@ import {
 } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 import type {
+  AcknowledgeAlarmeResult,
   AlarmeDashboard,
   AlarmeNotificationPayload,
   ResolveAlarmeResult,
@@ -47,6 +48,28 @@ export class AlarmesSocketGateway
 
   emitAlarmResolved(payload: ResolveAlarmeResult): void {
     this.server.emit(ALARMES_SOCKET_EVENTS.RESOLVED, payload);
+  }
+
+  emitAlarmAcknowledged(payload: AcknowledgeAlarmeResult): void {
+    this.server.emit(ALARMES_SOCKET_EVENTS.ACKNOWLEDGED, payload);
+  }
+
+  emitAlarmNormalized(payload: {
+    id_alarme: number;
+    normalizado_em: Date;
+  }): void {
+    this.server.emit(ALARMES_SOCKET_EVENTS.NORMALIZED, payload);
+  }
+
+  emitAlarmRecoveryAttempt(payload: {
+    id_alarme: number;
+    attempted_at: Date;
+  }): void {
+    this.server.emit(ALARMES_SOCKET_EVENTS.RECOVERY_ATTEMPT, payload);
+  }
+
+  emitAlarmUpdated(payload: { id_alarme: number }): void {
+    this.server.emit(ALARMES_SOCKET_EVENTS.UPDATED, payload);
   }
 
   emitDashboardUpdated(payload: AlarmeDashboard): void {

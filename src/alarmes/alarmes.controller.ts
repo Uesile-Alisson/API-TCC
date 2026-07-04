@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -14,7 +15,11 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AlarmesService } from './alarmes.service';
-import { ListAlarmesQueryDto, ResolveAlarmeDto } from './dto';
+import {
+  AcknowledgeAlarmeDto,
+  ListAlarmesQueryDto,
+  ResolveAlarmeDto,
+} from './dto';
 
 type AuthenticatedAlarmesUser = {
   id_usuario?: number;
@@ -106,5 +111,27 @@ export class AlarmesController {
     @CurrentUser() currentUser: AuthenticatedAlarmesUser,
   ) {
     return this.alarmesService.resolve(id_alarme, dto, currentUser);
+  }
+
+  @Post(':id/resolver')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Resolve um alarme.' })
+  resolvePost(
+    @Param('id', ParseIntPipe) id_alarme: number,
+    @Body() dto: ResolveAlarmeDto,
+    @CurrentUser() currentUser: AuthenticatedAlarmesUser,
+  ) {
+    return this.alarmesService.resolve(id_alarme, dto, currentUser);
+  }
+
+  @Post(':id/reconhecer')
+  @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Reconhece ciencia operacional de um alarme.' })
+  acknowledge(
+    @Param('id', ParseIntPipe) id_alarme: number,
+    @Body() dto: AcknowledgeAlarmeDto,
+    @CurrentUser() currentUser: AuthenticatedAlarmesUser,
+  ) {
+    return this.alarmesService.acknowledge(id_alarme, dto, currentUser);
   }
 }

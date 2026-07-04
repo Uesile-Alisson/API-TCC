@@ -1,7 +1,16 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { ALARME_MESSAGES } from './constants';
-import { ListAlarmesQueryDto, ResolveAlarmeDto } from './dto';
+import {
+  AcknowledgeAlarmeDto,
+  ListAlarmesQueryDto,
+  ResolveAlarmeDto,
+} from './dto';
 import type {
+  AcknowledgeAlarmeResult,
   AlarmeDashboard,
   AlarmeDetails,
   AlarmeListResponse,
@@ -11,6 +20,12 @@ import type {
 import { AlarmeLogService } from './logs';
 import { AlarmeMapper } from './mappers';
 import { AlarmesRepository } from './repositories';
+import {
+  AlarmAcknowledgementService,
+  AlarmNormalizationService,
+  AlarmRecoveryService,
+  AlarmResolutionPolicyService,
+} from './services';
 import { AlarmesSocketGateway } from './socket';
 import { AlarmeStateValidator } from './validators';
 
@@ -31,6 +46,10 @@ export class AlarmesService {
     private readonly alarmeStateValidator: AlarmeStateValidator,
     private readonly alarmeLogService: AlarmeLogService,
     private readonly alarmesSocketGateway: AlarmesSocketGateway,
+    private readonly alarmAcknowledgementService: AlarmAcknowledgementService,
+    private readonly alarmResolutionPolicyService: AlarmResolutionPolicyService,
+    private readonly alarmNormalizationService: AlarmNormalizationService,
+    private readonly alarmRecoveryService: AlarmRecoveryService,
   ) {}
 
   async list(query: ListAlarmesQueryDto = {}): Promise<AlarmeListResponse> {
@@ -149,14 +168,30 @@ export class AlarmesService {
     currentUser: AlarmesCurrentUser,
   ): Promise<ResolveAlarmeResult> {
     const id_usuario_responsavel = this.getCurrentUserId(currentUser);
-    const alarme = await this.alarmesRepository.findById(id_alarme);
+    const alarme = await this.alarmesRepository.findDetailsById(id_alarme);
 
     this.alarmeStateValidator.validateCanResolve(alarme);
+    const normalization = this.alarmNormalizationService.validate(alarme);
+    const policy = this.alarmResolutionPolicyService.decide(alarme);
+
+    if (!policy.allowed || !policy.motivo_resolucao) {
+      await this.alarmeLogService.logAction({
+        id_alarme: alarme.id_alarme,
+        id_usuario: id_usuario_responsavel,
+        id_processo: alarme.id_processo,
+        acao: 'ALARME_RESOLUCAO_BLOQUEADA',
+        descricao: policy.reason || normalization.reason,
+        sucesso: false,
+      });
+
+      throw new ConflictException(policy.reason);
+    }
 
     const resolvedAt = new Date();
     const resolvedAlarme = await this.alarmesRepository.resolve(id_alarme, {
       id_usuario_responsavel,
       resolvido_em: resolvedAt,
+      motivo_resolucao: policy.motivo_resolucao,
     });
 
     this.alarmeStateValidator.validateExists(resolvedAlarme);
@@ -171,6 +206,7 @@ export class AlarmesService {
       severidade: String(resolvedAlarme.severidade),
       observacao,
       resolvido_em: resolvedAlarme.resolvido_em ?? resolvedAt,
+      acao: 'ALARME_RESOLVIDO',
     });
 
     const result = this.alarmeMapper.toResolveResult(
@@ -185,6 +221,34 @@ export class AlarmesService {
     );
 
     this.alarmesSocketGateway.emitDashboardUpdated(dashboard);
+
+    return result;
+  }
+
+  async acknowledge(
+    id_alarme: number,
+    dto: AcknowledgeAlarmeDto,
+    currentUser: AlarmesCurrentUser,
+  ): Promise<AcknowledgeAlarmeResult> {
+    const id_usuario = this.getCurrentUserId(currentUser);
+
+    return this.alarmAcknowledgementService.acknowledge(
+      id_alarme,
+      dto,
+      id_usuario,
+    );
+  }
+
+  async tryRecovery(id_alarme: number) {
+    const alarme = await this.alarmesRepository.findDetailsById(id_alarme);
+
+    this.alarmeStateValidator.validateExists(alarme);
+    const result = await this.alarmRecoveryService.tryRecovery(alarme);
+
+    this.alarmesSocketGateway.emitAlarmRecoveryAttempt({
+      id_alarme,
+      attempted_at: new Date(),
+    });
 
     return result;
   }

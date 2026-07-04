@@ -4,6 +4,7 @@ export interface AlarmeProcessSummary {
   id_processo: number;
   nome_processo: string | null;
   status_processo: string;
+  fase_processo: string | null;
   vacuo_alvo: number | null;
   iniciado_em: Date | null;
   finalizado_em: Date | null;

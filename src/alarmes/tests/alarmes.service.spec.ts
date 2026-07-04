@@ -11,6 +11,12 @@ import { AlarmesService } from '../alarmes.service';
 import { AlarmeLogService } from '../logs';
 import { AlarmeMapper } from '../mappers';
 import { AlarmesRepository } from '../repositories';
+import {
+  AlarmAcknowledgementService,
+  AlarmNormalizationService,
+  AlarmRecoveryService,
+  AlarmResolutionPolicyService,
+} from '../services';
 import { AlarmesSocketGateway } from '../socket';
 import { AlarmeStateValidator } from '../validators';
 
@@ -46,11 +52,29 @@ type ValidatorMock = {
 
 type LogServiceMock = {
   logResolved: AsyncMock;
+  logAction: AsyncMock;
 };
 
 type SocketGatewayMock = {
   emitAlarmResolved: SyncMock;
   emitDashboardUpdated: SyncMock;
+  emitAlarmRecoveryAttempt: SyncMock;
+};
+
+type AcknowledgementServiceMock = {
+  acknowledge: AsyncMock;
+};
+
+type ResolutionPolicyServiceMock = {
+  decide: SyncMock;
+};
+
+type NormalizationServiceMock = {
+  validate: SyncMock;
+};
+
+type RecoveryServiceMock = {
+  tryRecovery: AsyncMock;
 };
 
 describe('AlarmesService', () => {
@@ -60,6 +84,10 @@ describe('AlarmesService', () => {
   let validator: ValidatorMock;
   let logService: LogServiceMock;
   let socketGateway: SocketGatewayMock;
+  let acknowledgementService: AcknowledgementServiceMock;
+  let resolutionPolicyService: ResolutionPolicyServiceMock;
+  let normalizationService: NormalizationServiceMock;
+  let recoveryService: RecoveryServiceMock;
 
   beforeEach(() => {
     repository = {
@@ -85,10 +113,34 @@ describe('AlarmesService', () => {
         created: true,
         id_log_operacional: 1,
       }),
+      logAction: asyncMock().mockResolvedValue({
+        created: true,
+        id_log_operacional: 2,
+      }),
     };
     socketGateway = {
       emitAlarmResolved: syncMock(),
       emitDashboardUpdated: syncMock(),
+      emitAlarmRecoveryAttempt: syncMock(),
+    };
+    acknowledgementService = {
+      acknowledge: asyncMock(),
+    };
+    resolutionPolicyService = {
+      decide: syncMock().mockReturnValue({
+        allowed: true,
+        reason: 'ok',
+        motivo_resolucao: 'FECHAMENTO_POS_PROCESSO',
+      }),
+    };
+    normalizationService = {
+      validate: syncMock().mockReturnValue({
+        normalized: false,
+        reason: 'sem evidencia',
+      }),
+    };
+    recoveryService = {
+      tryRecovery: asyncMock(),
     };
 
     service = new AlarmesService(
@@ -97,6 +149,10 @@ describe('AlarmesService', () => {
       validator as unknown as AlarmeStateValidator,
       logService as unknown as AlarmeLogService,
       socketGateway as unknown as AlarmesSocketGateway,
+      acknowledgementService as unknown as AlarmAcknowledgementService,
+      resolutionPolicyService as unknown as AlarmResolutionPolicyService,
+      normalizationService as unknown as AlarmNormalizationService,
+      recoveryService as unknown as AlarmRecoveryService,
     );
   });
 
@@ -280,7 +336,7 @@ describe('AlarmesService', () => {
       status_alarme: 'RESOLVIDO',
     };
     const dashboard = { total: 1, generated_at: new Date() };
-    repository.findById.mockResolvedValue(rawAlarme);
+    repository.findDetailsById.mockResolvedValue(rawAlarme);
     repository.resolve.mockResolvedValue(resolvedAlarme);
     repository.getDashboard.mockResolvedValue(makeRawDashboard());
     mapper.toResolveResult.mockReturnValue(resolveResult);
@@ -294,13 +350,14 @@ describe('AlarmesService', () => {
       ),
     ).resolves.toBe(resolveResult);
 
-    expect(repository.findById).toHaveBeenCalledWith(10);
+    expect(repository.findDetailsById).toHaveBeenCalledWith(10);
     expect(validator.validateCanResolve).toHaveBeenCalledWith(rawAlarme);
     expect(repository.resolve).toHaveBeenCalledWith(
       10,
       expect.objectContaining({
         id_usuario_responsavel: 7,
         resolvido_em: expect.any(Date),
+        motivo_resolucao: 'FECHAMENTO_POS_PROCESSO',
       }),
     );
     expect(validator.validateExists).toHaveBeenCalledWith(resolvedAlarme);
@@ -327,7 +384,7 @@ describe('AlarmesService', () => {
       status_alarme: statusalarme.RESOLVIDO,
       resolvido_em: new Date('2026-06-21T10:00:00Z'),
     });
-    repository.findById.mockResolvedValue(rawAlarme);
+    repository.findDetailsById.mockResolvedValue(rawAlarme);
     validator.validateCanResolve.mockImplementation(() => {
       throw new ConflictException('Alarme ja resolvido.');
     });
@@ -340,6 +397,48 @@ describe('AlarmesService', () => {
     expect(logService.logResolved).not.toHaveBeenCalled();
     expect(socketGateway.emitAlarmResolved).not.toHaveBeenCalled();
     expect(socketGateway.emitDashboardUpdated).not.toHaveBeenCalled();
+  });
+
+  it('resolve bloqueia alarme ATIVO durante processo em execucao', async () => {
+    const rawAlarme = makeRawAlarme();
+    repository.findDetailsById.mockResolvedValue(rawAlarme);
+    resolutionPolicyService.decide.mockReturnValue({
+      allowed: false,
+      reason:
+        'Alarme ativo nao pode ser resolvido durante processo em execucao/pausado sem normalizacao tecnica.',
+      motivo_resolucao: null,
+    });
+
+    await expect(
+      service.resolve(10, {}, { id_usuario: 7 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(repository.resolve).not.toHaveBeenCalled();
+    expect(logService.logResolved).not.toHaveBeenCalled();
+  });
+
+  it('acknowledge delega para service de reconhecimento sem resolver', async () => {
+    const result = {
+      success: true,
+      id_alarme: 10,
+      action: 'ACKNOWLEDGED',
+    };
+    acknowledgementService.acknowledge.mockResolvedValue(result);
+
+    await expect(
+      service.acknowledge(
+        10,
+        { observacao: 'Ciente' },
+        { id_usuario: 8, nivel_acesso: 'OPERADOR' },
+      ),
+    ).resolves.toBe(result);
+
+    expect(acknowledgementService.acknowledge).toHaveBeenCalledWith(
+      10,
+      { observacao: 'Ciente' },
+      8,
+    );
+    expect(repository.resolve).not.toHaveBeenCalled();
   });
 
   it('resolve bloqueia usuario sem identificador valido', async () => {
@@ -384,7 +483,7 @@ describe('AlarmesService', () => {
       status_alarme: statusalarme.RESOLVIDO,
       resolvido_em: new Date('2026-06-21T10:00:00Z'),
     });
-    repository.findById.mockResolvedValue(makeRawAlarme());
+    repository.findDetailsById.mockResolvedValue(makeRawAlarme());
     repository.resolve.mockResolvedValue(resolvedAlarme);
     repository.getDashboard.mockResolvedValue(makeRawDashboard());
     mapper.toResolveResult.mockReturnValue({

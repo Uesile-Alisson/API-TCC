@@ -40,6 +40,9 @@ type CreatedAlarmData = {
   id_processo_tanque: number | null;
   id_processo_tanque_sensor: number | null;
   id_mqtt_mensagem: number | null;
+  bloqueante: boolean;
+  requer_intervencao: boolean;
+  recuperacao_automatica: boolean;
 };
 
 @Injectable()
@@ -96,6 +99,8 @@ export class AlarmEventHandler {
   private async createAlarm(
     classification: AlarmRequiredClassificationResult,
   ): Promise<CreatedAlarmData> {
+    const safety = this.classifyAlarmSafety(classification);
+
     return await this.prisma.alarmes.create({
       data: {
         id_mqtt_mensagem: classification.id_mqtt_mensagem ?? null,
@@ -109,6 +114,9 @@ export class AlarmEventHandler {
         valor_detectado: classification.valor_detectado ?? null,
         unidade: classification.unidade ?? null,
         ocorrido_em: new Date(),
+        bloqueante: safety.bloqueante,
+        requer_intervencao: safety.requer_intervencao,
+        recuperacao_automatica: safety.recuperacao_automatica,
         id_processo: classification.id_processo ?? null,
         id_processo_tanque: classification.id_processo_tanque ?? null,
         id_processo_tanque_sensor:
@@ -129,8 +137,52 @@ export class AlarmEventHandler {
         id_processo_tanque: true,
         id_processo_tanque_sensor: true,
         id_mqtt_mensagem: true,
+        bloqueante: true,
+        requer_intervencao: true,
+        recuperacao_automatica: true,
       },
     });
+  }
+
+  private classifyAlarmSafety(
+    classification: AlarmRequiredClassificationResult,
+  ): {
+    bloqueante: boolean;
+    requer_intervencao: boolean;
+    recuperacao_automatica: boolean;
+  } {
+    const hasRunningProcess = this.hasValue(classification.id_processo);
+    const isCritical = classification.severidade === severidadealarme.CRITICO;
+
+    if (classification.tipo_alarme === tipoalarme.MQTT) {
+      return {
+        bloqueante: hasRunningProcess,
+        requer_intervencao: false,
+        recuperacao_automatica: true,
+      };
+    }
+
+    const physicalAlarmTypes: tipoalarme[] = [
+      tipoalarme.ESP32,
+      tipoalarme.SENSOR,
+      tipoalarme.BOMBA,
+      tipoalarme.VALVULA,
+      tipoalarme.MANGUEIRA,
+    ];
+
+    if (physicalAlarmTypes.includes(classification.tipo_alarme)) {
+      return {
+        bloqueante: hasRunningProcess || isCritical,
+        requer_intervencao: true,
+        recuperacao_automatica: false,
+      };
+    }
+
+    return {
+      bloqueante: isCritical,
+      requer_intervencao: false,
+      recuperacao_automatica: false,
+    };
   }
 
   private emitAlarm(

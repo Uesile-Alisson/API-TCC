@@ -61,7 +61,7 @@ describe('AlarmeLogService', () => {
         tipo_log: tipologoperacional.ALARME,
         origem: origemlogoperacional.USUARIO,
         resultado: resultadooperacao.SUCESSO,
-        acao: 'RESOLVER_ALARME',
+        acao: 'ALARME_RESOLVIDO',
       }),
       select: {
         id_log_operacional: true,

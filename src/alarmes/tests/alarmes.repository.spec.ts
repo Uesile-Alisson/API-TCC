@@ -405,6 +405,7 @@ describe('AlarmesRepository', () => {
         status_alarme: statusalarme.RESOLVIDO,
         resolvido_em: resolvedAt,
         id_usuario_responsavel: 7,
+        motivo_resolucao: 'FECHAMENTO_POS_PROCESSO',
       },
     });
     expect(prisma.alarmes.findFirst).toHaveBeenCalledWith(

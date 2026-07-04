@@ -5,6 +5,12 @@ import { AlarmesService } from './alarmes.service';
 import { AlarmeLogService } from './logs';
 import { AlarmeMapper } from './mappers';
 import { AlarmesRepository } from './repositories';
+import {
+  AlarmAcknowledgementService,
+  AlarmNormalizationService,
+  AlarmRecoveryService,
+  AlarmResolutionPolicyService,
+} from './services';
 import { AlarmesSocketGateway } from './socket';
 import { AlarmeStateValidator } from './validators';
 
@@ -17,6 +23,10 @@ import { AlarmeStateValidator } from './validators';
     AlarmeMapper,
     AlarmeStateValidator,
     AlarmeLogService,
+    AlarmAcknowledgementService,
+    AlarmResolutionPolicyService,
+    AlarmNormalizationService,
+    AlarmRecoveryService,
     AlarmesSocketGateway,
   ],
   exports: [AlarmesService, AlarmesRepository],

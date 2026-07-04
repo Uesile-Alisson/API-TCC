@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import {
+  motivoresolucaoalarme,
   origemalarme,
+  origemlogoperacional,
   Prisma,
+  resultadotentativarecuperacaoalarme,
   severidadealarme,
   statusalarme,
   tipoalarme,
@@ -30,11 +33,33 @@ const alarmListSelect = {
   valor_detectado: true,
   unidade: true,
   ocorrido_em: true,
+  normalizado_em: true,
   resolvido_em: true,
+  motivo_resolucao: true,
+  tentativas_recuperacao: true,
+  ultima_tentativa_recuperacao_em: true,
+  ultima_validacao_em: true,
+  bloqueante: true,
+  requer_intervencao: true,
+  recuperacao_automatica: true,
   excluido_em: true,
   id_processo: true,
   id_processo_tanque: true,
   id_processo_tanque_sensor: true,
+  reconhecimentos: {
+    select: {
+      id_alarme_reconhecimento: true,
+      id_usuario: true,
+      reconhecido_em: true,
+      observacao: true,
+      status_processo_snapshot: true,
+      fase_processo_snapshot: true,
+    },
+    orderBy: {
+      reconhecido_em: 'desc',
+    },
+    take: 5,
+  },
 } satisfies Prisma.alarmesSelect;
 
 const alarmDetailsSelect = {
@@ -44,6 +69,7 @@ const alarmDetailsSelect = {
       id_processo: true,
       nome_processo: true,
       status_processo: true,
+      fase_processo: true,
       vacuo_alvo: true,
       iniciado_em: true,
       finalizado_em: true,
@@ -133,6 +159,22 @@ export interface AlarmeFilters {
 export interface ResolveAlarmeRepositoryInput {
   id_usuario_responsavel: number;
   resolvido_em?: Date;
+  motivo_resolucao?: motivoresolucaoalarme;
+}
+
+export interface AcknowledgeAlarmeRepositoryInput {
+  id_usuario: number;
+  observacao?: string | null;
+  status_processo_snapshot?: string | null;
+  fase_processo_snapshot?: string | null;
+}
+
+export interface RecoveryAttemptRepositoryInput {
+  tipo_recuperacao: string;
+  resultado: resultadotentativarecuperacaoalarme;
+  descricao?: string | null;
+  origem?: origemlogoperacional;
+  executado_em?: Date;
 }
 
 export interface AlarmeListAndCountResult {
@@ -422,12 +464,81 @@ export class AlarmesRepository {
         status_alarme: statusalarme.RESOLVIDO,
         resolvido_em: input.resolvido_em ?? new Date(),
         id_usuario_responsavel: input.id_usuario_responsavel,
+        motivo_resolucao:
+          input.motivo_resolucao ??
+          motivoresolucaoalarme.FECHAMENTO_POS_PROCESSO,
       },
     });
 
     if (result.count === 0) {
       return null;
     }
+
+    return this.findById(id_alarme);
+  }
+
+  async acknowledge(
+    id_alarme: number,
+    input: AcknowledgeAlarmeRepositoryInput,
+  ): Promise<AlarmeDetailsRecord | null> {
+    const alarme = await this.prisma.alarmes.findFirst({
+      where: {
+        id_alarme,
+        excluido_em: null,
+      },
+      select: {
+        id_alarme: true,
+      },
+    });
+
+    if (!alarme) {
+      return null;
+    }
+
+    await this.prisma.alarmesreconhecimentos.create({
+      data: {
+        id_alarme,
+        id_usuario: input.id_usuario,
+        observacao: input.observacao ?? null,
+        status_processo_snapshot: input.status_processo_snapshot ?? null,
+        fase_processo_snapshot: input.fase_processo_snapshot ?? null,
+      },
+    });
+
+    return this.findDetailsById(id_alarme);
+  }
+
+  async registerRecoveryAttempt(
+    id_alarme: number,
+    input: RecoveryAttemptRepositoryInput,
+  ): Promise<AlarmeListRecord | null> {
+    const executedAt = input.executado_em ?? new Date();
+
+    await this.prisma.$transaction([
+      this.prisma.alarmesrecuperacoestentativas.create({
+        data: {
+          id_alarme,
+          tipo_recuperacao: input.tipo_recuperacao,
+          resultado: input.resultado,
+          descricao: input.descricao ?? null,
+          origem: input.origem ?? origemlogoperacional.SISTEMA,
+          executado_em: executedAt,
+        },
+      }),
+      this.prisma.alarmes.updateMany({
+        where: {
+          id_alarme,
+          excluido_em: null,
+        },
+        data: {
+          tentativas_recuperacao: {
+            increment: 1,
+          },
+          ultima_tentativa_recuperacao_em: executedAt,
+          ultima_validacao_em: executedAt,
+        },
+      }),
+    ]);
 
     return this.findById(id_alarme);
   }

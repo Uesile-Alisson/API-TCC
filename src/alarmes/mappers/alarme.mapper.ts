@@ -30,11 +30,27 @@ interface RawAlarmeRecord {
   valor_detectado: DecimalLike;
   unidade: string | null;
   ocorrido_em: Date;
+  normalizado_em?: Date | null;
   resolvido_em: Date | null;
+  motivo_resolucao?: string | null;
+  tentativas_recuperacao?: number;
+  ultima_tentativa_recuperacao_em?: Date | null;
+  ultima_validacao_em?: Date | null;
+  bloqueante?: boolean;
+  requer_intervencao?: boolean;
+  recuperacao_automatica?: boolean;
   excluido_em: Date | null;
   id_processo: number | null;
   id_processo_tanque: number | null;
   id_processo_tanque_sensor: number | null;
+  reconhecimentos?: Array<{
+    id_alarme_reconhecimento: number;
+    id_usuario: number;
+    reconhecido_em: Date;
+    observacao: string | null;
+    status_processo_snapshot: string | null;
+    fase_processo_snapshot: string | null;
+  }>;
 }
 
 interface RawAlarmeDetailsRecord extends RawAlarmeRecord {
@@ -42,6 +58,7 @@ interface RawAlarmeDetailsRecord extends RawAlarmeRecord {
     id_processo: number;
     nome_processo: string | null;
     status_processo: string;
+    fase_processo?: string | null;
     vacuo_alvo?: DecimalLike;
     iniciado_em?: Date | null;
     finalizado_em?: Date | null;
@@ -127,7 +144,19 @@ export class AlarmeMapper {
       valor_detectado: this.decimalToNumber(alarme.valor_detectado),
       unidade: alarme.unidade,
       ocorrido_em: alarme.ocorrido_em,
+      normalizado_em: alarme.normalizado_em ?? null,
       resolvido_em: alarme.resolvido_em,
+      motivo_resolucao: alarme.motivo_resolucao ?? null,
+      bloqueante: alarme.bloqueante ?? false,
+      requer_intervencao: alarme.requer_intervencao ?? false,
+      recuperacao_automatica: alarme.recuperacao_automatica ?? false,
+      tentativas_recuperacao: alarme.tentativas_recuperacao ?? 0,
+      ultima_tentativa_recuperacao_em:
+        alarme.ultima_tentativa_recuperacao_em ?? null,
+      ultima_validacao_em: alarme.ultima_validacao_em ?? null,
+      reconhecido: (alarme.reconhecimentos?.length ?? 0) > 0,
+      ultimo_reconhecimento_em:
+        alarme.reconhecimentos?.[0]?.reconhecido_em ?? null,
       excluido_em: alarme.excluido_em,
       id_processo: alarme.id_processo,
       id_processo_tanque: alarme.id_processo_tanque,
@@ -145,6 +174,7 @@ export class AlarmeMapper {
             id_processo: alarme.processos.id_processo,
             nome_processo: alarme.processos.nome_processo,
             status_processo: alarme.processos.status_processo,
+            fase_processo: alarme.processos.fase_processo ?? null,
             vacuo_alvo: this.decimalToNumber(alarme.processos.vacuo_alvo),
             iniciado_em: alarme.processos.iniciado_em ?? null,
             finalizado_em: alarme.processos.finalizado_em ?? null,
@@ -303,6 +333,8 @@ export class AlarmeMapper {
     switch (value) {
       case 'RESOLVIDO':
         return 'RESOLVIDO';
+      case 'NORMALIZADO':
+        return 'NORMALIZADO';
       case 'ATIVO':
       default:
         return 'ATIVO';
@@ -318,6 +350,10 @@ export class AlarmeMapper {
       case 'PROCESSO':
       case 'SEGURANCA':
       case 'TANQUE':
+      case 'FLUXO':
+      case 'NIVEL':
+      case 'VALVULA':
+      case 'MANGUEIRA':
         return value;
       case 'SISTEMA':
       default:

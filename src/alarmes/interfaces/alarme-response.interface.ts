@@ -1,6 +1,6 @@
 export type AlarmeSeverity = 'INFO' | 'MEDIO' | 'CRITICO';
 
-export type AlarmeStatus = 'ATIVO' | 'RESOLVIDO';
+export type AlarmeStatus = 'ATIVO' | 'NORMALIZADO' | 'RESOLVIDO';
 
 export type AlarmeType =
   | 'SENSOR'
@@ -10,7 +10,11 @@ export type AlarmeType =
   | 'PROCESSO'
   | 'SEGURANCA'
   | 'SISTEMA'
-  | 'TANQUE';
+  | 'TANQUE'
+  | 'FLUXO'
+  | 'NIVEL'
+  | 'VALVULA'
+  | 'MANGUEIRA';
 
 export type AlarmeOrigin =
   | 'SENSOR'
@@ -31,7 +35,17 @@ export interface AlarmeResponse {
   valor_detectado: number | null;
   unidade: string | null;
   ocorrido_em: Date;
+  normalizado_em: Date | null;
   resolvido_em: Date | null;
+  motivo_resolucao: string | null;
+  bloqueante: boolean;
+  requer_intervencao: boolean;
+  recuperacao_automatica: boolean;
+  tentativas_recuperacao: number;
+  ultima_tentativa_recuperacao_em: Date | null;
+  ultima_validacao_em: Date | null;
+  reconhecido: boolean;
+  ultimo_reconhecimento_em: Date | null;
   excluido_em: Date | null;
   id_processo: number | null;
   id_processo_tanque: number | null;
