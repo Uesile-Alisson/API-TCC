@@ -14,6 +14,8 @@
     "start:prod": "node dist/main",
     "seed:dev-users": "ts-node --transpile-only prisma/seed.ts",
     "validate:dev-users": "node scripts/validate-dev-users.cjs",
+    "validate:alarm-resolution-policy": "node scripts/validate-alarm-resolution-policy.cjs",
+    "validate:alarm-resolution-policy:cleanup": "node scripts/cleanup-alarm-resolution-policy.cjs",
     "seed:validation:phase1": "ts-node --transpile-only prisma/seeds/validation/phase-1-base.seed.ts",
     "seed:validation:phase2": "ts-node --transpile-only prisma/seeds/validation/phase-2-operational.seed.ts",
     "seed:validation:phase3": "ts-node --transpile-only prisma/seeds/validation/phase-3-alarms-events.seed.ts",
