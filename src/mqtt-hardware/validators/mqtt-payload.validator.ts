@@ -50,7 +50,46 @@ export class MqttPayloadValidator {
   }
 
   static validateReading(payload: Record<string, unknown>): Esp32ReadingDTO {
-    return this.validateDto(Esp32ReadingDTO, payload);
+    const dto = this.validateDto(Esp32ReadingDTO, payload);
+    const modo = dto.modo ?? 'PROCESSO';
+    const isDiagnostic = modo === 'DIAGNOSTICO';
+    const hasSensorReference =
+      typeof dto.codigo_hardware === 'string' ||
+      Number.isInteger(dto.id_sensor);
+    const hasValue =
+      typeof dto.valor_vacuo === 'number' || typeof dto.valor === 'number';
+    const hasUnit =
+      typeof dto.unidade_medida === 'string' || typeof dto.unidade === 'string';
+
+    if (isDiagnostic && !hasSensorReference) {
+      throw new BadRequestException({
+        message: 'Payload MQTT invÃ¡lido.',
+        errors: ['Leitura diagnÃ³stica exige codigo_hardware ou id_sensor.'],
+      });
+    }
+
+    if (!isDiagnostic && !Number.isInteger(dto.id_processo_tanque_sensor)) {
+      throw new BadRequestException({
+        message: 'Payload MQTT invÃ¡lido.',
+        errors: ['Leitura de processo exige id_processo_tanque_sensor.'],
+      });
+    }
+
+    if (!hasValue) {
+      throw new BadRequestException({
+        message: 'Payload MQTT invÃ¡lido.',
+        errors: ['Leitura MQTT exige valor_vacuo ou valor.'],
+      });
+    }
+
+    if (!hasUnit) {
+      throw new BadRequestException({
+        message: 'Payload MQTT invÃ¡lido.',
+        errors: ['Leitura MQTT exige unidade_medida ou unidade.'],
+      });
+    }
+
+    return dto;
   }
 
   static validateAlarm(payload: Record<string, unknown>): Esp32AlarmDTO {

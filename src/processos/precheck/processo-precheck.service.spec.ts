@@ -251,6 +251,91 @@ describe('ProcessoPrecheckService', () => {
     );
   });
 
+  it('aprova sensor com leitura diagnostica recente registrada no sensor fisico', async () => {
+    const context = makeContext();
+    context.tanques[0].sensores[0].acoplamento = null;
+    context.tanques[0].sensores[0].ultima_leitura = new Date();
+    repository.findOperationalContextById.mockResolvedValueOnce(context);
+
+    const result = await service.executar(10, user);
+
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codigo: 'SENSOR_50_RESPOSTA',
+          status: 'APROVADO',
+        }),
+      ]),
+    );
+  });
+
+  it('recusa sensor sem leitura recente registrada no sensor fisico', async () => {
+    const context = makeContext();
+    context.tanques[0].sensores[0].acoplamento = null;
+    context.tanques[0].sensores[0].ultima_leitura = new Date(
+      Date.now() - 120_000,
+    );
+    repository.findOperationalContextById.mockResolvedValueOnce(context);
+
+    const result = await service.executar(10, user);
+
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codigo: 'SENSOR_50_RESPOSTA',
+          status: 'NAO_CONFIRMADO',
+        }),
+      ]),
+    );
+  });
+
+  it('exige leitura diagnostica quando sensor de vacuo carrega acoplamento do tanque', async () => {
+    const context = makeContext();
+    context.tanques[0].sensores[0].acoplamento = {
+      id_sensor: 60,
+      id_tanque: 30,
+      status_acoplamento: StatusAcoplamentoMangueira.ACOPLADA,
+      sinal_detectado: true,
+      ultima_verificacao: new Date(),
+      ultimo_evento_em: new Date(),
+      ativo: true,
+    };
+    context.tanques[0].sensores[0].ultima_leitura = new Date();
+    repository.findOperationalContextById.mockResolvedValueOnce(context);
+
+    const result = await service.executar(10, user);
+
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codigo: 'SENSOR_50_RESPOSTA',
+          status: 'APROVADO',
+        }),
+      ]),
+    );
+  });
+
+  it('nao exige leitura diagnostica do sensor de acoplamento na regra generica de sensores', async () => {
+    const context = makeContext();
+    context.tanques[0].sensores[0].ultima_leitura = null;
+    repository.findOperationalContextById.mockResolvedValueOnce(context);
+
+    const result = await service.executar(10, user);
+
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codigo: 'SENSOR_50_ACOPLAMENTO',
+          status: 'APROVADO',
+        }),
+        expect.objectContaining({
+          grupo: 'ACOPLAMENTO',
+          status: 'APROVADO',
+        }),
+      ]),
+    );
+  });
+
   it('bloqueia validar valvula quando ha processo ativo', async () => {
     repository.findActiveProcessId.mockResolvedValueOnce(10);
 

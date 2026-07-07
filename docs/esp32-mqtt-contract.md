@@ -187,10 +187,13 @@ Comandos suportados:
 
 Status aceitos: `RECEBIDO`, `EXECUTADO`, `RECUSADO`, `ERRO`.
 
-### SENSOR_READING
+### SENSOR_READING modo PROCESSO
 
 ```json
 {
+  "tipo": "SENSOR_READING",
+  "schema_version": 1,
+  "modo": "PROCESSO",
   "id_processo_tanque_sensor": 40,
   "codigo_hardware": "VACUO_T1",
   "valor_vacuo": -80.5,
@@ -199,7 +202,51 @@ Status aceitos: `RECEBIDO`, `EXECUTADO`, `RECUSADO`, `ERRO`.
 }
 ```
 
-`codigo_hardware` e opcional para retrocompatibilidade. O vinculo `id_processo_tanque_sensor` continua obrigatorio.
+`codigo_hardware` e opcional para retrocompatibilidade. Em modo `PROCESSO`, o vinculo `id_processo_tanque_sensor` continua obrigatorio.
+
+## Leituras diagnosticas antes do processo
+
+Antes de iniciar um processo, a API precisa confirmar que os sensores fisicos estao vivos e possuem leitura recente. Nesse momento o ESP32 ainda nao recebeu `id_processo_tanque_sensor`, porque esse vinculo so aparece no comando `INICIAR_PROCESSO_VACUO`.
+
+Para resolver isso, o ESP32 publica leituras diagnosticas periodicas em `tsea/leituras`, mesmo sem processo ativo. Essas leituras usam o `codigo_hardware` estavel do sensor, e podem incluir `id_sensor` quando o ESP32 ja recebeu a configuracao por `SYNC_CONFIG`.
+
+Leituras diagnosticas:
+
+- nao exigem `id_processo_tanque_sensor`;
+- nao sao historico de processo;
+- atualizam o estado operacional do sensor fisico;
+- servem para a pre-checagem de inicio;
+- nao substituem as leituras de processo apos o inicio.
+
+Exemplo:
+
+```json
+{
+  "tipo": "SENSOR_READING",
+  "schema_version": 1,
+  "modo": "DIAGNOSTICO",
+  "codigo_hardware": "VACUO_T1",
+  "id_sensor": 3,
+  "valor": -2.5,
+  "unidade": "kPa",
+  "timestamp": "2026-07-07T12:00:00.000Z"
+}
+```
+
+Depois de `INICIAR_PROCESSO_VACUO`, o ESP32 deve publicar leituras de processo com `id_processo_tanque_sensor`:
+
+```json
+{
+  "tipo": "SENSOR_READING",
+  "schema_version": 1,
+  "modo": "PROCESSO",
+  "id_processo_tanque_sensor": 40,
+  "codigo_hardware": "VACUO_T1",
+  "valor_vacuo": -80.5,
+  "unidade_medida": "kPa",
+  "leitura_em": "2026-07-07T12:00:02.000Z"
+}
+```
 
 ### HARDWARE_STATUS
 
@@ -288,3 +335,64 @@ Status aceitos: `RECEBIDO`, `EXECUTADO`, `RECUSADO`, `ERRO`.
 8. ESP32 responde ACK.
 9. ESP32 publica leituras, status e acoplamentos.
 10. API encerra, interrompe ou aciona parada de emergencia quando necessario.
+
+## Teste com simulador MQTT ESP32
+
+O projeto inclui um simulador local do ESP32 para validar o contrato MQTT sem firmware real:
+
+```bash
+npm run simulate:esp32
+```
+
+### Variaveis de ambiente
+
+O simulador usa as variaveis abaixo quando existirem:
+
+```txt
+TSEA_MQTT_URL
+TSEA_MQTT_USERNAME
+TSEA_MQTT_PASSWORD
+TSEA_SIM_DEVICE_ID
+```
+
+Fallback local:
+
+```txt
+TSEA_MQTT_URL=mqtt://localhost:1883
+TSEA_SIM_DEVICE_ID=ESP32_SIMULADOR
+```
+
+Tambem sao aceitas `MQTT_URL`, `MQTT_USERNAME` e `MQTT_PASSWORD` como fallback de compatibilidade.
+
+### Topicos assinados
+
+```txt
+tsea/config
+tsea/comandos
+```
+
+### Topicos publicados
+
+```txt
+tsea/acks
+tsea/heartbeat
+tsea/status
+tsea/acoplamentos
+tsea/leituras
+```
+
+### Ordem recomendada
+
+1. Subir Mosquitto.
+2. Subir a API.
+3. Rodar `npm run simulate:esp32`.
+4. Chamar sincronizacao de hardware na API.
+5. Iniciar processo de vacuo.
+6. Observar ACKs, heartbeat, status, acoplamentos e leituras.
+
+### Observacoes
+
+- O simulador responde `SYNC_CONFIG` com ACK no topico `tsea/acks`.
+- Para compatibilidade com o DTO atual da API, o ACK de `SYNC_CONFIG` usa `comando: "SINCRONIZAR_HARDWARE"` e `recebido_em`.
+- O simulador so publica acoplamentos depois de receber IDs reais via `SYNC_CONFIG` ou payload de inicio do processo.
+- O simulador nao publica potencia, PWM ou valor de potenciometro.

@@ -5,26 +5,56 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  ValidateIf,
 } from 'class-validator';
 
 export class Esp32ReadingDTO {
+  @IsOptional()
+  @IsString()
+  tipo?: string;
+
+  @IsOptional()
+  @IsInt()
+  schema_version?: number;
+
+  @IsOptional()
+  @IsString()
+  modo?: string;
+
+  @IsOptional()
+  @IsInt()
+  id_sensor?: number;
+
+  @ValidateIf((dto: Esp32ReadingDTO) => dto.modo !== 'DIAGNOSTICO')
   @IsInt()
   @IsNotEmpty()
-  id_processo_tanque_sensor: number;
+  id_processo_tanque_sensor?: number;
 
   @IsOptional()
   @IsString()
   codigo_hardware?: string;
 
+  @IsOptional()
   @IsNumber()
-  @IsNotEmpty()
-  valor_vacuo: number;
+  valor_vacuo?: number;
 
+  @IsOptional()
+  @IsNumber()
+  valor?: number;
+
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  unidade_medida: string;
+  unidade_medida?: string;
 
+  @IsOptional()
+  @IsString()
+  unidade?: string;
+
+  @IsOptional()
   @IsDateString()
-  @IsNotEmpty()
-  leitura_em: Date;
+  leitura_em?: Date;
+
+  @IsOptional()
+  @IsDateString()
+  timestamp?: Date;
 }

@@ -538,6 +538,25 @@ export class ProcessoPrecheckService {
       });
     }
 
+    if (this.isAcoplamentoSensor(sensor)) {
+      return ProcessoPrecheckMapper.buildItem({
+        codigo: `SENSOR_${sensor.id_sensor}_ACOPLAMENTO`,
+        titulo: sensor.nome_sensor,
+        grupo: 'SENSORES',
+        status: 'APROVADO',
+        mensagem:
+          'Sensor de acoplamento sera validado pela pre-checagem especifica de acoplamento.',
+        evidencia: `tanque=${tanque.nome_tanque}`,
+        detalhes: {
+          id_processo_tanque_sensor: sensor.id_processo_tanque_sensor,
+          id_tanque: sensor.acoplamento.id_tanque,
+          status_acoplamento: sensor.acoplamento.status_acoplamento,
+        },
+        id_recurso: sensor.id_sensor,
+        tipo_recurso: 'SENSOR',
+      });
+    }
+
     const ultimaLeitura = this.normalizeDate(sensor.ultima_leitura);
     const leituraRecente = this.isRecentDate(
       ultimaLeitura,
@@ -563,6 +582,14 @@ export class ProcessoPrecheckService {
       id_recurso: sensor.id_sensor,
       tipo_recurso: 'SENSOR',
     });
+  }
+
+  private isAcoplamentoSensor(
+    sensor: ProcessoSensorOperationalContext,
+  ): sensor is ProcessoSensorOperationalContext & {
+    acoplamento: NonNullable<ProcessoSensorOperationalContext['acoplamento']>;
+  } {
+    return sensor.acoplamento?.id_sensor === sensor.id_sensor;
   }
 
   private buildAcoplamentoItems(
