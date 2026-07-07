@@ -431,6 +431,10 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
         topic: config.topico_acoplamentos,
         qos: 1,
       },
+      {
+        topic: config.topico_acks,
+        qos: 1,
+      },
     ];
   }
 

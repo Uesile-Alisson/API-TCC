@@ -4,13 +4,21 @@ import {
   IsDateString,
   IsInt,
   IsNotEmpty,
-  IsObject,
   IsOptional,
   IsString,
   IsEnum,
+  IsArray,
 } from 'class-validator';
 
 export class Esp32StatusDTO {
+  @IsOptional()
+  @IsString()
+  tipo?: 'HARDWARE_STATUS';
+
+  @IsOptional()
+  @IsInt()
+  schema_version?: number;
+
   @IsBoolean()
   @IsNotEmpty()
   esp32_on!: boolean;
@@ -29,6 +37,22 @@ export class Esp32StatusDTO {
 
   @IsOptional()
   @IsString()
+  device?: string;
+
+  @IsOptional()
+  @IsString()
+  firmware_version?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  emergencia_ativa?: boolean;
+
+  @IsOptional()
+  @IsString()
+  erro_atual?: string;
+
+  @IsOptional()
+  @IsString()
   bomba_principal?: string;
 
   @IsOptional()
@@ -40,12 +64,18 @@ export class Esp32StatusDTO {
   sensores_ativos?: number;
 
   @IsOptional()
-  @IsObject()
   valvulas?: Record<string, unknown>;
 
   @IsOptional()
-  @IsObject()
   tanques?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  bombas?: Record<string, unknown>[];
+
+  @IsOptional()
+  @IsArray()
+  acoplamentos?: Record<string, unknown>[];
 
   @IsDateString()
   @IsNotEmpty()

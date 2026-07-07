@@ -21,6 +21,14 @@ export const TopicMatcher = {
     return topic === mqtt_topics.ACOPLAMENTOS;
   },
 
+  isAck(topic: string): boolean {
+    return topic === mqtt_topics.ACKS || topic.endsWith('/acks');
+  },
+
+  isConfiguracao(topic: string): boolean {
+    return topic === mqtt_topics.CONFIGURACOES || topic.endsWith('/config');
+  },
+
   isComando(topic: string): boolean {
     return topic === mqtt_topics.COMANDOS || topic.endsWith('/comandos');
   },

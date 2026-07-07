@@ -49,10 +49,12 @@ type SeedUserInput = {
 type SeedTankInput = {
   nome: string;
   volume: string;
+  codigo_hardware: string;
 };
 
 type SeedSensorInput = {
   nome: string;
+  codigo_hardware: string;
   tipo_sensor: tiposensor;
   modelo: string;
   protocolo: protocolosensor;
@@ -63,6 +65,7 @@ type SeedSensorInput = {
 
 type SeedValveInput = {
   nome_valvula: string;
+  codigo_hardware: string;
   numero_saida_manifold: number;
   tanqueNome: string;
 };
@@ -118,14 +121,27 @@ const userInputs: SeedUserInput[] = [
 ];
 
 const tankInputs: SeedTankInput[] = [
-  { nome: 'Tanque Regulador TR-01', volume: '20.00' },
-  { nome: 'Tanque Regulador TR-02', volume: '20.00' },
-  { nome: 'Tanque Regulador TR-03', volume: '20.00' },
+  {
+    nome: 'Tanque Regulador TR-01',
+    volume: '20.00',
+    codigo_hardware: 'TANQUE_1',
+  },
+  {
+    nome: 'Tanque Regulador TR-02',
+    volume: '20.00',
+    codigo_hardware: 'TANQUE_2',
+  },
+  {
+    nome: 'Tanque Regulador TR-03',
+    volume: '20.00',
+    codigo_hardware: 'TANQUE_3',
+  },
 ];
 
 const vacuumSensorInputs: SeedSensorInput[] = [
   {
     nome: 'Sensor de Vacuo TR-01',
+    codigo_hardware: 'VACUO_T1',
     tipo_sensor: tiposensor.VACUO,
     modelo: 'XGZP6847D001MP',
     protocolo: protocolosensor.I2C,
@@ -135,6 +151,7 @@ const vacuumSensorInputs: SeedSensorInput[] = [
   },
   {
     nome: 'Sensor de Vacuo TR-02',
+    codigo_hardware: 'VACUO_T2',
     tipo_sensor: tiposensor.VACUO,
     modelo: 'XGZP6847D001MP',
     protocolo: protocolosensor.I2C,
@@ -144,6 +161,7 @@ const vacuumSensorInputs: SeedSensorInput[] = [
   },
   {
     nome: 'Sensor de Vacuo TR-03',
+    codigo_hardware: 'VACUO_T3',
     tipo_sensor: tiposensor.VACUO,
     modelo: 'XGZP6847D001MP',
     protocolo: protocolosensor.I2C,
@@ -156,6 +174,7 @@ const vacuumSensorInputs: SeedSensorInput[] = [
 const couplingSensorInputs: SeedSensorInput[] = [
   {
     nome: 'Sensor de Acoplamento TR-01',
+    codigo_hardware: 'ACOP_T1',
     tipo_sensor: tiposensor.ACOPLAMENTO,
     modelo: 'Sensor de contato para acoplamento de mangueira',
     protocolo: protocolosensor.DIGITAL,
@@ -165,6 +184,7 @@ const couplingSensorInputs: SeedSensorInput[] = [
   },
   {
     nome: 'Sensor de Acoplamento TR-02',
+    codigo_hardware: 'ACOP_T2',
     tipo_sensor: tiposensor.ACOPLAMENTO,
     modelo: 'Sensor de contato para acoplamento de mangueira',
     protocolo: protocolosensor.DIGITAL,
@@ -174,6 +194,7 @@ const couplingSensorInputs: SeedSensorInput[] = [
   },
   {
     nome: 'Sensor de Acoplamento TR-03',
+    codigo_hardware: 'ACOP_T3',
     tipo_sensor: tiposensor.ACOPLAMENTO,
     modelo: 'Sensor de contato para acoplamento de mangueira',
     protocolo: protocolosensor.DIGITAL,
@@ -186,16 +207,19 @@ const couplingSensorInputs: SeedSensorInput[] = [
 const valveInputs: SeedValveInput[] = [
   {
     nome_valvula: 'Valvula Solenoide de Vacuo TR-01',
+    codigo_hardware: 'VP_T1',
     numero_saida_manifold: 1,
     tanqueNome: 'Tanque Regulador TR-01',
   },
   {
     nome_valvula: 'Valvula Solenoide de Vacuo TR-02',
+    codigo_hardware: 'VP_T2',
     numero_saida_manifold: 2,
     tanqueNome: 'Tanque Regulador TR-02',
   },
   {
     nome_valvula: 'Valvula Solenoide de Vacuo TR-03',
+    codigo_hardware: 'VP_T3',
     numero_saida_manifold: 3,
     tanqueNome: 'Tanque Regulador TR-03',
   },
@@ -487,6 +511,8 @@ async function seedMqttConfig(id_usuario_alteracao: number) {
       topico_alarmes: 'tsea/alarmes',
       topico_heartbeat: 'tsea/heartbeat',
       topico_acoplamentos: 'tsea/acoplamentos',
+      topico_configuracoes: 'tsea/config',
+      topico_acks: 'tsea/acks',
       reconexao_automatica: true,
       timeout_comunicacao: 10000,
       status_conexao: statusconexaomqtt.DESCONECTADO,
@@ -506,6 +532,8 @@ async function seedMqttConfig(id_usuario_alteracao: number) {
       topico_alarmes: 'tsea/alarmes',
       topico_heartbeat: 'tsea/heartbeat',
       topico_acoplamentos: 'tsea/acoplamentos',
+      topico_configuracoes: 'tsea/config',
+      topico_acks: 'tsea/acks',
       reconexao_automatica: true,
       timeout_comunicacao: 10000,
       status_conexao: statusconexaomqtt.DESCONECTADO,
@@ -520,6 +548,7 @@ async function seedTanks() {
       prisma.tanques.upsert({
         where: { nome: tank.nome },
         update: {
+          codigo_hardware: tank.codigo_hardware,
           volume: decimal(tank.volume),
           unidade_volume: 'L',
           vacuo_padrao: decimal('-80.000'),
@@ -529,6 +558,7 @@ async function seedTanks() {
         },
         create: {
           nome: tank.nome,
+          codigo_hardware: tank.codigo_hardware,
           volume: decimal(tank.volume),
           unidade_volume: 'L',
           vacuo_padrao: decimal('-80.000'),
@@ -547,6 +577,7 @@ async function seedSensors(inputs: SeedSensorInput[]) {
       prisma.sensores.upsert({
         where: { nome: sensor.nome },
         update: {
+          codigo_hardware: sensor.codigo_hardware,
           modelo: sensor.modelo,
           protocolo: sensor.protocolo,
           unidade_medida: sensor.unidade_medida,
@@ -561,6 +592,7 @@ async function seedSensors(inputs: SeedSensorInput[]) {
         },
         create: {
           nome: sensor.nome,
+          codigo_hardware: sensor.codigo_hardware,
           modelo: sensor.modelo,
           protocolo: sensor.protocolo,
           unidade_medida: sensor.unidade_medida,
@@ -625,6 +657,7 @@ async function seedPumps(
       id_configuracao_sistema,
       id_usuario_alteracao,
       tipo_bomba: tipobomba.AUXILIAR,
+      codigo_hardware: 'BOMBA_VACUO_AUXILIAR',
       status_padrao: statusbomba.ATIVA,
       entrada_por_pressao: true,
       entrada_por_tempo: true,
@@ -635,6 +668,7 @@ async function seedPumps(
       id_configuracao_sistema,
       id_usuario_alteracao,
       nome: 'Bomba Auxiliar de Estabilizacao',
+      codigo_hardware: 'BOMBA_VACUO_AUXILIAR',
       tipo_bomba: tipobomba.AUXILIAR,
       status_padrao: statusbomba.ATIVA,
       entrada_por_pressao: true,
@@ -649,6 +683,7 @@ async function seedPumps(
       id_configuracao_sistema,
       id_usuario_alteracao,
       tipo_bomba: tipobomba.PRINCIPAL,
+      codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
       status_padrao: statusbomba.ATIVA,
       entrada_por_pressao: false,
       entrada_por_tempo: false,
@@ -659,6 +694,7 @@ async function seedPumps(
       id_configuracao_sistema,
       id_usuario_alteracao,
       nome: 'Bomba de Vacuo Principal',
+      codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
       tipo_bomba: tipobomba.PRINCIPAL,
       status_padrao: statusbomba.ATIVA,
       entrada_por_pressao: false,
@@ -687,6 +723,7 @@ async function seedValves(
       },
       update: {
         nome_valvula: valve.nome_valvula,
+        codigo_hardware: valve.codigo_hardware,
         tipo_valvula: TipoValvula.SOLENOIDE,
         status_valvula: StatusValvula.FECHADA,
         funcao_valvula: funcaovalvula.VACUO,
@@ -698,6 +735,7 @@ async function seedValves(
         id_bomba,
         numero_saida_manifold: valve.numero_saida_manifold,
         nome_valvula: valve.nome_valvula,
+        codigo_hardware: valve.codigo_hardware,
         tipo_valvula: TipoValvula.SOLENOIDE,
         status_valvula: StatusValvula.FECHADA,
         funcao_valvula: funcaovalvula.VACUO,

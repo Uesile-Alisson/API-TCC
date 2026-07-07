@@ -51,6 +51,14 @@ export class CreateMqttConfigDTO {
   @IsNotEmpty()
   topico_acoplamentos!: string;
 
+  @IsString()
+  @IsOptional()
+  topico_configuracoes?: string;
+
+  @IsString()
+  @IsOptional()
+  topico_acks?: string;
+
   @IsBoolean()
   @IsNotEmpty()
   retain_padrao!: boolean;

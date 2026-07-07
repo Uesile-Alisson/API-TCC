@@ -13,6 +13,9 @@ import { TopicValidator } from '../topics/topic-validator';
 import { ActiveMqttConfig } from '../interfaces/active-mqtt-config.interface';
 import { normalizeMqttBrokerUrl } from './mqtt-broker-url.util';
 
+const DEFAULT_CONFIG_TOPIC = 'tsea/config';
+const DEFAULT_ACK_TOPIC = 'tsea/acks';
+
 @Injectable()
 export class MqttConfigService {
   constructor(private readonly prisma: PrismaService) {}
@@ -55,6 +58,9 @@ export class MqttConfigService {
           topico_alarmes: dto.topico_alarmes,
           topico_heartbeat: dto.topico_heartbeat,
           topico_acoplamentos: dto.topico_acoplamentos,
+          topico_configuracoes:
+            dto.topico_configuracoes ?? DEFAULT_CONFIG_TOPIC,
+          topico_acks: dto.topico_acks ?? DEFAULT_ACK_TOPIC,
           reconexao_automatica: dto.reconexao_automatica,
           timeout_comunicacao: dto.timeout_comunicacao,
           status_conexao: statusconexaomqtt.DESCONECTADO,
@@ -106,6 +112,8 @@ export class MqttConfigService {
           topico_leituras: dto.topico_leituras,
           topico_status: dto.topico_status,
           topico_acoplamentos: dto.topico_acoplamentos,
+          topico_configuracoes: dto.topico_configuracoes,
+          topico_acks: dto.topico_acks,
           reconexao_automatica: dto.reconexao_automatica,
           timeout_comunicacao: dto.timeout_comunicacao,
           status_conexao: statusconexaomqtt.DESCONECTADO,
@@ -245,6 +253,11 @@ export class MqttConfigService {
       config.topico_acoplamentos,
       'topico_acoplamentos',
     );
+    TopicValidator.validateTopics(
+      config.topico_configuracoes,
+      'topico_configuracoes',
+    );
+    TopicValidator.validateTopics(config.topico_acks, 'topico_acks');
 
     if (
       !Number.isInteger(config.timeout_comunicacao) ||
@@ -303,6 +316,17 @@ export class MqttConfigService {
         'topico_acoplamentos',
       );
     }
+
+    if (dto.topico_configuracoes) {
+      TopicValidator.validateTopics(
+        dto.topico_configuracoes,
+        'topico_configuracoes',
+      );
+    }
+
+    if (dto.topico_acks) {
+      TopicValidator.validateTopics(dto.topico_acks, 'topico_acks');
+    }
   }
 
   private async createHistorySnapshot(
@@ -323,6 +347,8 @@ export class MqttConfigService {
         topico_alarmes: config.topico_alarmes,
         topico_heartbeat: config.topico_heartbeat,
         topico_acoplamentos: config.topico_acoplamentos,
+        topico_configuracoes: config.topico_configuracoes,
+        topico_acks: config.topico_acks,
         reconexao_automatica: config.reconexao_automatica,
         timeout_comunicacao: config.timeout_comunicacao,
         status_conexao: config.status_conexao,

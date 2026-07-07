@@ -14,6 +14,8 @@ export interface ActiveMqttConfig {
   topico_heartbeat: string;
   topico_status: string;
   topico_acoplamentos: string;
+  topico_configuracoes: string;
+  topico_acks: string;
   reconexao_automatica: boolean;
   timeout_comunicacao: number;
   status_conexao: statusconexaomqtt;

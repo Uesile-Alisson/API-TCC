@@ -25,6 +25,8 @@ type SanitizedMqttConfig = {
   topico_alarmes: string;
   topico_heartbeat: string;
   topico_acoplamentos: string;
+  topico_configuracoes: string;
+  topico_acks: string;
   reconexao_automatica: boolean;
   timeout_comunicacao: number;
   status_conexao: statusconexaomqtt;
@@ -48,6 +50,8 @@ type MqttConfigEntity = {
   topico_alarmes: string;
   topico_heartbeat: string;
   topico_acoplamentos: string;
+  topico_configuracoes: string;
+  topico_acks: string;
   reconexao_automatica: boolean;
   timeout_comunicacao: number;
   status_conexao: statusconexaomqtt;
@@ -321,6 +325,8 @@ export class MqttService {
       topico_alarmes: config.topico_alarmes,
       topico_heartbeat: config.topico_heartbeat,
       topico_acoplamentos: config.topico_acoplamentos,
+      topico_configuracoes: config.topico_configuracoes,
+      topico_acks: config.topico_acks,
       reconexao_automatica: config.reconexao_automatica,
       timeout_comunicacao: config.timeout_comunicacao,
       status_conexao: config.status_conexao,

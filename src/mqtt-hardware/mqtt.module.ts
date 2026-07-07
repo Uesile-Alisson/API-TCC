@@ -8,9 +8,11 @@ import { MqttHealthService } from './connection/mqtt-health.service';
 import { MqttSocketGateway } from './socket/mqtt-socket.gateway';
 import { MqttSocketService } from './socket/mqtt-socket.service';
 import { CommandService } from './commands/command.service';
+import { Esp32SyncConfigService } from './config/esp32-sync-config.service';
 import { ValvulaHardwareStatusService } from './valvulas/valvula-hardware-status.service';
 import { AcoplamentoMangueiraHandler } from './handlers/acoplamento-mangueira.handler';
 import { AlarmsHandler } from './handlers/alarms.handler';
+import { CommandAckHandler } from './handlers/command-ack.handler';
 import { HandlersService } from './handlers/mqtt-handlers.service';
 import { HeartbeatHandler } from './handlers/heartbeat.handler';
 import { ReadingHandler } from './handlers/reading.handler';
@@ -45,6 +47,7 @@ import {
     MqttSocketGateway,
     MqttSocketService,
     CommandService,
+    Esp32SyncConfigService,
     ValvulaHardwareStatusService,
     // Fluxo ativo que registra listeners no MqttClientService e roteia mensagens MQTT recebidas.
     HandlersService,
@@ -53,6 +56,7 @@ import {
     HeartbeatHandler,
     AlarmsHandler,
     AcoplamentoMangueiraHandler,
+    CommandAckHandler,
     SystemConfigCacheService,
     ReadingContextCacheService,
     AcoplamentoContextCacheService,
@@ -74,6 +78,7 @@ import {
     MqttHealthService,
     MqttSocketGateway,
     CommandService,
+    Esp32SyncConfigService,
     AlarmEventHandler,
     AcoplamentoEventHandler,
     HardwareStatusEventHandler,

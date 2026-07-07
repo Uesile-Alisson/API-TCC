@@ -26,6 +26,7 @@ export class MqttCommandoValidator {
     HardwareCommand.PARADA_EMERGENCIA,
     HardwareCommand.DESLIGAR_TODAS_BOMBAS,
     HardwareCommand.DESLIGAR_TODAS_VALVULAS,
+    HardwareCommand.INICIAR_PROCESSO_VACUO,
     HardwareCommand.SINCRONIZAR_HARDWARE,
   ] as const;
 
@@ -37,12 +38,12 @@ export class MqttCommandoValidator {
 
     ...MqttCommandoValidator.VALVE_COMMANDS.map((command) => ({
       command,
-      requiresPump: true,
+      requiresValve: true,
     })),
 
     ...MqttCommandoValidator.GLOBAL_COMMANDS.map((command) => ({
       command,
-      requiresPump: true,
+      requiresNoSpecificTarget: true,
     })),
   ];
 

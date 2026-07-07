@@ -18,6 +18,7 @@ import { MqttSocketService } from '../socket/mqtt-socket.service';
 import { TopicMatcher } from '../topics/topic-matcher';
 import { AcoplamentoMangueiraHandler } from './acoplamento-mangueira.handler';
 import { AlarmsHandler } from './alarms.handler';
+import { CommandAckHandler } from './command-ack.handler';
 import { HeartbeatHandler } from './heartbeat.handler';
 import {
   MqttAcoplamentoMangueiraHandlerResult,
@@ -51,6 +52,7 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
     private readonly heartbeatHandler: HeartbeatHandler,
     private readonly alarmsHandler: AlarmsHandler,
     private readonly acoplamentoHandler: AcoplamentoMangueiraHandler,
+    private readonly commandAckHandler: CommandAckHandler,
   ) {}
 
   onModuleInit(): void {
@@ -78,6 +80,11 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
     try {
       if (TopicMatcher.isAcoplamento(message.topic)) {
         await this.handleAcoplamentoMessage(message);
+        return;
+      }
+
+      if (TopicMatcher.isAck(message.topic)) {
+        this.handleCommandAckMessage(message);
         return;
       }
 
@@ -161,6 +168,10 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
     this.mqttSocketService.publishedSensorAcoplamentoUpdated(
       this.toSensorAcoplamentoSocketPayload(result),
     );
+  }
+
+  private handleCommandAckMessage(message: MqttMessage): void {
+    this.commandAckHandler.handle(message);
   }
 
   private toHeartbeatSocketPayload(

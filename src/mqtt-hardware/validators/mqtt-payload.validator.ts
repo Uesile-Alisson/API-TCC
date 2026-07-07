@@ -8,6 +8,7 @@ import { Esp32HeartbeatDTO } from '../dto/esp32-heartbeat.dto';
 import { Esp32ReadingDTO } from '../dto/esp32-reading.dto';
 import { Esp32StatusDTO } from '../dto/esp32-status.dto';
 import { Esp32AcoplamentoDTO } from '../dto/esp32-acoplamento.dto';
+import { Esp32CommandAckDTO } from '../dto/esp32-command-ack.dto';
 
 export class MqttPayloadValidator {
   static validateByTopic(
@@ -17,7 +18,8 @@ export class MqttPayloadValidator {
     | Esp32HeartbeatDTO
     | Esp32ReadingDTO
     | Esp32StatusDTO
-    | Esp32AcoplamentoDTO {
+    | Esp32AcoplamentoDTO
+    | Esp32CommandAckDTO {
     if (TopicMatcher.isLeitura(message.topic)) {
       return this.validateDto(Esp32ReadingDTO, message.payload);
     }
@@ -36,6 +38,10 @@ export class MqttPayloadValidator {
 
     if (TopicMatcher.isAcoplamento(message.topic)) {
       return this.validateDto(Esp32AcoplamentoDTO, message.payload);
+    }
+
+    if (TopicMatcher.isAck(message.topic)) {
+      return this.validateDto(Esp32CommandAckDTO, message.payload);
     }
 
     throw new BadRequestException(
@@ -65,6 +71,12 @@ export class MqttPayloadValidator {
     payload: Record<string, unknown>,
   ): Esp32AcoplamentoDTO {
     return this.validateDto(Esp32AcoplamentoDTO, payload);
+  }
+
+  static validateCommandAck(
+    payload: Record<string, unknown>,
+  ): Esp32CommandAckDTO {
+    return this.validateDto(Esp32CommandAckDTO, payload);
   }
 
   private static validateDto<T extends object>(

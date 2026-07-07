@@ -31,6 +31,21 @@ export const mqtt_topic_options = {
     qos: mqtt_qos.qos_1,
     retain: false,
   },
+
+  [mqtt_topics.ACOPLAMENTOS]: {
+    qos: mqtt_qos.qos_1,
+    retain: false,
+  },
+
+  [mqtt_topics.CONFIGURACOES]: {
+    qos: mqtt_qos.qos_1,
+    retain: true,
+  },
+
+  [mqtt_topics.ACKS]: {
+    qos: mqtt_qos.qos_1,
+    retain: false,
+  },
 } as const;
 
 export type MqttQos = (typeof mqtt_qos)[keyof typeof mqtt_qos];

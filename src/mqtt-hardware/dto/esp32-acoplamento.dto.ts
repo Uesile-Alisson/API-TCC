@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDate, IsInt, IsOptional, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsDate,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class Esp32AcoplamentoDTO {
   @IsInt()
@@ -12,6 +19,10 @@ export class Esp32AcoplamentoDTO {
 
   @IsBoolean()
   sinal_detectado: boolean;
+
+  @IsOptional()
+  @IsString()
+  codigo_hardware?: string;
 
   @IsOptional()
   @Type(() => Date)

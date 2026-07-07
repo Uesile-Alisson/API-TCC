@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { MqttClientService } from '../connection/mqtt-client.service';
 import { MqttConfigService } from '../config/mqtt-config.service';
+import { Esp32SyncConfigService } from '../config/esp32-sync-config.service';
 import { CommandPayloadBuilder } from './command-payload.builder';
 import {
   MQTT_COMMANDS,
@@ -23,6 +24,7 @@ import {
 } from './interfaces/command-params.interface';
 import { CommandPayload } from './interfaces/command-payload.interface';
 import { CommandResult } from './interfaces/command-result.interface';
+import { Esp32ProcessStartPayload } from '../interfaces/esp32-contracts.interface';
 
 type PublishOptions = {
   qos: CommandQos;
@@ -39,6 +41,7 @@ export class CommandService {
   constructor(
     private readonly mqttClientService: MqttClientService,
     private readonly mqttConfigService: MqttConfigService,
+    private readonly esp32SyncConfigService: Esp32SyncConfigService,
   ) {}
 
   async ligarBomba(
@@ -57,7 +60,7 @@ export class CommandService {
     );
   }
 
-  async deligarBomba(
+  async desligarBomba(
     options: CommandOptions,
     idBomba: number,
   ): Promise<CommandResult> {
@@ -146,12 +149,7 @@ export class CommandService {
   }
 
   async sincronizarHardware(options: CommandOptions): Promise<CommandResult> {
-    return await this.publishCommand<EmptyCommandParams>(
-      MQTT_COMMANDS.SINCRONIZAR_HARDWARE,
-      {},
-      this.resolveStandardPublishOptions(options),
-      options,
-    );
+    return await this.esp32SyncConfigService.publishSyncConfig(options);
   }
 
   async reiniciarComunicacao(options: CommandOptions): Promise<CommandResult> {
@@ -161,6 +159,41 @@ export class CommandService {
       this.resolveStandardPublishOptions(options),
       options,
     );
+  }
+
+  async deligarBomba(
+    options: CommandOptions,
+    idBomba: number,
+  ): Promise<CommandResult> {
+    return await this.desligarBomba(options, idBomba);
+  }
+
+  async iniciarProcessoVacuo(
+    payload: Esp32ProcessStartPayload,
+    options?: CommandOptions,
+  ): Promise<CommandResult> {
+    const topic = await this.resolveCommandTopic();
+    const publishOptions = this.resolveStandardPublishOptions(options);
+
+    await this.mqttClientService.publish(topic, payload, publishOptions);
+
+    const result: CommandResult = {
+      comando: MQTT_COMMANDS.INICIAR_PROCESSO_VACUO,
+      topic,
+      qos: publishOptions.qos,
+      retain: publishOptions.retain,
+      correlation_id: payload.correlation_id,
+      published_at: new Date(),
+    };
+
+    this.logger.log(
+      `Comando MQTT de inicio de processo de vacuo publicado. ` +
+        `Processo: ${payload.id_processo}. ` +
+        `Topico: ${topic}. ` +
+        `Correlation ID: ${payload.correlation_id}.`,
+    );
+
+    return result;
   }
 
   private async publishCommand<TParams extends CommandParams>(

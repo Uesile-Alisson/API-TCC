@@ -129,6 +129,7 @@ model bombas {
   id_configuracao_sistema Int
   id_usuario_alteracao    Int?
   nome                    String               @unique @db.VarChar(80)
+  codigo_hardware         String?              @unique(map: "uq_bombas_codigo_hardware") @db.VarChar(80)
   tipo_bomba              tipobomba
   status_padrao           statusbomba
   entrada_por_pressao     Boolean              @default(false)
@@ -236,6 +237,8 @@ model mqttconfiguracoes {
   chave_configuracao         String                       @unique(map: "uq_mqtt_config_chave_configuracao") @default("MQTT_PRINCIPAL") @db.VarChar(50)
   usuario_mqtt               String?                      @db.VarChar(120)
   topico_acoplamentos        String                       @default("tsea/acoplamentos") @db.VarChar(150)
+  topico_configuracoes       String                       @default("tsea/config") @db.VarChar(180)
+  topico_acks                String                       @default("tsea/acks") @db.VarChar(180)
   backups                    backups[]
   usuarios                   usuarios?                    @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_usuario")
   mqttconfiguracoeshistorico mqttconfiguracoeshistorico[]
@@ -428,6 +431,7 @@ model relatorios {
 model sensores {
   id_sensor                     Int                            @id @default(autoincrement())
   nome                          String                         @unique @db.VarChar(80)
+  codigo_hardware               String?                        @unique(map: "uq_sensores_codigo_hardware") @db.VarChar(80)
   modelo                        String                         @db.VarChar(100)
   protocolo                     protocolosensor
   unidade_medida                String                         @db.VarChar(20)
@@ -449,6 +453,7 @@ model sensores {
 model tanques {
   id_tanque                     Int                            @id @default(autoincrement())
   nome                          String                         @unique @db.VarChar(80)
+  codigo_hardware               String?                        @unique(map: "uq_tanques_codigo_hardware") @db.VarChar(80)
   volume                        Decimal                        @db.Decimal(10, 2)
   unidade_volume                String                         @db.VarChar(20)
   vacuo_padrao                  Decimal                        @db.Decimal(10, 3)
@@ -510,6 +515,8 @@ model mqttconfiguracoeshistorico {
   atualizado_em                       DateTime?                             @db.Timestamp(6)
   registrado_em                       DateTime                              @default(now()) @db.Timestamp(6)
   topico_acoplamentos                 String                                @default("tsea/acoplamentos") @db.VarChar(150)
+  topico_configuracoes                String                                @default("tsea/config") @db.VarChar(180)
+  topico_acks                         String                                @default("tsea/acks") @db.VarChar(180)
   backups                             backups[]
   mqttconfiguracoes                   mqttconfiguracoes                     @relation(fields: [id_mqtt_configuracao], references: [id_mqtt_configuracao], map: "fk_mqtt_config_historico_config")
   usuarios                            usuarios?                             @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_historico_usuario")
@@ -543,6 +550,7 @@ model valvulas {
   id_bomba              Int
   numero_saida_manifold Int           @db.SmallInt
   nome_valvula          String        @db.VarChar(80)
+  codigo_hardware       String?       @unique(map: "uq_valvulas_codigo_hardware") @db.VarChar(80)
   tipo_valvula          TipoValvula   @default(SOLENOIDE)
   status_valvula        StatusValvula @default(DESCONHECIDA)
   ativo                 Boolean       @default(true)

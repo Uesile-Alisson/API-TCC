@@ -14,6 +14,10 @@ export class Esp32HeartbeatDTO {
 
   @IsOptional()
   @IsString()
+  device?: string;
+
+  @IsOptional()
+  @IsString()
   device_is?: string;
 
   @IsString()
