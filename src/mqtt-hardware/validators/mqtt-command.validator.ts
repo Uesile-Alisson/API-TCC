@@ -27,6 +27,7 @@ export class MqttCommandoValidator {
     HardwareCommand.DESLIGAR_TODAS_BOMBAS,
     HardwareCommand.DESLIGAR_TODAS_VALVULAS,
     HardwareCommand.INICIAR_PROCESSO_VACUO,
+    HardwareCommand.PARAR_PROCESSO,
     HardwareCommand.SINCRONIZAR_HARDWARE,
   ] as const;
 
