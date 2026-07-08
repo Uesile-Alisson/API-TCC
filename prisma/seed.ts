@@ -68,6 +68,7 @@ type SeedValveInput = {
   codigo_hardware: string;
   numero_saida_manifold: number;
   tanqueNome: string;
+  bombaTipo: tipobomba;
 };
 
 type PermissionRecord = Prisma.permissoesGetPayload<object>;
@@ -206,22 +207,46 @@ const couplingSensorInputs: SeedSensorInput[] = [
 
 const valveInputs: SeedValveInput[] = [
   {
-    nome_valvula: 'Valvula Solenoide de Vacuo TR-01',
+    nome_valvula: 'Valvula principal do tanque 1',
     codigo_hardware: 'VP_T1',
     numero_saida_manifold: 1,
     tanqueNome: 'Tanque Regulador TR-01',
+    bombaTipo: tipobomba.PRINCIPAL,
   },
   {
-    nome_valvula: 'Valvula Solenoide de Vacuo TR-02',
+    nome_valvula: 'Valvula auxiliar do tanque 1',
+    codigo_hardware: 'VA_T1',
+    numero_saida_manifold: 1,
+    tanqueNome: 'Tanque Regulador TR-01',
+    bombaTipo: tipobomba.AUXILIAR,
+  },
+  {
+    nome_valvula: 'Valvula principal do tanque 2',
     codigo_hardware: 'VP_T2',
     numero_saida_manifold: 2,
     tanqueNome: 'Tanque Regulador TR-02',
+    bombaTipo: tipobomba.PRINCIPAL,
   },
   {
-    nome_valvula: 'Valvula Solenoide de Vacuo TR-03',
+    nome_valvula: 'Valvula auxiliar do tanque 2',
+    codigo_hardware: 'VA_T2',
+    numero_saida_manifold: 2,
+    tanqueNome: 'Tanque Regulador TR-02',
+    bombaTipo: tipobomba.AUXILIAR,
+  },
+  {
+    nome_valvula: 'Valvula principal do tanque 3',
     codigo_hardware: 'VP_T3',
     numero_saida_manifold: 3,
     tanqueNome: 'Tanque Regulador TR-03',
+    bombaTipo: tipobomba.PRINCIPAL,
+  },
+  {
+    nome_valvula: 'Valvula auxiliar do tanque 3',
+    codigo_hardware: 'VA_T3',
+    numero_saida_manifold: 3,
+    tanqueNome: 'Tanque Regulador TR-03',
+    bombaTipo: tipobomba.AUXILIAR,
   },
 ];
 
@@ -261,11 +286,11 @@ async function main(): Promise<void> {
   const vacuumSensors = await seedSensors(vacuumSensorInputs);
   const couplingSensors = await seedSensors(couplingSensorInputs);
   await seedCouplings(tanks, couplingSensors);
-  const mainPump = await seedPumps(
+  const pumps = await seedPumps(
     systemConfig.id_configuracao_sistema,
     admin.id_usuario,
   );
-  await seedValves(mainPump.id_bomba, tanks);
+  await seedValves(pumps, tanks);
   const process = await seedInitialProcess(admin.id_usuario);
   const processTanks = await seedProcessTanks(process.id_processo, tanks);
   const processTankSensors = await seedProcessTankSensors(
@@ -651,7 +676,7 @@ async function seedPumps(
   id_configuracao_sistema: number,
   id_usuario_alteracao: number,
 ) {
-  await prisma.bombas.upsert({
+  const auxiliaryPump = await prisma.bombas.upsert({
     where: { nome: 'Bomba Auxiliar de Estabilizacao' },
     update: {
       id_configuracao_sistema,
@@ -677,7 +702,7 @@ async function seedPumps(
     },
   });
 
-  return prisma.bombas.upsert({
+  const mainPump = await prisma.bombas.upsert({
     where: { nome: 'Bomba de Vacuo Principal' },
     update: {
       id_configuracao_sistema,
@@ -702,22 +727,33 @@ async function seedPumps(
       encerramento_automatico: true,
     },
   });
+
+  return new Map<tipobomba, { id_bomba: number }>([
+    [tipobomba.PRINCIPAL, mainPump],
+    [tipobomba.AUXILIAR, auxiliaryPump],
+  ]);
 }
 
 async function seedValves(
-  id_bomba: number,
+  pumps: Awaited<ReturnType<typeof seedPumps>>,
   tanks: Awaited<ReturnType<typeof seedTanks>>,
 ): Promise<void> {
   for (const valve of valveInputs) {
     const tank = tanks.get(valve.tanqueNome);
+    const pump = pumps.get(valve.bombaTipo);
+
     if (!tank) {
       throw new Error(`Tanque ausente para valvula: ${valve.nome_valvula}`);
+    }
+
+    if (!pump) {
+      throw new Error(`Bomba ${valve.bombaTipo} ausente para valvula.`);
     }
 
     await prisma.valvulas.upsert({
       where: {
         id_bomba_numero_saida_manifold: {
-          id_bomba,
+          id_bomba: pump.id_bomba,
           numero_saida_manifold: valve.numero_saida_manifold,
         },
       },
@@ -732,7 +768,7 @@ async function seedValves(
         atualizado_em: now(),
       },
       create: {
-        id_bomba,
+        id_bomba: pump.id_bomba,
         numero_saida_manifold: valve.numero_saida_manifold,
         nome_valvula: valve.nome_valvula,
         codigo_hardware: valve.codigo_hardware,

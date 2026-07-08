@@ -34,6 +34,19 @@ potenciometro fisico -> leitura analogica ESP32 -> PWM local -> MOSFET IRF520 ->
 
 A API trata bomba apenas como recurso operacional: principal ou auxiliar, ligada ou desligada, disponivel ou indisponivel, vinculada ao processo, comandos de ligar/desligar e parada de emergencia.
 
+## Codigos oficiais de valvulas
+
+Cada tanque possui duas valvulas de vacuo:
+
+| Tanque | Linha principal | Linha auxiliar |
+|---|---|---|
+| `TANQUE_1` | `VP_T1` | `VA_T1` |
+| `TANQUE_2` | `VP_T2` | `VA_T2` |
+| `TANQUE_3` | `VP_T3` | `VA_T3` |
+
+As valvulas `VP_*` pertencem a linha da `BOMBA_VACUO_PRINCIPAL`.
+As valvulas `VA_*` pertencem a linha da `BOMBA_VACUO_AUXILIAR`.
+
 ## Topicos MQTT
 
 | Topico | Direcao | Uso |
@@ -76,7 +89,36 @@ A API trata bomba apenas como recurso operacional: principal ou auxiliar, ligada
   "hardware": {
     "bombas": [],
     "tanques": [],
-    "valvulas": [],
+    "valvulas": [
+      {
+        "id_valvula": 1,
+        "codigo_hardware": "VP_T1",
+        "id_tanque": 3,
+        "tanque_codigo_hardware": "TANQUE_1",
+        "id_bomba": 2,
+        "bomba_codigo_hardware": "BOMBA_VACUO_PRINCIPAL",
+        "tipo": "PRINCIPAL",
+        "nome": "Valvula principal do tanque 1",
+        "numero_saida_manifold": 1,
+        "funcao_valvula": "VACUO",
+        "status_valvula": "FECHADA",
+        "disponivel": true
+      },
+      {
+        "id_valvula": 4,
+        "codigo_hardware": "VA_T1",
+        "id_tanque": 3,
+        "tanque_codigo_hardware": "TANQUE_1",
+        "id_bomba": 1,
+        "bomba_codigo_hardware": "BOMBA_VACUO_AUXILIAR",
+        "tipo": "AUXILIAR",
+        "nome": "Valvula auxiliar do tanque 1",
+        "numero_saida_manifold": 1,
+        "funcao_valvula": "VACUO",
+        "status_valvula": "FECHADA",
+        "disponivel": true
+      }
+    ],
     "sensores_vacuo": [],
     "sensores_acoplamento": []
   },
@@ -119,8 +161,20 @@ A API trata bomba apenas como recurso operacional: principal ou auxiliar, ligada
         {
           "id_valvula": 1,
           "codigo_hardware": "VP_T1",
-          "nome": "Valvula Solenoide de Vacuo TR-01",
-          "funcao_valvula": "VACUO"
+          "nome": "Valvula principal do tanque 1",
+          "funcao_valvula": "VACUO",
+          "tipo": "PRINCIPAL",
+          "id_bomba": 2,
+          "bomba_codigo_hardware": "BOMBA_VACUO_PRINCIPAL"
+        },
+        {
+          "id_valvula": 4,
+          "codigo_hardware": "VA_T1",
+          "nome": "Valvula auxiliar do tanque 1",
+          "funcao_valvula": "VACUO",
+          "tipo": "AUXILIAR",
+          "id_bomba": 1,
+          "bomba_codigo_hardware": "BOMBA_VACUO_AUXILIAR"
         }
       ],
       "vacuo_alvo": -80,
@@ -167,6 +221,23 @@ Comandos suportados:
 - `FECHAR_VALVULA`.
 - `DESLIGAR_TODAS_BOMBAS`.
 - `FECHAR_TODAS_VALVULAS`.
+
+Exemplo de comando para abrir uma valvula auxiliar:
+
+```json
+{
+  "comando": "ABRIR_VALVULA",
+  "correlation_id": "cmd_abrir-valvula_...",
+  "enviado_em": "2026-07-07T12:00:00.000Z",
+  "solicitado_por": null,
+  "motivo": "Acionar linha auxiliar do tanque 1",
+  "parametros": {
+    "id_valvula": 4
+  }
+}
+```
+
+O ESP32 deve resolver o `id_valvula` usando o `SYNC_CONFIG`. Para esse exemplo, o ID aponta para `VA_T1`.
 
 ### ACK
 

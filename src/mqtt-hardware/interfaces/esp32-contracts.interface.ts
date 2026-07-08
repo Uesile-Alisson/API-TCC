@@ -40,7 +40,10 @@ export interface Esp32HardwareValvulaPayload {
   id_valvula: number;
   codigo_hardware: string;
   id_tanque: number | null;
+  tanque_codigo_hardware?: string | null;
   id_bomba: number;
+  bomba_codigo_hardware?: string | null;
+  tipo: 'PRINCIPAL' | 'AUXILIAR' | 'OUTRA';
   nome: string;
   numero_saida_manifold: number;
   funcao_valvula: string;
@@ -91,6 +94,9 @@ export interface Esp32ProcessStartValvePayload {
   codigo_hardware: string;
   nome: string;
   funcao_valvula: string;
+  tipo: 'PRINCIPAL' | 'AUXILIAR' | 'OUTRA';
+  id_bomba: number;
+  bomba_codigo_hardware: string;
 }
 
 export interface Esp32ProcessStartPumpPayload {

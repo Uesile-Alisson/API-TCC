@@ -64,6 +64,10 @@ export class Esp32SyncConfigService {
         }),
         this.prisma.valvulas.findMany({
           where: { ativo: true },
+          include: {
+            bombas: true,
+            tanques: true,
+          },
           orderBy: { id_valvula: 'asc' },
         }),
         this.prisma.sensores.findMany({
@@ -132,7 +136,10 @@ export class Esp32SyncConfigService {
             `valvula ${valvula.nome_valvula}`,
           ),
           id_tanque: valvula.id_tanque,
+          tanque_codigo_hardware: valvula.tanques?.codigo_hardware ?? null,
           id_bomba: valvula.id_bomba,
+          bomba_codigo_hardware: valvula.bombas.codigo_hardware ?? null,
+          tipo: this.resolveValveType(valvula.bombas.tipo_bomba),
           nome: valvula.nome_valvula,
           numero_saida_manifold: valvula.numero_saida_manifold,
           funcao_valvula: valvula.funcao_valvula,
@@ -185,5 +192,19 @@ export class Esp32SyncConfigService {
     }
 
     return code;
+  }
+
+  private resolveValveType(
+    tipoBomba: string,
+  ): 'PRINCIPAL' | 'AUXILIAR' | 'OUTRA' {
+    if (tipoBomba === 'PRINCIPAL') {
+      return 'PRINCIPAL';
+    }
+
+    if (tipoBomba === 'AUXILIAR') {
+      return 'AUXILIAR';
+    }
+
+    return 'OUTRA';
   }
 }

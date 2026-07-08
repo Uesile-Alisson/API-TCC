@@ -16,7 +16,7 @@ const REQUIRED_MQTT_TOPICS = [
 
 const REQUIRED_CODES = {
   bombas: ['BOMBA_VACUO_PRINCIPAL', 'BOMBA_VACUO_AUXILIAR'],
-  valvulas: ['VP_T1', 'VP_T2', 'VP_T3'],
+  valvulas: ['VP_T1', 'VA_T1', 'VP_T2', 'VA_T2', 'VP_T3', 'VA_T3'],
   sensores: [
     'VACUO_T1',
     'VACUO_T2',

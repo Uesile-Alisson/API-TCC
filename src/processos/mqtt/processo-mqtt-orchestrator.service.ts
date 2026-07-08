@@ -167,7 +167,10 @@ export class ProcessoMqttOrchestratorService {
                 include: {
                   valvulas: {
                     where: { ativo: true },
-                    orderBy: { id_valvula: 'asc' },
+                    include: {
+                      bombas: true,
+                    },
+                    orderBy: [{ id_bomba: 'asc' }, { id_valvula: 'asc' }],
                   },
                   sensoresacoplamentomangueiras: {
                     include: { sensores: true },
@@ -249,6 +252,17 @@ export class ProcessoMqttOrchestratorService {
           );
         }
 
+        const hasMainValve = tanque.tanques.valvulas.some(
+          (valvula) =>
+            this.resolveValveType(valvula.bombas.tipo_bomba) === 'PRINCIPAL',
+        );
+
+        if (!hasMainValve) {
+          throw new BadRequestException(
+            `Tanque ${tanque.id_tanque} nao possui valvula principal ativa vinculada.`,
+          );
+        }
+
         return {
           id_tanque: tanque.id_tanque,
           codigo_hardware: this.requireCode(
@@ -283,6 +297,12 @@ export class ProcessoMqttOrchestratorService {
             ),
             nome: valvula.nome_valvula,
             funcao_valvula: valvula.funcao_valvula,
+            tipo: this.resolveValveType(valvula.bombas.tipo_bomba),
+            id_bomba: valvula.id_bomba,
+            bomba_codigo_hardware: this.requireCode(
+              valvula.bombas.codigo_hardware,
+              `bomba ${valvula.bombas.nome}`,
+            ),
           })),
           vacuo_alvo: Number(tanque.vacuo_alvo),
           unidade: sensorVacuo.sensores.unidade_medida,
@@ -371,5 +391,19 @@ export class ProcessoMqttOrchestratorService {
     }
 
     return code;
+  }
+
+  private resolveValveType(
+    tipoBomba: string,
+  ): 'PRINCIPAL' | 'AUXILIAR' | 'OUTRA' {
+    if (tipoBomba === 'PRINCIPAL') {
+      return 'PRINCIPAL';
+    }
+
+    if (tipoBomba === 'AUXILIAR') {
+      return 'AUXILIAR';
+    }
+
+    return 'OUTRA';
   }
 }

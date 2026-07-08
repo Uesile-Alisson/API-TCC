@@ -176,6 +176,18 @@ describe('ProcessoMqttOrchestratorService', () => {
             sensor_acoplamento: expect.objectContaining({
               codigo_hardware: 'ACOP_T1',
             }),
+            valvulas: expect.arrayContaining([
+              expect.objectContaining({
+                codigo_hardware: 'VP_T1',
+                tipo: 'PRINCIPAL',
+                bomba_codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
+              }),
+              expect.objectContaining({
+                codigo_hardware: 'VA_T1',
+                tipo: 'AUXILIAR',
+                bomba_codigo_hardware: 'BOMBA_VACUO_AUXILIAR',
+              }),
+            ]),
           }),
         ],
       }),
@@ -281,8 +293,28 @@ describe('ProcessoMqttOrchestratorService', () => {
               {
                 id_valvula: 70,
                 codigo_hardware: 'VP_T1',
-                nome_valvula: 'Valvula Vacuo',
+                nome_valvula: 'Valvula principal do tanque 1',
                 funcao_valvula: 'VACUO',
+                id_bomba: 1,
+                bombas: {
+                  id_bomba: 1,
+                  codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
+                  nome: 'Bomba de Vacuo Principal',
+                  tipo_bomba: 'PRINCIPAL',
+                },
+              },
+              {
+                id_valvula: 71,
+                codigo_hardware: 'VA_T1',
+                nome_valvula: 'Valvula auxiliar do tanque 1',
+                funcao_valvula: 'VACUO',
+                id_bomba: 2,
+                bombas: {
+                  id_bomba: 2,
+                  codigo_hardware: 'BOMBA_VACUO_AUXILIAR',
+                  nome: 'Bomba Auxiliar de Estabilizacao',
+                  tipo_bomba: 'AUXILIAR',
+                },
               },
             ],
           },

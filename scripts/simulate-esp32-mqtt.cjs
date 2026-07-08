@@ -41,8 +41,10 @@ const state = {
   vacuoSensorByCode: new Map(),
   diagnosticVacuumByCode: new Map(),
   valvulaByCode: new Map(),
+  valvulaById: new Map(),
+  bombaById: new Map(),
   openValveCodes: new Set(),
-  mainPumpOn: false,
+  pumpOnCodes: new Set(),
   emergencyActive: false,
   timers: [],
 };
@@ -225,7 +227,19 @@ async function handleCommand(payload) {
     return;
   }
 
-  await applyGenericCommand(comando);
+  const commandResult = applyGenericCommand(comando, payload);
+
+  if (!commandResult.ok) {
+    await publishAck({
+      correlationId,
+      comando,
+      status: 'ERRO',
+      mensagem: commandResult.error,
+      erro: commandResult.code,
+    });
+    return;
+  }
+
   await publishAck({
     correlationId,
     comando,
@@ -267,7 +281,7 @@ async function handleStartVacuumProcess(payload, correlationId) {
     bomba: payload.bomba,
     tanques: activeTanks,
   };
-  state.mainPumpOn = true;
+  state.pumpOnCodes.add(payload.bomba.codigo_hardware);
   state.emergencyActive = false;
   state.openValveCodes.clear();
 
@@ -297,7 +311,7 @@ async function stopActiveProcess(comando, correlationId) {
   state.activeProcess = null;
   state.currentVacuumByPts.clear();
   state.openValveCodes.clear();
-  state.mainPumpOn = false;
+  state.pumpOnCodes.clear();
   state.emergencyActive = comando === 'PARADA_EMERGENCIA';
 
   await publishAck({
@@ -315,21 +329,76 @@ async function stopActiveProcess(comando, correlationId) {
   }
 }
 
-async function applyGenericCommand(comando) {
+function applyGenericCommand(comando, payload) {
   if (comando === 'LIGAR_BOMBA') {
-    state.mainPumpOn = true;
+    const bomba = resolveCommandPump(payload);
+    if (!bomba) {
+      return {
+        ok: false,
+        code: 'BOMBA_DESCONHECIDA',
+        error: 'Bomba desconhecida ou ausente no comando.',
+      };
+    }
+    state.pumpOnCodes.add(bomba.codigo_hardware);
   }
 
-  if (comando === 'DESLIGAR_BOMBA' || comando === 'DESLIGAR_TODAS_BOMBAS') {
-    state.mainPumpOn = false;
+  if (comando === 'DESLIGAR_BOMBA') {
+    const bomba = resolveCommandPump(payload);
+    if (!bomba) {
+      return {
+        ok: false,
+        code: 'BOMBA_DESCONHECIDA',
+        error: 'Bomba desconhecida ou ausente no comando.',
+      };
+    }
+    state.pumpOnCodes.delete(bomba.codigo_hardware);
     clearActiveProcessReadings(
       `${comando} recebido. Leituras fake interrompidas pelo simulador.`,
     );
   }
 
-  if (comando === 'FECHAR_VALVULA' || comando === 'FECHAR_TODAS_VALVULAS') {
+  if (comando === 'DESLIGAR_TODAS_BOMBAS') {
+    state.pumpOnCodes.clear();
+    clearActiveProcessReadings(
+      `${comando} recebido. Leituras fake interrompidas pelo simulador.`,
+    );
+  }
+
+  if (comando === 'ABRIR_VALVULA') {
+    const valve = resolveCommandValve(payload);
+    if (!valve) {
+      return {
+        ok: false,
+        code: 'VALVULA_DESCONHECIDA',
+        error: 'Valvula desconhecida ou ausente no comando.',
+      };
+    }
+    state.openValveCodes.add(valve.codigo_hardware);
+  }
+
+  if (comando === 'FECHAR_VALVULA') {
+    const valve = resolveCommandValve(payload);
+    if (!valve) {
+      return {
+        ok: false,
+        code: 'VALVULA_DESCONHECIDA',
+        error: 'Valvula desconhecida ou ausente no comando.',
+      };
+    }
+    state.openValveCodes.delete(valve.codigo_hardware);
+  }
+
+  if (comando === 'ABRIR_TODAS_VALVULAS') {
+    for (const valve of state.valvulaByCode.values()) {
+      state.openValveCodes.add(valve.codigo_hardware);
+    }
+  }
+
+  if (comando === 'FECHAR_TODAS_VALVULAS') {
     state.openValveCodes.clear();
   }
+
+  return { ok: true };
 }
 
 function clearActiveProcessReadings(reason) {
@@ -537,18 +606,19 @@ async function publishAck(input) {
 }
 
 function buildBombasStatus() {
-  return [
-    {
-      codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
-      ligada: state.mainPumpOn,
-      disponivel: true,
-    },
-    {
-      codigo_hardware: 'BOMBA_VACUO_AUXILIAR',
-      ligada: false,
-      disponivel: true,
-    },
-  ];
+  const bombas =
+    state.bombaById.size > 0
+      ? [...state.bombaById.values()]
+      : [
+          { codigo_hardware: 'BOMBA_VACUO_PRINCIPAL' },
+          { codigo_hardware: 'BOMBA_VACUO_AUXILIAR' },
+        ];
+
+  return bombas.map((bomba) => ({
+    codigo_hardware: bomba.codigo_hardware,
+    ligada: state.pumpOnCodes.has(bomba.codigo_hardware),
+    disponivel: true,
+  }));
 }
 
 function buildLegacyValveStatusField() {
@@ -593,7 +663,9 @@ function ingestSyncConfig(payload) {
   const sensors = payload?.hardware?.sensores_acoplamento;
   const vacuumSensors = payload?.hardware?.sensores_vacuo;
   const valves = payload?.hardware?.valvulas;
+  const pumps = payload?.hardware?.bombas;
 
+  ingestSyncBombas(pumps);
   ingestSyncVacuumSensors(vacuumSensors);
 
   if (!Array.isArray(sensors)) {
@@ -616,6 +688,24 @@ function ingestSyncConfig(payload) {
   }
 
   ingestSyncValves(valves);
+}
+
+function ingestSyncBombas(pumps) {
+  if (!Array.isArray(pumps)) {
+    return;
+  }
+
+  for (const pump of pumps) {
+    if (
+      Number.isInteger(pump.id_bomba) &&
+      typeof pump.codigo_hardware === 'string'
+    ) {
+      state.bombaById.set(pump.id_bomba, {
+        id_bomba: pump.id_bomba,
+        codigo_hardware: pump.codigo_hardware,
+      });
+    }
+  }
 }
 
 function ingestSyncVacuumSensors(sensors) {
@@ -650,6 +740,12 @@ function ingestSyncValves(valves) {
       state.valvulaByCode.set(valve.codigo_hardware, {
         id_valvula: valve.id_valvula,
         codigo_hardware: valve.codigo_hardware,
+        tipo: valve.tipo,
+      });
+      state.valvulaById.set(valve.id_valvula, {
+        id_valvula: valve.id_valvula,
+        codigo_hardware: valve.codigo_hardware,
+        tipo: valve.tipo,
       });
     }
   }
@@ -684,8 +780,34 @@ function rememberValveFromStart(valve) {
     state.valvulaByCode.set(valve.codigo_hardware, {
       id_valvula: valve.id_valvula,
       codigo_hardware: valve.codigo_hardware,
+      tipo: valve.tipo,
+    });
+    state.valvulaById.set(valve.id_valvula, {
+      id_valvula: valve.id_valvula,
+      codigo_hardware: valve.codigo_hardware,
+      tipo: valve.tipo,
     });
   }
+}
+
+function resolveCommandValve(payload) {
+  const idValvula = Number(payload?.parametros?.id_valvula ?? payload?.id_valvula);
+
+  if (!Number.isInteger(idValvula) || idValvula <= 0) {
+    return null;
+  }
+
+  return state.valvulaById.get(idValvula) ?? null;
+}
+
+function resolveCommandPump(payload) {
+  const idBomba = Number(payload?.parametros?.id_bomba ?? payload?.id_bomba);
+
+  if (!Number.isInteger(idBomba) || idBomba <= 0) {
+    return null;
+  }
+
+  return state.bombaById.get(idBomba) ?? null;
 }
 
 function resolveCommandName(payload) {
