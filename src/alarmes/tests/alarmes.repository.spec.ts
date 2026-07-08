@@ -123,6 +123,9 @@ describe('AlarmesRepository', () => {
       {
         status_alarme: statusalarme.ATIVO,
         resolvido_em: null,
+        severidade: {
+          in: [severidadealarme.MEDIO, severidadealarme.CRITICO],
+        },
       },
     ]);
     expect(args.orderBy).toEqual({ severidade: 'asc' });
@@ -142,6 +145,9 @@ describe('AlarmesRepository', () => {
         {
           status_alarme: statusalarme.ATIVO,
           resolvido_em: null,
+          severidade: {
+            in: [severidadealarme.MEDIO, severidadealarme.CRITICO],
+          },
         },
       ],
     });
@@ -381,6 +387,9 @@ describe('AlarmesRepository', () => {
         {
           status_alarme: statusalarme.ATIVO,
           resolvido_em: null,
+          severidade: {
+            in: [severidadealarme.MEDIO, severidadealarme.CRITICO],
+          },
         },
       ],
     });

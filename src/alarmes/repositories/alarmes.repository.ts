@@ -719,6 +719,9 @@ export class AlarmesRepository {
       return {
         status_alarme: statusalarme.ATIVO,
         resolvido_em: null,
+        severidade: {
+          in: [severidadealarme.MEDIO, severidadealarme.CRITICO],
+        },
       };
     }
 

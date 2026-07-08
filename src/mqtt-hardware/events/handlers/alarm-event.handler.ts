@@ -66,6 +66,19 @@ export class AlarmEventHandler {
       };
     }
 
+    if (classification.severidade === severidadealarme.INFO) {
+      const operationalLogCreated =
+        await this.createInformationalOperationalLog(classification);
+
+      return {
+        alarmCreated: false,
+        socketEmitted: false,
+        operationalLogCreated,
+        message:
+          'Classificacao INFO registrada como log operacional sem criar alarme.',
+      };
+    }
+
     if (!this.canPersistAlarm(classification)) {
       this.logger.warn(
         `Alarme não persistido por falta de referência operacional ou MQTT. Título: ${classification.titulo}`,
@@ -259,6 +272,41 @@ export class AlarmEventHandler {
         error instanceof Error
           ? error.message
           : 'Erro desconhecido ao registrar log operacional.';
+
+      this.logger.error(
+        message,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      return false;
+    }
+  }
+
+  private async createInformationalOperationalLog(
+    classification: AlarmRequiredClassificationResult,
+  ): Promise<boolean> {
+    try {
+      await this.prisma.logsoperacionais.create({
+        data: {
+          id_usuario: classification.id_usuario_responsavel ?? null,
+          id_processo: classification.id_processo ?? null,
+          tipo_log: tipologoperacional.ALARME,
+          acao: 'ALARME_INFO_CLASSIFICADO',
+          descricao:
+            `Evento informativo classificado sem criar alarme operacional. ` +
+            `Titulo: ${classification.titulo}. ` +
+            `Tipo: ${classification.tipo_alarme}.`,
+          origem: origemlogoperacional.SISTEMA,
+          resultado: resultadooperacao.SUCESSO,
+        },
+      });
+
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Erro desconhecido ao registrar log operacional informativo.';
 
       this.logger.error(
         message,

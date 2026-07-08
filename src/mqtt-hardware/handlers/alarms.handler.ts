@@ -1,9 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   origemalarme,
+  origemlogoperacional,
+  resultadooperacao,
   severidadealarme,
   statusalarme,
   tipoalarme,
+  tipologoperacional,
 } from '@prisma/client';
 import type { alarmes } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -40,6 +43,16 @@ export class AlarmsHandler implements MqttMessageHandler<MqttAlarmHandlerResult 
     const referencesAreValid = await this.validateOriginReferences(dto);
 
     if (!referencesAreValid) {
+      return null;
+    }
+
+    if (dto.severidade === severidadealarme.INFO) {
+      await this.registerInformationalLog(message, dto);
+      this.logger.log(
+        `Evento INFO MQTT registrado como log operacional. ` +
+          `Topico: ${message.topic}. Titulo: ${dto.titulo}.`,
+      );
+
       return null;
     }
 
@@ -95,6 +108,26 @@ export class AlarmsHandler implements MqttMessageHandler<MqttAlarmHandlerResult 
         id_processo: dto.id_processo ?? null,
         id_processo_tanque: dto.id_processo_tanque ?? null,
         id_processo_tanque_sensor: dto.id_processo_tanque_sensor ?? null,
+      },
+    });
+  }
+
+  private async registerInformationalLog(
+    message: MqttMessage,
+    dto: AlarmPayload,
+  ): Promise<void> {
+    await this.prisma.logsoperacionais.create({
+      data: {
+        id_usuario: null,
+        id_processo: dto.id_processo ?? null,
+        tipo_log: tipologoperacional.ALARME,
+        acao: 'ALARME_INFO_MQTT_RECEBIDO',
+        descricao:
+          `Evento informativo MQTT recebido sem criar alarme operacional. ` +
+          `Topico: ${message.topic}. Titulo: ${dto.titulo}. ` +
+          `Tipo: ${dto.tipo_alarme ?? tipoalarme.ESP32}.`,
+        origem: origemlogoperacional.MQTT,
+        resultado: resultadooperacao.SUCESSO,
       },
     });
   }

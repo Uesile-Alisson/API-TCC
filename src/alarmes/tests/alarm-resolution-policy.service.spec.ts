@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import {
   motivoresolucaoalarme,
+  severidadealarme,
   statusalarme,
   statusprocesso,
 } from '@prisma/client';
@@ -13,6 +14,7 @@ function makeAlarm(
   overrides: Partial<AlarmResolutionPolicySubject> = {},
 ): AlarmResolutionPolicySubject {
   return {
+    severidade: severidadealarme.MEDIO,
     status_alarme: statusalarme.ATIVO,
     bloqueante: false,
     requer_intervencao: false,
@@ -165,9 +167,10 @@ describe('AlarmResolutionPolicyService', () => {
     });
   });
 
-  it('permite alarme sem processo + ATIVO informativo sem risco tecnico', () => {
+  it('permite alarme sem processo + ATIVO medio sem risco tecnico', () => {
     const result = service.decide(
       makeAlarm({
+        severidade: severidadealarme.MEDIO,
         status_alarme: statusalarme.ATIVO,
         processos: null,
       }),
@@ -176,6 +179,21 @@ describe('AlarmResolutionPolicyService', () => {
     expect(result).toMatchObject({
       allowed: true,
       motivo_resolucao: motivoresolucaoalarme.FECHAMENTO_POS_PROCESSO,
+    });
+  });
+
+  it('bloqueia INFO porque evento informativo nao exige resolucao operacional', () => {
+    const result = service.decide(
+      makeAlarm({
+        severidade: severidadealarme.INFO,
+        status_alarme: statusalarme.ATIVO,
+        processos: null,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      allowed: false,
+      motivo_resolucao: null,
     });
   });
 });

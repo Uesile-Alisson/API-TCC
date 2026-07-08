@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   motivoresolucaoalarme,
+  severidadealarme,
   statusalarme,
   statusprocesso,
 } from '@prisma/client';
@@ -12,6 +13,7 @@ export interface AlarmResolutionPolicyResult {
 }
 
 export interface AlarmResolutionPolicySubject {
+  severidade: severidadealarme;
   status_alarme: statusalarme;
   bloqueante: boolean;
   requer_intervencao: boolean;
@@ -25,6 +27,14 @@ export interface AlarmResolutionPolicySubject {
 export class AlarmResolutionPolicyService {
   decide(alarme: AlarmResolutionPolicySubject): AlarmResolutionPolicyResult {
     const processStatus = alarme.processos?.status_processo ?? null;
+
+    if (alarme.severidade === severidadealarme.INFO) {
+      return {
+        allowed: false,
+        reason: 'Evento informativo nao exige resolucao operacional de alarme.',
+        motivo_resolucao: null,
+      };
+    }
 
     if (alarme.status_alarme === statusalarme.NORMALIZADO) {
       return {
