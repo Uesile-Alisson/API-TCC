@@ -58,6 +58,17 @@ describe('AlarmeMapper', () => {
     expect(JSON.stringify(record)).not.toContain('senha_hash');
   });
 
+  it('toResponse trata resolvido_em preenchido como status RESOLVIDO mesmo se status bruto vier ATIVO', () => {
+    const result = mapper.toResponse(
+      makeRawAlarme({
+        status_alarme: 'ATIVO',
+        resolvido_em: new Date('2026-06-21T10:00:00Z'),
+      }),
+    );
+
+    expect(result.status_alarme).toBe('RESOLVIDO');
+  });
+
   it('toDetails mapeia relacoes resumidas sem payload ou dados sensiveis', () => {
     const result = mapper.toDetails(makeRawDetails());
     const serialized = JSON.stringify(result);
@@ -155,6 +166,17 @@ describe('AlarmeMapper', () => {
 
     expect(fallback.policy).toEqual(ALARME_NOTIFICATION_POLICIES.INFO);
     expect(fallback.emitted_at).toBeInstanceOf(Date);
+  });
+
+  it('toNotificationPayload usa status efetivo quando resolvido_em esta preenchido', () => {
+    const result = mapper.toNotificationPayload(
+      makeRawAlarme({
+        status_alarme: 'ATIVO',
+        resolvido_em: new Date('2026-06-21T10:00:00Z'),
+      }),
+    );
+
+    expect(result.status_alarme).toBe('RESOLVIDO');
   });
 
   it('toResolveResult retorna resultado de resolucao padronizado', () => {

@@ -321,6 +321,7 @@ export class AlarmesRepository {
       where: {
         id_processo,
         status_alarme: statusalarme.ATIVO,
+        resolvido_em: null,
         severidade: severidadealarme.CRITICO,
         excluido_em: null,
       },
@@ -339,11 +340,11 @@ export class AlarmesRepository {
       total,
       ativos,
       resolvidos,
+      normalizados,
       criticos,
       medios,
       infos,
       porSeveridade,
-      porStatus,
       porTipo,
       porOrigem,
       ultimosCriticos,
@@ -355,6 +356,9 @@ export class AlarmesRepository {
       }),
       this.prisma.alarmes.count({
         where: this.withStatus(baseWhere, statusalarme.RESOLVIDO),
+      }),
+      this.prisma.alarmes.count({
+        where: this.withStatus(baseWhere, statusalarme.NORMALIZADO),
       }),
       this.prisma.alarmes.count({
         where: this.withSeverity(baseWhere, severidadealarme.CRITICO),
@@ -370,16 +374,6 @@ export class AlarmesRepository {
         where: baseWhere,
         orderBy: {
           severidade: 'asc',
-        },
-        _count: {
-          id_alarme: true,
-        },
-      }),
-      this.prisma.alarmes.groupBy({
-        by: ['status_alarme'],
-        where: baseWhere,
-        orderBy: {
-          status_alarme: 'asc',
         },
         _count: {
           id_alarme: true,
@@ -434,10 +428,11 @@ export class AlarmesRepository {
         severidade: item.severidade,
         total: this.getGroupTotal(item),
       })),
-      por_status: porStatus.map((item) => ({
-        status_alarme: item.status_alarme,
-        total: this.getGroupTotal(item),
-      })),
+      por_status: [
+        { status_alarme: statusalarme.ATIVO, total: ativos },
+        { status_alarme: statusalarme.NORMALIZADO, total: normalizados },
+        { status_alarme: statusalarme.RESOLVIDO, total: resolvidos },
+      ],
       por_tipo: porTipo.map((item) => ({
         tipo_alarme: item.tipo_alarme,
         total: this.getGroupTotal(item),
@@ -574,8 +569,8 @@ export class AlarmesRepository {
       where.severidade = filters.severidade;
     }
 
-    if (filters.status_alarme) {
-      where.status_alarme = filters.status_alarme;
+    if (filters.status_alarme && !filters.apenas_ativos) {
+      this.appendAndWhere(where, this.buildStatusWhere(filters.status_alarme));
     }
 
     if (filters.tipo_alarme) {
@@ -603,7 +598,7 @@ export class AlarmesRepository {
     }
 
     if (filters.apenas_ativos) {
-      where.status_alarme = statusalarme.ATIVO;
+      this.appendAndWhere(where, this.buildStatusWhere(statusalarme.ATIVO));
     }
 
     if (filters.apenas_criticos) {
@@ -683,8 +678,7 @@ export class AlarmesRepository {
     status: statusalarme,
   ): Prisma.alarmesWhereInput {
     return {
-      ...where,
-      status_alarme: status,
+      AND: [where, this.buildStatusWhere(status)],
     };
   }
 
@@ -704,5 +698,48 @@ export class AlarmesRepository {
     }
 
     return item._count.id_alarme ?? item._count._all ?? 0;
+  }
+
+  private appendAndWhere(
+    where: Prisma.alarmesWhereInput,
+    condition: Prisma.alarmesWhereInput,
+  ): void {
+    const currentAnd = where.AND;
+    const conditions = Array.isArray(currentAnd)
+      ? currentAnd
+      : currentAnd
+        ? [currentAnd]
+        : [];
+
+    where.AND = [...conditions, condition];
+  }
+
+  private buildStatusWhere(status: statusalarme): Prisma.alarmesWhereInput {
+    if (status === statusalarme.ATIVO) {
+      return {
+        status_alarme: statusalarme.ATIVO,
+        resolvido_em: null,
+      };
+    }
+
+    if (status === statusalarme.RESOLVIDO) {
+      return {
+        OR: [
+          { status_alarme: statusalarme.RESOLVIDO },
+          { resolvido_em: { not: null } },
+        ],
+      };
+    }
+
+    if (status === statusalarme.NORMALIZADO) {
+      return {
+        status_alarme: statusalarme.NORMALIZADO,
+        resolvido_em: null,
+      };
+    }
+
+    return {
+      status_alarme: status,
+    };
   }
 }

@@ -139,7 +139,10 @@ export class AlarmeMapper {
       descricao: alarme.descricao,
       tipo_alarme: this.toAlarmeType(alarme.tipo_alarme),
       severidade: this.toAlarmeSeverity(alarme.severidade),
-      status_alarme: this.toAlarmeStatus(alarme.status_alarme),
+      status_alarme: this.toEffectiveAlarmeStatus(
+        alarme.status_alarme,
+        alarme.resolvido_em,
+      ),
       origem_alarme: this.toAlarmeOrigin(alarme.origem_alarme),
       valor_detectado: this.decimalToNumber(alarme.valor_detectado),
       unidade: alarme.unidade,
@@ -257,7 +260,10 @@ export class AlarmeMapper {
       titulo: alarme.titulo,
       descricao: alarme.descricao,
       severidade,
-      status_alarme: this.toAlarmeStatus(alarme.status_alarme),
+      status_alarme: this.toEffectiveAlarmeStatus(
+        alarme.status_alarme,
+        alarme.resolvido_em,
+      ),
       ocorrido_em: alarme.ocorrido_em,
       policy:
         ALARME_NOTIFICATION_POLICIES[severidade] ??
@@ -339,6 +345,17 @@ export class AlarmeMapper {
       default:
         return 'ATIVO';
     }
+  }
+
+  private toEffectiveAlarmeStatus(
+    status: string,
+    resolvidoEm?: Date | null,
+  ): AlarmeStatus {
+    if (resolvidoEm) {
+      return 'RESOLVIDO';
+    }
+
+    return this.toAlarmeStatus(status);
   }
 
   private toAlarmeType(value: string): AlarmeType {

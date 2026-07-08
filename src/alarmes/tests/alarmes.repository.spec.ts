@@ -104,7 +104,6 @@ describe('AlarmesRepository', () => {
     expect(args.where).toMatchObject({
       excluido_em: null,
       severidade: severidadealarme.CRITICO,
-      status_alarme: statusalarme.ATIVO,
       tipo_alarme: tipoalarme.PROCESSO,
       origem_alarme: origemalarme.BACKEND,
       id_processo: 10,
@@ -120,6 +119,12 @@ describe('AlarmesRepository', () => {
         { descricao: { contains: 'pressao', mode: 'insensitive' } },
       ],
     });
+    expect(args.where?.AND).toEqual([
+      {
+        status_alarme: statusalarme.ATIVO,
+        resolvido_em: null,
+      },
+    ]);
     expect(args.orderBy).toEqual({ severidade: 'asc' });
   });
 
@@ -132,8 +137,13 @@ describe('AlarmesRepository', () => {
     });
 
     expect(getFindManyArg().where).toMatchObject({
-      status_alarme: statusalarme.ATIVO,
       excluido_em: null,
+      AND: [
+        {
+          status_alarme: statusalarme.ATIVO,
+          resolvido_em: null,
+        },
+      ],
     });
   });
 
@@ -300,6 +310,7 @@ describe('AlarmesRepository', () => {
       where: {
         id_processo: 10,
         status_alarme: statusalarme.ATIVO,
+        resolvido_em: null,
         severidade: severidadealarme.CRITICO,
         excluido_em: null,
       },
@@ -314,15 +325,13 @@ describe('AlarmesRepository', () => {
       .mockResolvedValueOnce(12)
       .mockResolvedValueOnce(5)
       .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(3)
       .mockResolvedValueOnce(4)
       .mockResolvedValueOnce(5);
     prisma.alarmes.groupBy
       .mockResolvedValueOnce([
         { severidade: severidadealarme.CRITICO, _count: { id_alarme: 3 } },
-      ])
-      .mockResolvedValueOnce([
-        { status_alarme: statusalarme.ATIVO, _count: { id_alarme: 5 } },
       ])
       .mockResolvedValueOnce([
         { tipo_alarme: tipoalarme.PROCESSO, _count: { id_alarme: 2 } },
@@ -345,7 +354,11 @@ describe('AlarmesRepository', () => {
       medios: 4,
       infos: 5,
       por_severidade: [{ severidade: severidadealarme.CRITICO, total: 3 }],
-      por_status: [{ status_alarme: statusalarme.ATIVO, total: 5 }],
+      por_status: [
+        { status_alarme: statusalarme.ATIVO, total: 5 },
+        { status_alarme: statusalarme.NORMALIZADO, total: 2 },
+        { status_alarme: statusalarme.RESOLVIDO, total: 7 },
+      ],
       por_tipo: [{ tipo_alarme: tipoalarme.PROCESSO, total: 2 }],
       por_origem: [{ origem_alarme: origemalarme.BACKEND, total: 2 }],
     });
@@ -360,9 +373,16 @@ describe('AlarmesRepository', () => {
       severidade: severidadealarme.CRITICO,
     });
     expect(getFindManyArg(1).where).toMatchObject({
-      excluido_em: null,
-      id_processo: 10,
-      status_alarme: statusalarme.ATIVO,
+      AND: [
+        {
+          excluido_em: null,
+          id_processo: 10,
+        },
+        {
+          status_alarme: statusalarme.ATIVO,
+          resolvido_em: null,
+        },
+      ],
     });
   });
 
