@@ -285,7 +285,7 @@ async function main() {
       descricao: validationDescription(
         'Massa artificial criada para validar fechamento pos-processo CONCLUIDO.',
       ),
-      severidade: severidadealarme.INFO,
+      severidade: severidadealarme.MEDIO,
       status: statusalarme.ATIVO,
       idProcesso: processes.concluido.id_processo,
     }),
