@@ -10,8 +10,8 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AcoplamentoContextCacheService } from '../cache';
 import { AcoplamentoAlarmClassifier } from '../classifiers/acoplamento-alarm.classifier';
 import { EventProcessingStatus } from '../enums';
-import { CommandService } from '@/mqtt-hardware/commands/command.service';
 import { MqttSocketGateway } from '@/mqtt-hardware/socket/mqtt-socket.gateway';
+import { ProcessoGeneralClosureService } from '@/processos/lifecycle';
 import { AlarmEventHandler } from './alarm-event.handler';
 import type {
   AcoplamentoEventInput,
@@ -29,7 +29,7 @@ export class AcoplamentoEventHandler {
     private readonly prisma: PrismaService,
     private readonly acoplamentoContextCache: AcoplamentoContextCacheService,
     private readonly acoplamentoAlarmClassifier: AcoplamentoAlarmClassifier,
-    private readonly commandService: CommandService,
+    private readonly processoGeneralClosureService: ProcessoGeneralClosureService,
     private readonly alarmEventHandler: AlarmEventHandler,
     private readonly mqttSocketGateway: MqttSocketGateway,
   ) {}
@@ -44,6 +44,11 @@ export class AcoplamentoEventHandler {
       const classification = this.acoplamentoAlarmClassifier.classify({
         input,
         context,
+      });
+
+      const emergencyStopSent = await this.requestEmergencyStopIfNeeded({
+        context,
+        classification,
       });
 
       const idEventoProcesso = await this.creatProcessEventIfNeeded({
@@ -61,11 +66,6 @@ export class AcoplamentoEventHandler {
         await this.alarmEventHandler.handleClassification(classification);
 
       const idAlarme = alarmResult.id_alarme ?? null;
-
-      const emergencyStopSent = await this.requestEmergencyStopIfNeeded({
-        context,
-        classification,
-      });
 
       if (!idEventoProcesso && !idAlarme && !emergencyStopSent) {
         return {
@@ -269,7 +269,9 @@ export class AcoplamentoEventHandler {
       return false;
     }
 
-    await this.commandService.paradaEmergencia({
+    await this.processoGeneralClosureService.requestEmergencyStopForCurrent({
+      id_processo: context.id_processo,
+      id_usuario: null,
       motivo:
         'Parada de emergência acionada automaticament.' +
         `Motivo: ${classification.titulo}.` +

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { modooperacaoauxiliar } from '@prisma/client';
 import {
   CreateProcessoDTO,
   CreateProcessoTanqueDTO,
@@ -16,6 +17,9 @@ export class ProcessoConfigValidator {
   validateCreate(dto: CreateProcessoDTO) {
     this.validateTempoMaximo(dto.tempo_maximo);
     this.validateVacuoAlvo(dto.vacuo_alvo, 'vacuo_alvo');
+    this.validateAuxiliaryMode(dto.modo_operacao_auxiliar, true);
+    this.validateAutomaticClosure(dto.encerramento_automatico, true);
+    this.validateOperationalParameters(dto);
     this.validateTanques(dto.tanques, true);
   }
 
@@ -27,6 +31,10 @@ export class ProcessoConfigValidator {
     if (dto.vacuo_alvo !== undefined) {
       this.validateVacuoAlvo(dto.vacuo_alvo, 'vacuo_alvo');
     }
+
+    this.validateAuxiliaryMode(dto.modo_operacao_auxiliar, false);
+    this.validateAutomaticClosure(dto.encerramento_automatico, false);
+    this.validateOperationalParameters(dto);
 
     if (dto.tanques !== undefined) {
       this.validateTanques(dto.tanques, true);
@@ -40,6 +48,18 @@ export class ProcessoConfigValidator {
       dto.nome_processo !== undefined ||
       dto.tempo_maximo !== undefined ||
       dto.vacuo_alvo !== undefined ||
+      dto.modo_operacao_auxiliar !== undefined ||
+      dto.encerramento_automatico !== undefined ||
+      dto.estagnacao_janela_segundos !== undefined ||
+      dto.estagnacao_variacao_minima !== undefined ||
+      dto.estagnacao_leituras_minimas !== undefined ||
+      dto.estagnacao_janelas_consecutivas !== undefined ||
+      dto.estagnacao_tempo_minimo_bomba_principal_segundos !== undefined ||
+      dto.estagnacao_tempo_maximo_sem_progresso_segundos !== undefined ||
+      dto.estagnacao_fator_minimo_proximidade_alvo !== undefined ||
+      dto.auxilio_janela_avaliacao_segundos !== undefined ||
+      dto.auxilio_melhoria_minima !== undefined ||
+      dto.auxilio_timeout_segundos !== undefined ||
       dto.tanques !== undefined;
 
     if (!hasAsyncField) {
@@ -67,6 +87,119 @@ export class ProcessoConfigValidator {
     }
   }
 
+  private validateAuxiliaryMode(
+    mode: modooperacaoauxiliar | undefined,
+    required: boolean,
+  ): void {
+    if (mode === undefined || mode === null) {
+      if (required) {
+        throw new BadRequestException(
+          'O modo de operacao do subsistema auxiliar e obrigatorio.',
+        );
+      }
+
+      return;
+    }
+
+    if (!Object.values(modooperacaoauxiliar).includes(mode)) {
+      throw new BadRequestException(
+        'Modo de operacao auxiliar invalido. Use AUTOMATICO, ASSISTIDO ou MANUAL.',
+      );
+    }
+  }
+
+  private validateAutomaticClosure(
+    enabled: boolean | undefined,
+    required: boolean,
+  ): void {
+    if (enabled === undefined || enabled === null) {
+      if (required) {
+        throw new BadRequestException(
+          'A configuracao de encerramento automatico e obrigatoria.',
+        );
+      }
+
+      return;
+    }
+
+    if (typeof enabled !== 'boolean') {
+      throw new BadRequestException(
+        'encerramento_automatico deve ser booleano.',
+      );
+    }
+  }
+
+  private validateOperationalParameters(dto: ProcessoConfigDTO): void {
+    const positiveIntegers: Array<[string, number | undefined, number]> = [
+      ['estagnacao_janela_segundos', dto.estagnacao_janela_segundos, 10],
+      ['estagnacao_leituras_minimas', dto.estagnacao_leituras_minimas, 3],
+      [
+        'estagnacao_janelas_consecutivas',
+        dto.estagnacao_janelas_consecutivas,
+        1,
+      ],
+      [
+        'estagnacao_tempo_minimo_bomba_principal_segundos',
+        dto.estagnacao_tempo_minimo_bomba_principal_segundos,
+        0,
+      ],
+      [
+        'estagnacao_tempo_maximo_sem_progresso_segundos',
+        dto.estagnacao_tempo_maximo_sem_progresso_segundos,
+        10,
+      ],
+      [
+        'auxilio_janela_avaliacao_segundos',
+        dto.auxilio_janela_avaliacao_segundos,
+        5,
+      ],
+      ['auxilio_timeout_segundos', dto.auxilio_timeout_segundos, 10],
+    ];
+
+    for (const [field, value, minimum] of positiveIntegers) {
+      if (
+        value !== undefined &&
+        (!Number.isInteger(value) || value < minimum)
+      ) {
+        throw new BadRequestException(
+          `${field} deve ser inteiro e maior ou igual a ${minimum}.`,
+        );
+      }
+    }
+
+    const decimals: Array<[string, number | undefined, number, number]> = [
+      ['estagnacao_variacao_minima', dto.estagnacao_variacao_minima, 0, 1000],
+      [
+        'estagnacao_fator_minimo_proximidade_alvo',
+        dto.estagnacao_fator_minimo_proximidade_alvo,
+        0.05,
+        1,
+      ],
+      ['auxilio_melhoria_minima', dto.auxilio_melhoria_minima, 0.001, 1000],
+    ];
+
+    for (const [field, value, minimum, maximum] of decimals) {
+      if (
+        value !== undefined &&
+        (!Number.isFinite(value) || value < minimum || value > maximum)
+      ) {
+        throw new BadRequestException(
+          `${field} deve estar entre ${minimum} e ${maximum}.`,
+        );
+      }
+    }
+
+    if (
+      dto.auxilio_timeout_segundos !== undefined &&
+      dto.auxilio_janela_avaliacao_segundos !== undefined &&
+      dto.auxilio_timeout_segundos < dto.auxilio_janela_avaliacao_segundos
+    ) {
+      throw new BadRequestException(
+        'auxilio_timeout_segundos deve ser maior ou igual a auxilio_janela_avaliacao_segundos.',
+      );
+    }
+  }
+
   private validateVacuoAlvo(
     vacuo_alvo: number | undefined,
     fieldname: string,
@@ -79,8 +212,10 @@ export class ProcessoConfigValidator {
       throw new BadRequestException(`${fieldname} deve ser um número válido.`);
     }
 
-    if (vacuo_alvo <= 0) {
-      throw new BadRequestException(`${fieldname} deve ser maior que zero.`);
+    if (vacuo_alvo >= 0) {
+      throw new BadRequestException(
+        `${fieldname} deve ser menor que zero (pressao manometrica em kPa).`,
+      );
     }
   }
 

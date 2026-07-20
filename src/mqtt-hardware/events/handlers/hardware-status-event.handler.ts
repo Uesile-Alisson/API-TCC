@@ -7,8 +7,8 @@ import {
   tipoeventoprocesso,
 } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { CommandService } from '@/mqtt-hardware/commands/command.service';
 import { MqttSocketGateway } from '@/mqtt-hardware/socket/mqtt-socket.gateway';
+import { ProcessoGeneralClosureService } from '@/processos/lifecycle';
 import { HardwareStatusAlarmClassifier } from '../classifiers/hardware-status-alarm.classifier';
 import { EventProcessingStatus } from '../enums';
 import { AlarmEventHandler } from './alarm-event.handler';
@@ -27,7 +27,7 @@ export class HardwareStatusEventHandler {
     private readonly prisma: PrismaService,
     private readonly hardwareStatusAlarmClassifier: HardwareStatusAlarmClassifier,
     private readonly alarmEventHandler: AlarmEventHandler,
-    private readonly commandService: CommandService,
+    private readonly processoGeneralClosureService: ProcessoGeneralClosureService,
     private readonly mqttSocketGateway: MqttSocketGateway,
   ) {}
 
@@ -35,6 +35,10 @@ export class HardwareStatusEventHandler {
     try {
       const socketEmitted = this.emitHardwareStatus(input);
       const classification = this.hardwareStatusAlarmClassifier.classify(input);
+      const emergencyStopSent = await this.requestEmergencyStopIfNeeded({
+        input,
+        classification,
+      });
       const idEventoProcesso = await this.createProcessEventIfNeeded({
         input,
         classification,
@@ -44,11 +48,6 @@ export class HardwareStatusEventHandler {
         await this.alarmEventHandler.handleClassification(classification);
 
       const idAlarme = alarmResult.id_alarme ?? null;
-      const emergencyStopSent = await this.requestEmergencyStopIfNeeded({
-        input,
-        classification,
-      });
-
       if (
         !socketEmitted &&
         !idEventoProcesso &&
@@ -114,6 +113,7 @@ export class HardwareStatusEventHandler {
         esp32_online: input.esp32_online,
         status_bomba_principal: input.status_bomba_principal ?? null,
         status_bomba_auxiliar: input.status_bomba_auxiliar ?? null,
+        status_bombas: input.status_bombas ?? [],
         status_valvulas: input.status_valvulas ?? [],
         processo_em_execucao: input.processo_em_execucao ?? false,
         id_processo: input.id_processo ?? null,
@@ -277,7 +277,9 @@ export class HardwareStatusEventHandler {
       return false;
     }
 
-    await this.commandService.paradaEmergencia({
+    await this.processoGeneralClosureService.requestEmergencyStopForCurrent({
+      ...(input.id_processo ? { id_processo: input.id_processo } : {}),
+      id_usuario: null,
       motivo:
         `Parada de emergência acionada automaticamente por status de hardware. ` +
         `Motivo: ${classification.titulo}. ` +

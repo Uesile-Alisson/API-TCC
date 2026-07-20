@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
@@ -59,6 +60,9 @@ type RelatoriosRepositoryMock = {
   existsByAlarmAndFormat: jest.MockedFunction<
     RelatoriosRepository['existsByAlarmAndFormat']
   >;
+  existsByGridFsFileId: jest.MockedFunction<
+    RelatoriosRepository['existsByGridFsFileId']
+  >;
   create: jest.MockedFunction<RelatoriosRepository['create']>;
 };
 
@@ -83,6 +87,9 @@ type StorageMock = {
   >;
   deleteReportFile: jest.MockedFunction<
     GridFsReportStorageService['deleteReportFile']
+  >;
+  findManagedFilesUploadedBefore: jest.MockedFunction<
+    GridFsReportStorageService['findManagedFilesUploadedBefore']
   >;
   buildPreviewDisposition: jest.MockedFunction<
     GridFsReportStorageService['buildPreviewDisposition']
@@ -232,6 +239,8 @@ describe('RelatoriosService', () => {
         jest.fn<RelatoriosRepository['existsByProcessAndFormat']>(),
       existsByAlarmAndFormat:
         jest.fn<RelatoriosRepository['existsByAlarmAndFormat']>(),
+      existsByGridFsFileId:
+        jest.fn<RelatoriosRepository['existsByGridFsFileId']>(),
       create: jest.fn<RelatoriosRepository['create']>(),
     };
 
@@ -325,6 +334,8 @@ describe('RelatoriosService', () => {
       readReportFile: jest.fn<GridFsReportStorageService['readReportFile']>(),
       deleteReportFile:
         jest.fn<GridFsReportStorageService['deleteReportFile']>(),
+      findManagedFilesUploadedBefore:
+        jest.fn<GridFsReportStorageService['findManagedFilesUploadedBefore']>(),
       buildPreviewDisposition:
         jest.fn<GridFsReportStorageService['buildPreviewDisposition']>(),
       buildDownloadDisposition:
@@ -551,6 +562,78 @@ describe('RelatoriosService', () => {
     ).rejects.toThrow(InternalServerErrorException);
     expect(storage.deleteReportFile).toHaveBeenCalledWith({
       gridfs_file_id: '507f1f77bcf86cd799439011',
+      bucket_name: 'relatorios',
+    });
+  });
+
+  it('converte corrida de unicidade em conflito e remove o arquivo excedente', async () => {
+    processoRepository.findCompleteProcessReportSource.mockResolvedValue({
+      processo: {},
+    } as CompleteProcessReportSource);
+    relatoriosRepository.existsByProcessAndFormat.mockResolvedValue(false);
+    processMapper.toReportData.mockReturnValue(
+      {} as Parameters<ProcessPdfReportGenerator['generate']>[0],
+    );
+    processPdfGenerator.generate.mockResolvedValue(
+      generatedFile(formatorelatorio.PDF),
+    );
+    storage.saveReportFile.mockResolvedValue(
+      storageResult(formatorelatorio.PDF),
+    );
+    relatoriosRepository.create.mockRejectedValue({ code: 'P2002' });
+    storage.deleteReportFile.mockResolvedValue({
+      deleted: true,
+      gridfs_file_id: '507f1f77bcf86cd799439011',
+      bucket_name: 'relatorios',
+    });
+
+    await expect(
+      service.generateProcessReports(
+        10,
+        { formatos: [formatorelatorio.PDF] },
+        user,
+      ),
+    ).rejects.toThrow(ConflictException);
+    expect(storage.deleteReportFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconcilia apenas arquivos antigos não referenciados', async () => {
+    storage.findManagedFilesUploadedBefore.mockResolvedValue([
+      {
+        gridfs_file_id: '507f1f77bcf86cd799439011',
+        bucket_name: 'relatorios',
+        upload_date: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        gridfs_file_id: '507f191e810c19729de860ea',
+        bucket_name: 'relatorios',
+        upload_date: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+    relatoriosRepository.existsByGridFsFileId
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    storage.deleteReportFile.mockResolvedValue({
+      deleted: true,
+      gridfs_file_id: '507f191e810c19729de860ea',
+      bucket_name: 'relatorios',
+    });
+
+    await expect(
+      service.reconcileOrphanedReportFiles(
+        new Date('2026-01-03T00:00:00.000Z'),
+      ),
+    ).resolves.toEqual({
+      scanned: 2,
+      preserved: 1,
+      deleted: 1,
+      failed: 0,
+    });
+    expect(storage.findManagedFilesUploadedBefore).toHaveBeenCalledWith(
+      new Date('2026-01-02T00:00:00.000Z'),
+    );
+    expect(storage.deleteReportFile).toHaveBeenCalledWith({
+      gridfs_file_id: '507f191e810c19729de860ea',
       bucket_name: 'relatorios',
     });
   });

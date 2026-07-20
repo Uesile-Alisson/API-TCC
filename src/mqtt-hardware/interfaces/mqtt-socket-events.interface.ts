@@ -8,7 +8,10 @@ import {
   StatusAcoplamentoMangueira,
   statusbomba,
 } from '@prisma/client';
-import { HardwareValveStatusInput } from '../events/interfaces';
+import {
+  HardwarePumpStatusInput,
+  HardwareValveStatusInput,
+} from '../events/interfaces';
 import { Decimal } from '@prisma/client/runtime/client';
 
 export interface SocketBasePayload {
@@ -40,6 +43,7 @@ export interface HardwareStatusSocketPayload extends SocketBasePayload {
   esp32_online: boolean;
   status_bomba_principal: statusbomba | null;
   status_bomba_auxiliar: statusbomba | null;
+  status_bombas?: HardwarePumpStatusInput[];
   status_geral_sistema: statusgeralsistema;
   status_valvulas?: HardwareValveStatusInput[];
   processo_em_execucao: boolean;

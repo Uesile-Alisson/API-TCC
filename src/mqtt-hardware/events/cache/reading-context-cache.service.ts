@@ -53,6 +53,8 @@ export class ReadingContextCacheService {
                 select: {
                   id_processo: true,
                   status_processo: true,
+                  encerramento_limite_seguranca_vacuo: true,
+                  encerramento_tolerancia_vacuo_percentual: true,
                 },
               },
             },
@@ -79,8 +81,12 @@ export class ReadingContextCacheService {
         processoTanqueSensor.processostanques.status_tanque_processo,
       vacuo_alvo: processoTanqueSensor.processostanques.vacuo_alvo.toNumber(),
       unidade_medida: processoTanqueSensor.sensores.unidade_medida,
-      limite_seguranca_vacuo: systemConfig.limite_seguranca_vacuo,
-      tolerancia_vacuo_percentual: systemConfig.tolerancia_vacuo_percentual,
+      limite_seguranca_vacuo:
+        processoTanqueSensor.processostanques.processos.encerramento_limite_seguranca_vacuo?.toNumber() ??
+        systemConfig.limite_seguranca_vacuo,
+      tolerancia_vacuo_percentual:
+        processoTanqueSensor.processostanques.processos.encerramento_tolerancia_vacuo_percentual?.toNumber() ??
+        systemConfig.tolerancia_vacuo_percentual,
     };
 
     this.cache.set(idProcessoTanqueSensor, {

@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { statustanque } from '@prisma/client';
+import { MqttConfigService } from '../../mqtt-hardware/config/mqtt-config.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfiguracoesTanquesService } from '../tanques/configuracoes-tanques.service';
 import { asyncMock, makeTanqueRecord } from './configuracoes-test-helpers';
@@ -22,6 +23,7 @@ type PrismaMock = {
 
 describe('ConfiguracoesTanquesService', () => {
   let prisma: PrismaMock;
+  let executeProtectedEquipmentMutation: ReturnType<typeof asyncMock>;
   let service: ConfiguracoesTanquesService;
 
   beforeEach(() => {
@@ -35,8 +37,18 @@ describe('ConfiguracoesTanquesService', () => {
         update: asyncMock(),
       },
     };
+    executeProtectedEquipmentMutation = asyncMock();
+    executeProtectedEquipmentMutation.mockImplementation(
+      async (...args: unknown[]) => {
+        const mutation = args[1] as (tx: PrismaMock) => Promise<unknown>;
+        return mutation(prisma);
+      },
+    );
     service = new ConfiguracoesTanquesService(
       prisma as unknown as PrismaService,
+      {
+        executeProtectedEquipmentMutation,
+      } as unknown as MqttConfigService,
     );
   });
 
@@ -72,6 +84,11 @@ describe('ConfiguracoesTanquesService', () => {
         status_tanque: statustanque.ATIVO,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(executeProtectedEquipmentMutation).toHaveBeenCalledWith(
+      'CREATE_TANK',
+      expect.any(Function),
+    );
   });
 
   it('update rejeita PATCH vazio', async () => {
@@ -79,6 +96,11 @@ describe('ConfiguracoesTanquesService', () => {
 
     await expect(service.update(1, {})).rejects.toBeInstanceOf(
       BadRequestException,
+    );
+
+    expect(executeProtectedEquipmentMutation).toHaveBeenCalledWith(
+      'UPDATE_TANK',
+      expect.any(Function),
     );
   });
 
@@ -88,6 +110,17 @@ describe('ConfiguracoesTanquesService', () => {
 
     await service.ativar(1);
     await service.desativar(1);
+
+    expect(executeProtectedEquipmentMutation).toHaveBeenNthCalledWith(
+      1,
+      'ACTIVATE_TANK',
+      expect.any(Function),
+    );
+    expect(executeProtectedEquipmentMutation).toHaveBeenNthCalledWith(
+      2,
+      'DEACTIVATE_TANK',
+      expect.any(Function),
+    );
 
     expect(prisma.tanques.update).toHaveBeenNthCalledWith(
       1,
@@ -101,5 +134,24 @@ describe('ConfiguracoesTanquesService', () => {
         data: expect.objectContaining({ status_tanque: statustanque.INATIVO }),
       }),
     );
+  });
+
+  it('nao consulta nem altera tanque quando o intertravamento bloqueia', async () => {
+    executeProtectedEquipmentMutation.mockRejectedValueOnce(
+      new ConflictException('Processo operacional ativo.'),
+    );
+
+    await expect(
+      service.create({
+        nome: 'Tanque 01',
+        volume: 1000,
+        unidade_volume: 'L',
+        vacuo_padrao: -80,
+        status_tanque: statustanque.ATIVO,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(prisma.tanques.findUnique).not.toHaveBeenCalled();
+    expect(prisma.tanques.create).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
@@ -24,6 +25,9 @@ import {
 import { createHash } from 'node:crypto';
 import type { Mock } from 'jest-mock';
 import type { AuthenticatedUser } from '../../../auth/types/authenticated-user.type';
+import { MqttConfigService } from '../../../mqtt-hardware/config/mqtt-config.service';
+import { MqttClientService } from '../../../mqtt-hardware/connection/mqtt-client.service';
+import { MqttHealthService } from '../../../mqtt-hardware/connection/mqtt-health.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { BackupService } from '../backup.service';
 
@@ -75,11 +79,44 @@ const asyncMock = <T = unknown>(): AsyncMock<T> =>
 describe('BackupService', () => {
   let service: BackupService;
   let prisma: PrismaMock;
+  let mqttConfigService: {
+    executeProtectedEquipmentMutation: AsyncMock;
+  };
+  let mqttClientService: { disconnect: AsyncMock };
+  let mqttHealthService: { reloadHealthConfig: AsyncMock };
+  let systemConfigCache: { invalidate: ReturnType<typeof jest.fn> };
+  let readingContextCache: { invalidate: ReturnType<typeof jest.fn> };
 
   beforeEach(() => {
     prisma = createPrismaMock();
     currentPrisma = prisma;
-    service = new BackupService(prisma as unknown as PrismaService);
+    mqttConfigService = {
+      executeProtectedEquipmentMutation: asyncMock(),
+    };
+    mqttConfigService.executeProtectedEquipmentMutation.mockImplementation(
+      async (_action, mutation) => {
+        const callback = mutation as (tx: PrismaMock) => Promise<unknown>;
+        return await callback(prisma);
+      },
+    );
+    mqttClientService = { disconnect: asyncMock() };
+    mqttClientService.disconnect.mockResolvedValue({
+      success: true,
+      message: 'desconectado',
+      timestamp: new Date(),
+    });
+    mqttHealthService = { reloadHealthConfig: asyncMock() };
+    mqttHealthService.reloadHealthConfig.mockResolvedValue(undefined);
+    systemConfigCache = { invalidate: jest.fn() };
+    readingContextCache = { invalidate: jest.fn() };
+    service = new BackupService(
+      prisma as unknown as PrismaService,
+      mqttConfigService as unknown as MqttConfigService,
+      mqttClientService as unknown as MqttClientService,
+      mqttHealthService as unknown as MqttHealthService,
+      systemConfigCache as never,
+      readingContextCache as never,
+    );
   });
 
   it('gera backup SISTEMA sem incluir MQTT ou dados operacionais', async () => {
@@ -141,7 +178,7 @@ describe('BackupService', () => {
     expect(result).toMatchObject({ id_backup: 10 });
   });
 
-  it('gera backup MQTT sem salvar senha ou senha_mqtt_hash no snapshot', async () => {
+  it('gera backup MQTT somente com indicadores de credenciais', async () => {
     arrangeMqttSnapshot();
     prisma.backups.create.mockImplementation((input) =>
       Promise.resolve(makeBackupRecordFromCreate(input)),
@@ -161,9 +198,11 @@ describe('BackupService', () => {
     expect(snapshot).toHaveProperty('mqtt');
     expect(snapshot).not.toHaveProperty('sistema');
     expect(serialized).toContain('mqtt://localhost');
-    expect(serialized).toContain('usuario-mqtt');
     expect(serialized).toContain('topico_leituras');
-    expect(serialized).toContain('senha_mqtt_omitida');
+    expect(serialized).toContain('usuario_mqtt_configurado');
+    expect(serialized).toContain('senha_mqtt_configurada');
+    expect(serialized).toContain('credenciais_mqtt_nao_incluidas');
+    expect(serialized).not.toContain('usuario-mqtt');
     expect(serialized).not.toContain('senha_mqtt_hash');
     expect(serialized).not.toContain('senha-secreta');
     expect(createData).toMatchObject({
@@ -336,6 +375,16 @@ describe('BackupService', () => {
         },
       }),
     );
+    const valveUpsert = prisma.valvulas.upsert.mock.calls[0]?.[0] as {
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    };
+    expect(valveUpsert.create).toMatchObject({
+      status_valvula: StatusValvula.DESCONHECIDA,
+      ultimo_acionamento: null,
+    });
+    expect(valveUpsert.update).not.toHaveProperty('status_valvula');
+    expect(valveUpsert.update).not.toHaveProperty('ultimo_acionamento');
     expect(prisma.mqttconfiguracoes.upsert).not.toHaveBeenCalled();
     expect(prisma.backups.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -349,6 +398,12 @@ describe('BackupService', () => {
     expect(prisma.logsoperacionais.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ acao: 'RESTAURAR_BACKUP' }),
     });
+    expect(
+      mqttConfigService.executeProtectedEquipmentMutation,
+    ).toHaveBeenCalledWith('RESTORE_BACKUP', expect.any(Function));
+    expect(systemConfigCache.invalidate).toHaveBeenCalledTimes(1);
+    expect(readingContextCache.invalidate).toHaveBeenCalledTimes(1);
+    expect(mqttClientService.disconnect).not.toHaveBeenCalled();
   });
 
   it('permite restaurar novamente backup ja RESTAURADO e cria novo log de sucesso', async () => {
@@ -403,7 +458,7 @@ describe('BackupService', () => {
     });
   });
 
-  it('restore MQTT exige nova_senha_mqtt e salva hash novo sem reconectar broker', async () => {
+  it('restore MQTT reseta os indicadores externos sem aceitar credenciais', async () => {
     const snapshot = makeMqttBackupSnapshot();
     const backup = makeBackupRecord({
       tipo_backup: tipobackup.MQTT,
@@ -412,20 +467,12 @@ describe('BackupService', () => {
     });
     prisma.backups.findUnique.mockResolvedValue(backup);
 
-    await expect(
-      service.restore(10, { confirmar_restauracao: true }, makeCurrentUser()),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.mqttconfiguracoes.upsert).not.toHaveBeenCalled();
-    expect(prisma.logsoperacionais.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        acao: 'RESTAURAR_BACKUP',
-        resultado: resultadooperacao.FALHA,
-      }),
-    });
-
     prisma.mqttconfiguracoes.upsert.mockResolvedValue({
       ...makeMqttConfig(),
-      senha_mqtt_hash: '$2b$hash-novo',
+      usuario_mqtt_configurado: false,
+      senha_mqtt_configurada: false,
+      credenciais_verificadas_em: null,
+      ultima_falha_credenciais: null,
       status_conexao: statusconexaomqtt.DESCONECTADO,
     });
     prisma.backups.update.mockResolvedValue(
@@ -436,28 +483,81 @@ describe('BackupService', () => {
       }),
     );
 
-    await service.restore(
+    const result = await service.restore(
       10,
-      { confirmar_restauracao: true, nova_senha_mqtt: '123456' },
+      { confirmar_restauracao: true },
       makeCurrentUser(),
     );
 
     expect(prisma.mqttconfiguracoes.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
-          senha_mqtt_hash: expect.stringMatching(/^\$2[aby]\$/),
+          usuario_mqtt_configurado: false,
+          senha_mqtt_configurada: false,
+          credenciais_verificadas_em: null,
+          ultima_falha_credenciais: null,
           status_conexao: statusconexaomqtt.DESCONECTADO,
           ultima_conexao: null,
         }),
         update: expect.objectContaining({
-          senha_mqtt_hash: expect.stringMatching(/^\$2[aby]\$/),
+          usuario_mqtt_configurado: false,
+          senha_mqtt_configurada: false,
+          credenciais_verificadas_em: null,
+          ultima_falha_credenciais: null,
           status_conexao: statusconexaomqtt.DESCONECTADO,
           ultima_conexao: null,
         }),
       }),
     );
+    expect(result.warnings).toContain(
+      'As credenciais MQTT externas nao fazem parte do backup e devem ser configuradas e verificadas novamente.',
+    );
+    expect(mqttClientService.disconnect).toHaveBeenCalledTimes(1);
+    expect(mqttHealthService.reloadHealthConfig).toHaveBeenCalledTimes(1);
+    expect(systemConfigCache.invalidate).not.toHaveBeenCalled();
     expect(JSON.stringify(snapshot)).not.toContain('senha_mqtt_hash');
-    expect(JSON.stringify(snapshot)).not.toContain('123456');
+    expect(JSON.stringify(snapshot)).not.toContain('usuario-mqtt');
+  });
+
+  it('mantem o backup restaurado e avisa quando a reconciliacao MQTT pos-commit falha', async () => {
+    const snapshot = makeMqttBackupSnapshot();
+    const backup = makeBackupRecord({
+      tipo_backup: tipobackup.MQTT,
+      snapshot,
+      hash_arquivo: hashSnapshot(snapshot),
+    });
+    prisma.backups.findUnique.mockResolvedValue(backup);
+    prisma.mqttconfiguracoes.upsert.mockResolvedValue(makeMqttConfig());
+    prisma.backups.update.mockResolvedValue(
+      makeBackupRecord({
+        ...backup,
+        status_backup: statusbackup.RESTAURADO,
+      }),
+    );
+    mqttClientService.disconnect.mockRejectedValue(
+      new Error('cliente nao respondeu'),
+    );
+
+    const result = await service.restore(
+      10,
+      { confirmar_restauracao: true },
+      makeCurrentUser(),
+    );
+
+    expect(result.status_backup).toBe(statusbackup.RESTAURADO);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('desconexao do cliente falhou'),
+      ]),
+    );
+    expect(mqttHealthService.reloadHealthConfig).toHaveBeenCalledTimes(1);
+    expect(prisma.backups.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status_backup: statusbackup.FALHA_RESTAURACAO,
+        }),
+      }),
+    );
   });
 
   it('falha com confirmar_restauracao false, registra log e nao restaura nada', async () => {
@@ -509,13 +609,106 @@ describe('BackupService', () => {
 
     await service.restore(
       10,
-      { confirmar_restauracao: true, nova_senha_mqtt: '123456' },
+      { confirmar_restauracao: true },
       makeCurrentUser(),
     );
 
     expect(prisma.configuracoessistema.update).toHaveBeenCalled();
     expect(prisma.mqttconfiguracoes.upsert).toHaveBeenCalled();
-    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
+    expect(
+      mqttConfigService.executeProtectedEquipmentMutation,
+    ).toHaveBeenCalledWith('RESTORE_BACKUP', expect.any(Function));
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia restauracao pelo interlock sem marcar o backup como falha', async () => {
+    mqttConfigService.executeProtectedEquipmentMutation.mockRejectedValue(
+      new ConflictException({
+        code: 'EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE',
+      }),
+    );
+
+    await expect(
+      service.restore(10, { confirmar_restauracao: true }, makeCurrentUser()),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(prisma.backups.findUnique).not.toHaveBeenCalled();
+    expect(prisma.configuracoessistema.update).not.toHaveBeenCalled();
+    expect(prisma.mqttconfiguracoes.upsert).not.toHaveBeenCalled();
+    expect(prisma.backups.update).not.toHaveBeenCalled();
+    expect(prisma.logsoperacionais.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        acao: 'RESTAURAR_BACKUP',
+        resultado: resultadooperacao.FALHA,
+      }),
+    });
+  });
+
+  it('marca falha quando a restauracao falha depois de iniciar as escritas', async () => {
+    const snapshot = makeSystemBackupSnapshot();
+    prisma.backups.findUnique.mockResolvedValue(
+      makeBackupRecord({
+        tipo_backup: tipobackup.SISTEMA,
+        snapshot,
+        hash_arquivo: hashSnapshot(snapshot),
+      }),
+    );
+    prisma.configuracoessistema.findFirst.mockResolvedValue({
+      id_configuracao_sistema: 1,
+    });
+    prisma.configuracoessistema.update.mockRejectedValue(
+      new Error('falha de escrita'),
+    );
+
+    await expect(
+      service.restore(10, { confirmar_restauracao: true }, makeCurrentUser()),
+    ).rejects.toBeInstanceOf(InternalServerErrorException);
+
+    expect(prisma.backups.update).toHaveBeenCalledWith({
+      where: { id_backup: 10 },
+      data: expect.objectContaining({
+        status_backup: statusbackup.FALHA_RESTAURACAO,
+        id_usuario_restauracao: 1,
+        erro: expect.stringContaining('falha de escrita'),
+      }),
+    });
+  });
+
+  it('recria os warnings quando o callback protegido e repetido', async () => {
+    const snapshot = makeMqttBackupSnapshot();
+    const backup = makeBackupRecord({
+      tipo_backup: tipobackup.MQTT,
+      snapshot,
+      hash_arquivo: hashSnapshot(snapshot),
+    });
+    prisma.backups.findUnique.mockResolvedValue(backup);
+    prisma.mqttconfiguracoes.upsert.mockResolvedValue(makeMqttConfig());
+    prisma.backups.update.mockResolvedValue(
+      makeBackupRecord({
+        ...backup,
+        status_backup: statusbackup.RESTAURADO,
+      }),
+    );
+    mqttConfigService.executeProtectedEquipmentMutation.mockImplementation(
+      async (_action, mutation) => {
+        const callback = mutation as (tx: PrismaMock) => Promise<unknown>;
+        await callback(prisma);
+        return await callback(prisma);
+      },
+    );
+
+    const result = await service.restore(
+      10,
+      { confirmar_restauracao: true },
+      makeCurrentUser(),
+    );
+
+    expect(prisma.backups.findUnique).toHaveBeenCalledTimes(2);
+    expect(
+      result.warnings.filter((warning) =>
+        warning.includes('credenciais MQTT externas'),
+      ),
+    ).toHaveLength(1);
   });
 
   it('bloqueia hash invalido e status invalido para restauracao', async () => {
@@ -532,13 +725,7 @@ describe('BackupService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.configuracoessistema.update).not.toHaveBeenCalled();
     expect(prisma.mqttconfiguracoes.upsert).not.toHaveBeenCalled();
-    expect(prisma.backups.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status_backup: statusbackup.RESTAURADO,
-        }),
-      }),
-    );
+    expect(prisma.backups.update).not.toHaveBeenCalled();
     expect(prisma.logsoperacionais.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         acao: 'RESTAURAR_BACKUP',
@@ -561,6 +748,7 @@ describe('BackupService', () => {
     await expect(
       service.restore(10, { confirmar_restauracao: true }, makeCurrentUser()),
     ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.backups.update).not.toHaveBeenCalled();
     expect(prisma.logsoperacionais.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         acao: 'RESTAURAR_BACKUP',
@@ -743,8 +931,10 @@ function makeMqttConfig() {
     id_usuario_alteracao: 1,
     broker_url: 'mqtt://localhost',
     porta: 1883,
-    usuario_mqtt: 'usuario-mqtt',
-    senha_mqtt_hash: 'senha-secreta',
+    usuario_mqtt_configurado: true,
+    senha_mqtt_configurada: true,
+    credenciais_verificadas_em: new Date('2026-06-26T08:55:00Z'),
+    ultima_falha_credenciais: null,
     topico_leituras: 'tsea/leituras',
     topico_comandos: 'tsea/comandos',
     topico_status: 'tsea/status',
@@ -844,13 +1034,19 @@ function makeMqttBackupSnapshot() {
         id_usuario_alteracao: mqtt.id_usuario_alteracao,
         broker_url: mqtt.broker_url,
         porta: mqtt.porta,
-        usuario_mqtt: mqtt.usuario_mqtt,
+        usuario_mqtt_configurado: mqtt.usuario_mqtt_configurado,
+        senha_mqtt_configurada: mqtt.senha_mqtt_configurada,
+        credenciais_verificadas_em:
+          mqtt.credenciais_verificadas_em.toISOString(),
+        ultima_falha_credenciais: mqtt.ultima_falha_credenciais,
         topico_leituras: mqtt.topico_leituras,
         topico_comandos: mqtt.topico_comandos,
         topico_status: mqtt.topico_status,
         topico_alarmes: mqtt.topico_alarmes,
         topico_heartbeat: mqtt.topico_heartbeat,
         topico_acoplamentos: mqtt.topico_acoplamentos,
+        topico_configuracoes: 'tsea/config',
+        topico_acks: 'tsea/acks',
         reconexao_automatica: mqtt.reconexao_automatica,
         timeout_comunicacao: mqtt.timeout_comunicacao,
         status_conexao: mqtt.status_conexao,
@@ -862,7 +1058,7 @@ function makeMqttBackupSnapshot() {
         atualizado_em: mqtt.atualizado_em.toISOString(),
         chave_configuracao: mqtt.chave_configuracao,
       },
-      senha_mqtt_omitida: true,
+      credenciais_mqtt_nao_incluidas: true,
     },
   };
 }

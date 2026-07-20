@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { modooperacaoauxiliar } from '@prisma/client';
 import { CreateProcessoDTO } from '../dto';
 import { ProcessoConfigValidator } from './processo-config.validator';
 import { beforeEach, describe, expect, it } from '@jest/globals';
@@ -14,7 +15,9 @@ describe('ProcessoConfigValidator', () => {
     expect(() =>
       validator.validateCreate({
         tempo_maximo: 60,
-        vacuo_alvo: 80,
+        vacuo_alvo: -80,
+        modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+        encerramento_automatico: true,
         tanques: [],
       }),
     ).toThrow(BadRequestException);
@@ -66,14 +69,71 @@ describe('ProcessoConfigValidator', () => {
     expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
   });
 
-  it('bloqueia vacuo_alvo menor ou igual a zero', () => {
-    const dto = buildValidDto({ vacuo_alvo: 0 });
+  it.each([0, 80])('bloqueia vacuo_alvo nao negativo: %s', (vacuo_alvo) => {
+    const dto = buildValidDto({ vacuo_alvo });
 
     expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
   });
 
-  it('permite configuração válida de vácuo', () => {
+  it('permite configuracao valida com vacuo manometrico negativo', () => {
     expect(() => validator.validateCreate(buildValidDto())).not.toThrow();
+  });
+
+  it('bloqueia vacuo_alvo positivo em um tanque', () => {
+    const dto = buildValidDto({
+      tanques: [
+        {
+          id_tanque: 1,
+          vacuo_alvo: 80,
+          sensores: [{ id_sensor: 1 }],
+        },
+      ],
+    });
+
+    expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
+  });
+
+  it('permite atualizar alvo geral e individual com valores negativos', () => {
+    expect(() =>
+      validator.validateUpdate({
+        vacuo_alvo: -82.5,
+        tanques: [
+          {
+            id_tanque: 1,
+            vacuo_alvo: -81.25,
+            sensores: [{ id_sensor: 1 }],
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('bloqueia vacuo_alvo positivo na atualizacao', () => {
+    expect(() => validator.validateUpdate({ vacuo_alvo: 82.5 })).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('bloqueia criacao sem modo do subsistema auxiliar', () => {
+    const dto = buildValidDto();
+    delete (dto as Partial<CreateProcessoDTO>).modo_operacao_auxiliar;
+
+    expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
+  });
+
+  it('bloqueia criacao sem escolha de encerramento automatico', () => {
+    const dto = buildValidDto();
+    delete (dto as Partial<CreateProcessoDTO>).encerramento_automatico;
+
+    expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
+  });
+
+  it('aceita atualizacao contendo somente o modo auxiliar', () => {
+    expect(() =>
+      validator.validateUpdate({
+        modo_operacao_auxiliar: modooperacaoauxiliar.ASSISTIDO,
+      }),
+    ).not.toThrow();
   });
 
   function buildValidDto(
@@ -81,7 +141,9 @@ describe('ProcessoConfigValidator', () => {
   ): CreateProcessoDTO {
     return {
       tempo_maximo: 120,
-      vacuo_alvo: 80,
+      vacuo_alvo: -80,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
       tanques: [
         {
           id_tanque: 1,

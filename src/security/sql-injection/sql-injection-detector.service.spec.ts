@@ -65,6 +65,25 @@ describe('SqlInjectionDetectorService', () => {
 
     expect(result.safe).toBe(true);
   });
+
+  it('nao inspeciona segredos, mas continua bloqueando os demais campos', () => {
+    const secretOnly = detector.detect({
+      senha_mqtt: 'senha; DROP TABLE qualquer_texto',
+      access_token: "token' UNION SELECT valor FROM tabela",
+    });
+    const unsafeSearch = detector.detect({
+      senha_mqtt: 'senha; DROP TABLE qualquer_texto',
+      search: 'abc; DROP TABLE usuarios',
+    });
+
+    expect(secretOnly.safe).toBe(true);
+    expect(secretOnly.matches).toHaveLength(0);
+    expect(unsafeSearch.highestSeverity).toBe('HIGH');
+    expect(unsafeSearch.matches.length).toBeGreaterThan(0);
+    expect(
+      unsafeSearch.matches.every((match) => match.path === '$.search'),
+    ).toBe(true);
+  });
 });
 
 describe('SqlInjectionInputPipe', () => {

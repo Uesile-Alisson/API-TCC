@@ -170,6 +170,34 @@ export class GridFsService {
     return file ? this.mapGridFsFile(file, normalizedBucketName) : null;
   }
 
+  async findFilesUploadedBefore(
+    uploadedBefore: Date,
+    metadata: GridFsFileMetadataInput,
+    bucketName?: string,
+  ): Promise<GridFsStoredFile[]> {
+    if (Number.isNaN(uploadedBefore.getTime())) {
+      throw new BadRequestException('Data limite inválida.');
+    }
+
+    const normalizedBucketName = this.normalizeBucketName(bucketName);
+    const metadataFilters = Object.fromEntries(
+      Object.entries(this.cleanMetadata(metadata) ?? {}).map(([key, value]) => [
+        `metadata.${key}`,
+        value,
+      ]),
+    );
+    const files = await this.mongoDbService
+      .getDatabase()
+      .collection<MongoGridFsFileLike>(`${normalizedBucketName}.files`)
+      .find({
+        uploadDate: { $lte: uploadedBefore },
+        ...metadataFilters,
+      })
+      .toArray();
+
+    return files.map((file) => this.mapGridFsFile(file, normalizedBucketName));
+  }
+
   async fileExists(fileId: string, bucketName?: string): Promise<boolean> {
     try {
       return (await this.findFileById(fileId, bucketName)) !== null;

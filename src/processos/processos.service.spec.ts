@@ -5,21 +5,41 @@ import {
 } from '@nestjs/common';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
+  modooperacaoauxiliar,
   nivelacesso,
+  severidadealarme,
   statusconexaomqtt,
+  statusauxiliotanque,
+  statusbomba,
+  statusestagnacao,
+  etapaencerramentoprocesso,
+  statusencerramentotanque,
+  statusencerramentoprocesso,
+  faseprocesso,
   statusgeralsistema,
   statusprocesso,
+  statussubsistemaauxiliar,
   statussensor,
   statustanque,
   statustanqueprocesso,
+  StatusAcoplamentoMangueira,
+  StatusValvula,
+  tiposensor,
 } from '@prisma/client';
 import type { Mock } from 'jest-mock';
 import { ProcessoEventService } from './events';
+import { ProcessoAuxiliarCommandService } from './auxiliar';
 import { CurrentUserPayload, ProcessoOperationalContext } from './interfaces';
-import { ProcessoLifecycleService } from './lifecycle';
+import {
+  ProcessoGeneralClosureService,
+  ProcessoLifecycleService,
+} from './lifecycle';
 import { ProcessoLogService } from './logs';
 import { ProcessoMetricsService } from './metrics';
-import { ProcessoMqttOrchestratorService } from './mqtt';
+import {
+  ProcessoMqttOrchestratorService,
+  ProcessoStartupService,
+} from './mqtt';
 import { ProcessoPrecheckService } from './precheck';
 import { ProcessosRepository } from './processos.repository';
 import { ProcessosService } from './processos.service';
@@ -38,9 +58,46 @@ const syncMock = (): SyncMock => jest.fn<(...args: unknown[]) => unknown>();
 const asyncMock = (): AsyncMock =>
   jest.fn<(...args: unknown[]) => Promise<unknown>>();
 
+type TransactionalMutationInput = {
+  id_processo?: number;
+  persistAudit?: (tx: unknown, idProcesso: number) => Promise<void>;
+};
+
+const transactionClient = { kind: 'prisma-transaction-client' };
+
+function mockMutationWithAudit(
+  mock: AsyncMock,
+  result: unknown,
+  options: {
+    once?: boolean;
+    executeAudit?: boolean;
+    idProcesso?: number;
+  } = {},
+): void {
+  const implementation = async (...args: unknown[]): Promise<unknown> => {
+    const input = args[0] as TransactionalMutationInput;
+    if (options.executeAudit !== false) {
+      await input.persistAudit?.(
+        transactionClient,
+        options.idProcesso ?? input.id_processo ?? 10,
+      );
+    }
+    return result;
+  };
+
+  if (options.once) {
+    mock.mockImplementationOnce(implementation);
+    return;
+  }
+
+  mock.mockImplementation(implementation);
+}
+
 type RepositoryMock = {
   findById: AsyncMock;
   findDetailsById: AsyncMock;
+  findDashboardById: AsyncMock;
+  findAuxiliaryStateByProcessId: AsyncMock;
   findActiveProcessId: AsyncMock;
   createWithRelations: AsyncMock;
   applyLifecycleTransition: AsyncMock;
@@ -76,6 +133,9 @@ describe('ProcessosService', () => {
   let metrics: {
     calculateProcessMetrics: SyncMock;
   };
+  let generalClosure: {
+    requestEmergencyStop: AsyncMock;
+  };
   let events: {
     registerProcessCreated: AsyncMock;
     registerProcessStarted: AsyncMock;
@@ -103,7 +163,6 @@ describe('ProcessosService', () => {
     resumeVacuumOperation: AsyncMock;
     finishVacuumOperation: AsyncMock;
     interruptVacuumOperation: AsyncMock;
-    executeEmergencyStop: AsyncMock;
     shutdownAllActuators: AsyncMock;
   };
   let precheck: {
@@ -127,8 +186,22 @@ describe('ProcessosService', () => {
     emitEmergencyStop: SyncMock;
     emitConfigUpdated: SyncMock;
     emitMetricsUpdated: SyncMock;
+    emitAuxiliaryStateUpdated: SyncMock;
     emitStatusChanged: SyncMock;
     emitPrecheckResult: SyncMock;
+  };
+  let auxiliaryCommand: {
+    acquirePumpControl: AsyncMock;
+    releasePumpControl: AsyncMock;
+    acquireValveControl: AsyncMock;
+    releaseValveControl: AsyncMock;
+    ligarBomba: AsyncMock;
+    desligarBomba: AsyncMock;
+    abrirValvula: AsyncMock;
+    fecharValvula: AsyncMock;
+  };
+  let startup: {
+    execute: AsyncMock;
   };
 
   const user: CurrentUserPayload = {
@@ -142,6 +215,10 @@ describe('ProcessosService', () => {
     repository = {
       findById: asyncMock(),
       findDetailsById: asyncMock(),
+      findDashboardById: asyncMock(),
+      findAuxiliaryStateByProcessId: asyncMock().mockResolvedValue(
+        makeAuxiliaryStateRaw(),
+      ),
       findActiveProcessId: asyncMock().mockResolvedValue(null),
       createWithRelations: asyncMock(),
       applyLifecycleTransition: asyncMock(),
@@ -190,6 +267,16 @@ describe('ProcessosService', () => {
     metrics = {
       calculateProcessMetrics: syncMock().mockReturnValue(makeMetrics()),
     };
+    generalClosure = {
+      requestEmergencyStop: asyncMock(),
+    };
+    mockMutationWithAudit(generalClosure.requestEmergencyStop, {
+      state: makeEmergencyState(),
+      previous_status: statusprocesso.EM_EXECUCAO,
+      command_results: [],
+      command_failures: [],
+      idempotent: false,
+    });
     events = {
       registerProcessCreated: asyncMock().mockResolvedValue({}),
       registerProcessStarted: asyncMock().mockResolvedValue({}),
@@ -211,7 +298,12 @@ describe('ProcessosService', () => {
     };
     mqtt = {
       getHardwareReadiness: syncMock().mockReturnValue({
+        credentialsConfigured: true,
+        credentialsVerified: true,
+        credentialsVerifiedAt: new Date(),
+        credentialsFailure: null,
         mqttConnected: true,
+        mqttOperational: true,
         esp32Online: true,
         communicationReady: true,
       }),
@@ -236,10 +328,6 @@ describe('ProcessosService', () => {
         message: 'ok',
       }),
       interruptVacuumOperation: asyncMock().mockResolvedValue({
-        success: true,
-        message: 'ok',
-      }),
-      executeEmergencyStop: asyncMock().mockResolvedValue({
         success: true,
         message: 'ok',
       }),
@@ -271,9 +359,27 @@ describe('ProcessosService', () => {
       emitEmergencyStop: syncMock(),
       emitConfigUpdated: syncMock(),
       emitMetricsUpdated: syncMock(),
+      emitAuxiliaryStateUpdated: syncMock(),
       emitStatusChanged: syncMock(),
       emitPrecheckResult: syncMock(),
     };
+    auxiliaryCommand = {
+      acquirePumpControl: asyncMock(),
+      releasePumpControl: asyncMock(),
+      acquireValveControl: asyncMock(),
+      releaseValveControl: asyncMock(),
+      ligarBomba: asyncMock(),
+      desligarBomba: asyncMock(),
+      abrirValvula: asyncMock(),
+      fecharValvula: asyncMock(),
+    };
+    startup = {
+      execute: asyncMock(),
+    };
+    mockMutationWithAudit(
+      startup.execute,
+      makeProcess(statusprocesso.EM_EXECUCAO),
+    );
 
     service = new ProcessosService(
       repository as unknown as ProcessosRepository,
@@ -281,12 +387,15 @@ describe('ProcessosService', () => {
       stateValidator as unknown as ProcessoStateValidator,
       startValidator as unknown as ProcessoStartValidator,
       lifecycle as unknown as ProcessoLifecycleService,
+      generalClosure as unknown as ProcessoGeneralClosureService,
       metrics as unknown as ProcessoMetricsService,
       events as unknown as ProcessoEventService,
       logs as unknown as ProcessoLogService,
       mqtt as unknown as ProcessoMqttOrchestratorService,
       socket as unknown as ProcessosSocketGateway,
       precheck as unknown as ProcessoPrecheckService,
+      auxiliaryCommand as unknown as ProcessoAuxiliarCommandService,
+      startup as unknown as ProcessoStartupService,
     );
   });
 
@@ -295,6 +404,8 @@ describe('ProcessosService', () => {
     const dto = {
       tempo_maximo: 60,
       vacuo_alvo: -80,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
       tanques: [
         {
           id_tanque: 1,
@@ -302,7 +413,7 @@ describe('ProcessosService', () => {
         },
       ],
     };
-    repository.createWithRelations.mockResolvedValue(processo);
+    mockMutationWithAudit(repository.createWithRelations, processo);
 
     const result = await service.create(dto, user);
 
@@ -310,15 +421,86 @@ describe('ProcessosService', () => {
     expect(repository.createWithRelations).toHaveBeenCalledWith({
       dto,
       id_usuario: 7,
+      persistAudit: expect.any(Function),
     });
-    expect(events.registerProcessCreated).toHaveBeenCalled();
-    expect(logs.registerUserAction).toHaveBeenCalled();
+    expect(events.registerProcessCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
+    expect(logs.registerUserAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id_processo: 10,
+        id_usuario: 7,
+        acao: 'PROCESSO_CRIADO',
+      }),
+      transactionClient,
+    );
     expect(socket.emitProcessCreated).toHaveBeenCalled();
     expect(result).toMatchObject({
       success: true,
       id_processo: 10,
       status_processo: statusprocesso.CONFIGURADO,
     });
+  });
+
+  it('propaga falha da auditoria transacional e nao executa efeitos pos-commit', async () => {
+    const processo = makeProcess(statusprocesso.CONFIGURADO);
+    const auditError = new Error('Falha ao persistir auditoria.');
+    const dto = {
+      tempo_maximo: 60,
+      vacuo_alvo: -80,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
+      tanques: [{ id_tanque: 1, sensores: [{ id_sensor: 1 }] }],
+    };
+    mockMutationWithAudit(repository.createWithRelations, processo);
+    logs.registerUserAction.mockRejectedValueOnce(auditError);
+
+    await expect(service.create(dto, user)).rejects.toBe(auditError);
+
+    expect(events.registerProcessCreated).toHaveBeenCalledWith(
+      expect.any(Object),
+      transactionClient,
+    );
+    expect(logs.registerUserAction).toHaveBeenCalledWith(
+      expect.any(Object),
+      transactionClient,
+    );
+    expect(socket.emitProcessCreated).not.toHaveBeenCalled();
+    expect(socket.emitAuxiliaryStateUpdated).not.toHaveBeenCalled();
+  });
+
+  it('preserva a resposta de sucesso quando o socket falha apos o commit', async () => {
+    const processo = makeProcess(statusprocesso.CONFIGURADO);
+    const dto = {
+      tempo_maximo: 60,
+      vacuo_alvo: -80,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
+      tanques: [{ id_tanque: 1, sensores: [{ id_sensor: 1 }] }],
+    };
+    mockMutationWithAudit(repository.createWithRelations, processo);
+    socket.emitProcessCreated.mockImplementationOnce(() => {
+      throw new Error('Socket indisponivel.');
+    });
+    const loggerWarn = jest
+      .spyOn(service['logger'], 'warn')
+      .mockImplementation(() => undefined);
+
+    const result = await service.create(dto, user);
+
+    expect(result).toMatchObject({
+      success: true,
+      id_processo: 10,
+      status_processo: statusprocesso.CONFIGURADO,
+    });
+    expect(events.registerProcessCreated).toHaveBeenCalledWith(
+      expect.any(Object),
+      transactionClient,
+    );
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining('principal persistida'),
+    );
   });
 
   it('findById retorna processo existente', async () => {
@@ -351,6 +533,280 @@ describe('ProcessosService', () => {
     expect(repository.findDetailsById).toHaveBeenCalledWith(10);
   });
 
+  it('getAuxiliaryState entrega bomba, valvula e posicao da fila', async () => {
+    const raw = makeAuxiliaryStateRaw();
+    raw.processosauxiliares.status_subsistema =
+      statussubsistemaauxiliar.AGUARDANDO;
+    raw.processostanques[0].processostanquesauxiliares.status_auxilio =
+      statusauxiliotanque.AGUARDANDO;
+    raw.processostanques[0].processostanquesauxiliares.prioridade = 5;
+    raw.processostanques[0].processostanquesauxiliares.solicitado_em = new Date(
+      '2026-01-01T00:02:00Z',
+    );
+    repository.findAuxiliaryStateByProcessId.mockResolvedValue(raw);
+
+    const state = await service.getAuxiliaryState(10);
+
+    expect(state).toMatchObject({
+      id_processo: 10,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      status_subsistema: statussubsistemaauxiliar.AGUARDANDO,
+      bomba_auxiliar: {
+        id_bomba: 70,
+        ligada_hardware: false,
+      },
+      tanques: [
+        {
+          id_processo_tanque: 20,
+          status_auxilio: statusauxiliotanque.AGUARDANDO,
+          posicao_fila: 1,
+          quantidade_valvulas_auxiliares: 1,
+          valvula_auxiliar: { id_valvula: 60 },
+        },
+      ],
+    });
+  });
+
+  it('getAuxiliaryState rejeita processo sem contrato auxiliar inicializado', async () => {
+    repository.findAuxiliaryStateByProcessId.mockResolvedValue({
+      ...makeAuxiliaryStateRaw(),
+      processosauxiliares: null,
+    });
+
+    await expect(service.getAuxiliaryState(10)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('notifyAuxiliaryStateUpdated publica snapshot para o escalonador', async () => {
+    const result = await service.notifyAuxiliaryStateUpdated(10);
+
+    expect(socket.emitAuxiliaryStateUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id_processo: 10,
+        auxiliary_state: expect.objectContaining({ id_processo: 10 }),
+      }),
+    );
+    expect(result.id_processo).toBe(10);
+  });
+
+  it('openAuxiliaryValve publica o snapshot atualizado depois do comando', async () => {
+    auxiliaryCommand.abrirValvula.mockResolvedValue({
+      success: true,
+      action: 'ABRIR_VALVULA_AUXILIAR',
+    });
+    const dto = {
+      expected_subsystem_version: 5,
+      expected_tank_version: 3,
+      motivo: 'Intervencao supervisionada.',
+    };
+
+    const result = await service.openAuxiliaryValve(10, 20, dto, user);
+
+    expect(auxiliaryCommand.abrirValvula).toHaveBeenCalledWith({
+      id_processo: 10,
+      id_processo_tanque: 20,
+      dto,
+      user,
+    });
+    expect(socket.emitAuxiliaryStateUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10 }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        success: true,
+        auxiliary_state: expect.objectContaining({ id_processo: 10 }),
+      }),
+    );
+  });
+
+  it('preserva comando auxiliar confirmado quando o snapshot nao pode ser carregado', async () => {
+    auxiliaryCommand.abrirValvula.mockResolvedValue({
+      success: true,
+      action: 'ABRIR_VALVULA_AUXILIAR',
+    });
+    repository.findAuxiliaryStateByProcessId.mockRejectedValueOnce(
+      new Error('Snapshot indisponivel.'),
+    );
+    const loggerWarn = jest
+      .spyOn(service['logger'], 'warn')
+      .mockImplementation(() => undefined);
+    const dto = {
+      expected_subsystem_version: 5,
+      expected_tank_version: 3,
+      motivo: 'Intervencao supervisionada.',
+    };
+
+    const result = await service.openAuxiliaryValve(10, 20, dto, user);
+
+    expect(auxiliaryCommand.abrirValvula).toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      auxiliary_state: null,
+      auxiliary_state_warning: expect.stringContaining('snapshot auxiliar'),
+    });
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining('carregar estado auxiliar'),
+    );
+  });
+
+  it('getDashboard retorna snapshot HTTP dos cards por tanque', async () => {
+    repository.findDashboardById.mockResolvedValue({
+      processo: {
+        id_processo: 10,
+        nome_processo: 'Processo teste',
+        status_processo: statusprocesso.EM_EXECUCAO,
+        fase_processo: faseprocesso.GERANDO_VACUO,
+        vacuo_alvo: -80,
+        tempo_maximo: 600,
+        tempo_execucao: null,
+        iniciado_em: new Date('2026-01-01T00:00:00Z'),
+        finalizado_em: null,
+        parada_emergencia: false,
+        encerramento_automatico: true,
+        encerramento_tolerancia_vacuo_percentual: 10,
+        encerramento_limite_seguranca_vacuo: -95,
+        encerramento_tempo_estabilizacao_segundos: 30,
+        encerramento_estabilizacao_cobertura_minima_percentual: 80,
+        encerramento_intervalo_leitura_esperado_ms: 1000,
+        encerramento_timeout_leitura_sensor_ms: 2500,
+        encerramento_tempo_retencao_segundos: 30,
+        encerramento_perda_vacuo_maxima_retencao: 2,
+        encerramento_versao: 0,
+        status_encerramento_geral: statusencerramentoprocesso.INATIVO,
+        etapa_encerramento_geral: etapaencerramentoprocesso.NENHUMA,
+        encerramento_geral_iniciado_em: null,
+        encerramento_geral_finalizado_em: null,
+        encerramento_geral_confirmacao_iniciada_em: null,
+        encerramento_geral_proxima_tentativa_em: null,
+        encerramento_geral_tentativa: 0,
+        encerramento_geral_comando_tentativas: 0,
+        encerramento_geral_ultimo_erro: null,
+        processostanques: [
+          {
+            id_processo_tanque: 20,
+            id_tanque: 30,
+            status_tanque_processo: statustanqueprocesso.GERANDO_VACUO,
+            vacuo_alvo: -80,
+            vacuo_inicial: -5,
+            vacuo_final: -40,
+            vacuo_medio: -30,
+            eficiencia: null,
+            vacuo_atingido: false,
+            vacuo_estabilizado: false,
+            status_encerramento: statusencerramentotanque.MONITORANDO,
+            encerramento_iniciado_em: new Date('2026-01-01T00:00:00Z'),
+            isolado_em: null,
+            retencao_iniciada_em: null,
+            retencao_finalizada_em: null,
+            vacuo_isolamento: null,
+            perda_vacuo_retencao: null,
+            motivo_bloqueio_encerramento: null,
+            encerramento_versao: 0,
+            estabilizacao_leituras_esperadas: 30,
+            estabilizacao_leituras_observadas: 10,
+            estabilizacao_cobertura_percentual: 33.33,
+            estabilizacao_maior_intervalo_ms: 1000,
+            status_estagnacao: statusestagnacao.DETECTADA,
+            estagnacao_iniciada_em: new Date('2026-01-01T00:00:00Z'),
+            estagnacao_detectada_em: new Date('2026-01-01T00:01:00Z'),
+            estagnacao_ultima_avaliacao_em: new Date('2026-01-01T00:01:00Z'),
+            estagnacao_variacao_vacuo: 0.4,
+            estagnacao_leituras_janela: 6,
+            estagnacao_janelas_sem_progresso: 2,
+            iniciado_em: new Date('2026-01-01T00:00:00Z'),
+            finalizado_em: null,
+            tanques: {
+              nome: 'Tanque A',
+              sensoresacoplamentomangueiras: null,
+            },
+            alarmes: [{ id_alarme: 99 }],
+            processostanquessensores: [
+              {
+                id_processo_tanque_sensor: 40,
+                id_sensor: 50,
+                _count: { leiturasensores: 2 },
+                leiturasensores: [
+                  {
+                    id_leitura_sensor: 2,
+                    valor_vacuo: -40,
+                    valor: -40,
+                    leitura_em: new Date('2026-01-01T00:01:00Z'),
+                    recebido_em: new Date('2026-01-01T00:01:01Z'),
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      systemConfig: {
+        estagnacao_janela_segundos: 60,
+        estagnacao_variacao_minima: 2,
+        estagnacao_leituras_minimas: 5,
+        estagnacao_janelas_consecutivas: 2,
+      },
+      alarmCounts: [
+        {
+          severidade: severidadealarme.CRITICO,
+          _count: { _all: 1 },
+        },
+      ],
+      latestAlarm: { severidade: severidadealarme.CRITICO },
+    });
+
+    const dashboard = await service.getDashboard(10);
+
+    expect(repository.findDashboardById).toHaveBeenCalledWith(10);
+    expect(dashboard).toMatchObject({
+      id_processo: 10,
+      status_processo: statusprocesso.EM_EXECUCAO,
+      vacuo_atual: -40,
+      progresso_percentual: 0,
+      parada_emergencia: {
+        ativa: false,
+        status: 'INATIVA',
+        hardware_confirmado: false,
+      },
+      alarmes: {
+        total: 1,
+        criticos: 1,
+      },
+      tanques: [
+        expect.objectContaining({
+          id_processo_tanque: 20,
+          status_tanque_processo: statustanqueprocesso.GERANDO_VACUO,
+          vacuo_atingido: false,
+          vacuo_estabilizado: false,
+          vacuo_atual: -40,
+          eficiencia: 50,
+          total_sensores: 1,
+          total_leituras: 2,
+          estagnacao: expect.objectContaining({
+            status: statusestagnacao.DETECTADA,
+            detectada: true,
+            variacao_vacuo: 0.4,
+            id_alarme_ativo: 99,
+          }),
+          encerramento: expect.objectContaining({
+            status: statusencerramentotanque.MONITORANDO,
+            automatico: true,
+            pode_desacoplar: false,
+          }),
+        }),
+      ],
+    });
+    expect(dashboard.snapshot_at).toBeInstanceOf(Date);
+  });
+
+  it('getDashboard lanca NotFoundException para processo inexistente', async () => {
+    repository.findDashboardById.mockResolvedValue(null);
+
+    await expect(service.getDashboard(999)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
   it('updateConfig bloqueia processo inexistente', async () => {
     repository.findById.mockResolvedValue(null);
 
@@ -379,7 +835,8 @@ describe('ProcessosService', () => {
     repository.findById.mockResolvedValue(
       makeProcess(statusprocesso.CONFIGURADO),
     );
-    repository.updateConfig.mockResolvedValue(
+    mockMutationWithAudit(
+      repository.updateConfig,
       makeProcess(statusprocesso.CONFIGURADO),
     );
 
@@ -392,18 +849,26 @@ describe('ProcessosService', () => {
     expect(repository.updateConfig).toHaveBeenCalledWith({
       id_processo: 10,
       dto,
+      persistAudit: expect.any(Function),
     });
-    expect(events.registerConfigUpdated).toHaveBeenCalled();
-    expect(logs.registerUserAction).toHaveBeenCalled();
+    expect(events.registerConfigUpdated).not.toHaveBeenCalled();
+    expect(logs.registerUserAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id_processo: 10,
+        id_usuario: 7,
+        acao: 'PROCESSO_CONFIG_ATUALIZADO',
+      }),
+      transactionClient,
+    );
     expect(socket.emitConfigUpdated).toHaveBeenCalled();
     expect(result.status_processo).toBe(statusprocesso.CONFIGURADO);
   });
 
-  it('start valida, chama MQTT, aplica lifecycle e emite socket', async () => {
+  it('start valida, delega a partida coordenada e emite socket', async () => {
     const context = makeOperationalContext(statusprocesso.CONFIGURADO);
     const updated = makeProcess(statusprocesso.EM_EXECUCAO);
     repository.findOperationalContextById.mockResolvedValue(context);
-    repository.applyLifecycleTransition.mockResolvedValue(updated);
+    mockMutationWithAudit(startup.execute, updated);
 
     const result = await service.start(10, user);
 
@@ -412,11 +877,23 @@ describe('ProcessosService', () => {
       user,
     );
     expect(startValidator.validateCanStart).toHaveBeenCalled();
-    expect(mqtt.prepareHardwareForStart).toHaveBeenCalled();
-    expect(mqtt.startVacuumOperation).toHaveBeenCalled();
-    expect(repository.applyLifecycleTransition).toHaveBeenCalled();
-    expect(events.registerProcessStarted).toHaveBeenCalled();
-    expect(logs.registerProcessStarted).toHaveBeenCalled();
+    expect(startup.execute).toHaveBeenCalledWith({
+      id_processo: 10,
+      user,
+      mqttContext: expect.objectContaining({ id_processo: 10 }),
+      persistAudit: expect.any(Function),
+    });
+    expect(mqtt.prepareHardwareForStart).not.toHaveBeenCalled();
+    expect(mqtt.startVacuumOperation).not.toHaveBeenCalled();
+    expect(repository.applyLifecycleTransition).not.toHaveBeenCalled();
+    expect(events.registerProcessStarted).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
+    expect(logs.registerProcessStarted).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
     expect(socket.emitProcessStarted).toHaveBeenCalled();
     expect(socket.emitStatusChanged).toHaveBeenCalled();
     expect(result.status_processo).toBe(statusprocesso.EM_EXECUCAO);
@@ -432,20 +909,23 @@ describe('ProcessosService', () => {
     );
     expect(repository.applyLifecycleTransition).not.toHaveBeenCalled();
     expect(mqtt.prepareHardwareForStart).not.toHaveBeenCalled();
+    expect(startup.execute).not.toHaveBeenCalled();
   });
 
-  it('start lanca ConflictException se MQTT falhar', async () => {
+  it('start propaga falha da partida coordenada sem usar caminho legado', async () => {
     repository.findOperationalContextById.mockResolvedValue(
       makeOperationalContext(statusprocesso.CONFIGURADO),
     );
-    mqtt.prepareHardwareForStart.mockResolvedValueOnce({
-      success: false,
-      message: 'MQTT indisponivel',
-    });
+    startup.execute.mockRejectedValueOnce(
+      new ConflictException('MQTT indisponivel'),
+    );
 
     await expect(service.start(10, user)).rejects.toBeInstanceOf(
       ConflictException,
     );
+    expect(startup.execute).toHaveBeenCalled();
+    expect(mqtt.prepareHardwareForStart).not.toHaveBeenCalled();
+    expect(mqtt.startVacuumOperation).not.toHaveBeenCalled();
     expect(repository.applyLifecycleTransition).not.toHaveBeenCalled();
   });
 
@@ -456,7 +936,8 @@ describe('ProcessosService', () => {
     repository.findOperationalContextById.mockResolvedValue(
       makeOperationalContext(statusprocesso.EM_EXECUCAO),
     );
-    repository.applyLifecycleTransition.mockResolvedValue(
+    mockMutationWithAudit(
+      repository.applyLifecycleTransition,
       makeProcess(statusprocesso.PAUSADO),
     );
 
@@ -466,9 +947,17 @@ describe('ProcessosService', () => {
       statusprocesso.EM_EXECUCAO,
     );
     expect(mqtt.pauseVacuumOperation).toHaveBeenCalled();
-    expect(repository.applyLifecycleTransition).toHaveBeenCalled();
-    expect(events.registerProcessPaused).toHaveBeenCalled();
-    expect(logs.registerProcessPaused).toHaveBeenCalled();
+    expect(repository.applyLifecycleTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ persistAudit: expect.any(Function) }),
+    );
+    expect(events.registerProcessPaused).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
+    expect(logs.registerProcessPaused).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
     expect(socket.emitProcessPaused).toHaveBeenCalled();
     expect(result.status_processo).toBe(statusprocesso.PAUSADO);
   });
@@ -477,7 +966,8 @@ describe('ProcessosService', () => {
     repository.findOperationalContextById.mockResolvedValue(
       makeOperationalContext(statusprocesso.PAUSADO),
     );
-    repository.applyLifecycleTransition.mockResolvedValue(
+    mockMutationWithAudit(
+      repository.applyLifecycleTransition,
       makeProcess(statusprocesso.EM_EXECUCAO),
     );
 
@@ -485,9 +975,17 @@ describe('ProcessosService', () => {
 
     expect(startValidator.validateCanResume).toHaveBeenCalled();
     expect(mqtt.resumeVacuumOperation).toHaveBeenCalled();
-    expect(repository.applyLifecycleTransition).toHaveBeenCalled();
-    expect(events.registerProcessResumed).toHaveBeenCalled();
-    expect(logs.registerProcessResumed).toHaveBeenCalled();
+    expect(repository.applyLifecycleTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ persistAudit: expect.any(Function) }),
+    );
+    expect(events.registerProcessResumed).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
+    expect(logs.registerProcessResumed).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
     expect(socket.emitProcessResumed).toHaveBeenCalled();
     expect(result.status_processo).toBe(statusprocesso.EM_EXECUCAO);
   });
@@ -499,7 +997,8 @@ describe('ProcessosService', () => {
     repository.findOperationalContextById.mockResolvedValue(
       makeOperationalContext(statusprocesso.EM_EXECUCAO),
     );
-    repository.applyLifecycleTransition.mockResolvedValue(
+    mockMutationWithAudit(
+      repository.applyLifecycleTransition,
       makeProcess(statusprocesso.CONCLUIDO),
     );
 
@@ -514,8 +1013,17 @@ describe('ProcessosService', () => {
     );
     expect(mqtt.finishVacuumOperation).toHaveBeenCalled();
     expect(metrics.calculateProcessMetrics).toHaveBeenCalled();
-    expect(events.registerProcessFinished).toHaveBeenCalled();
-    expect(logs.registerProcessFinished).toHaveBeenCalled();
+    expect(repository.applyLifecycleTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ persistAudit: expect.any(Function) }),
+    );
+    expect(events.registerProcessFinished).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
+    expect(logs.registerProcessFinished).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
     expect(socket.emitProcessFinished).toHaveBeenCalled();
     expect(socket.emitMetricsUpdated).toHaveBeenCalled();
     expect(result.status_processo).toBe(statusprocesso.CONCLUIDO);
@@ -528,7 +1036,8 @@ describe('ProcessosService', () => {
     repository.findOperationalContextById.mockResolvedValue(
       makeOperationalContext(statusprocesso.EM_EXECUCAO),
     );
-    repository.applyLifecycleTransition.mockResolvedValue(
+    mockMutationWithAudit(
+      repository.applyLifecycleTransition,
       makeProcess(statusprocesso.INTERROMPIDO),
     );
 
@@ -542,19 +1051,24 @@ describe('ProcessosService', () => {
       statusprocesso.EM_EXECUCAO,
     );
     expect(mqtt.interruptVacuumOperation).toHaveBeenCalled();
-    expect(repository.applyLifecycleTransition).toHaveBeenCalled();
-    expect(events.registerProcessInterrupted).toHaveBeenCalled();
-    expect(logs.registerProcessInterrupted).toHaveBeenCalled();
+    expect(repository.applyLifecycleTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ persistAudit: expect.any(Function) }),
+    );
+    expect(events.registerProcessInterrupted).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
+    expect(logs.registerProcessInterrupted).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
     expect(socket.emitProcessInterrupted).toHaveBeenCalled();
     expect(result.status_processo).toBe(statusprocesso.INTERROMPIDO);
   });
 
-  it('emergencyStop chama parada MQTT, tenta shutdown e aplica transicao', async () => {
+  it('emergencyStop delega ao coordenador persistente e nao declara hardware seguro antes da telemetria', async () => {
     repository.findById.mockResolvedValue(
       makeProcess(statusprocesso.EM_EXECUCAO),
-    );
-    repository.applyLifecycleTransition.mockResolvedValue(
-      makeProcess(statusprocesso.INTERROMPIDO),
     );
 
     const result = await service.emergencyStop(
@@ -563,33 +1077,59 @@ describe('ProcessosService', () => {
       user,
     );
 
-    expect(mqtt.executeEmergencyStop).toHaveBeenCalledWith({
+    expect(generalClosure.requestEmergencyStop).toHaveBeenCalledWith({
       id_processo: 10,
+      id_usuario: 7,
       motivo: 'Falha critica',
+      persistAudit: expect.any(Function),
     });
-    expect(mqtt.shutdownAllActuators).toHaveBeenCalledWith(10);
-    expect(repository.applyLifecycleTransition).toHaveBeenCalled();
-    expect(events.registerEmergencyStop).toHaveBeenCalled();
-    expect(logs.registerEmergencyStop).toHaveBeenCalled();
-    expect(socket.emitEmergencyStop).toHaveBeenCalled();
+    expect(mqtt.shutdownAllActuators).not.toHaveBeenCalled();
+    expect(repository.applyLifecycleTransition).not.toHaveBeenCalled();
+    expect(events.registerEmergencyStop).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
+    expect(logs.registerEmergencyStop).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
+    expect(socket.emitEmergencyStop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parada_emergencia: expect.objectContaining({
+          hardware_confirmado: false,
+          status: 'AGUARDANDO_CONFIRMACAO',
+        }),
+      }),
+    );
     expect(result.status_processo).toBe(statusprocesso.INTERROMPIDO);
+    expect(result.data).toMatchObject({
+      parada_emergencia: {
+        hardware_confirmado: false,
+      },
+    });
   });
 
-  it('emergencyStop mantem registro mesmo quando comandos MQTT falham', async () => {
+  it('emergencyStop persiste e comunica falha do controlador sem apresentar seguranca', async () => {
     repository.findById.mockResolvedValue(
       makeProcess(statusprocesso.EM_EXECUCAO),
     );
-    repository.applyLifecycleTransition.mockResolvedValue(
-      makeProcess(statusprocesso.INTERROMPIDO),
+    mockMutationWithAudit(
+      generalClosure.requestEmergencyStop,
+      {
+        state: makeEmergencyState({
+          status: 'FALHA',
+          requer_intervencao: true,
+          ultimo_erro: 'Telemetria nao confirmou o estado seguro.',
+        }),
+        previous_status: statusprocesso.EM_EXECUCAO,
+        command_results: [],
+        command_failures: [
+          { comando: 'PARADA_EMERGENCIA', message: 'Broker indisponivel' },
+        ],
+        idempotent: false,
+      },
+      { once: true },
     );
-    mqtt.executeEmergencyStop.mockResolvedValueOnce({
-      success: false,
-      message: 'Falha no comando de emergencia',
-    });
-    mqtt.shutdownAllActuators.mockResolvedValueOnce({
-      success: false,
-      message: 'Falha ao desligar atuadores',
-    });
 
     const result = await service.emergencyStop(
       10,
@@ -597,12 +1137,136 @@ describe('ProcessosService', () => {
       user,
     );
 
-    expect(repository.applyLifecycleTransition).toHaveBeenCalled();
-    expect(events.registerEmergencyStop).toHaveBeenCalled();
-    expect(logs.registerEmergencyStop).toHaveBeenCalled();
+    expect(events.registerEmergencyStop).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
+    expect(logs.registerEmergencyStop).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10, id_usuario: 7 }),
+      transactionClient,
+    );
     expect(result.status_processo).toBe(statusprocesso.INTERROMPIDO);
-    expect(result.message).toContain('falha nos comandos MQTT');
+    expect(result.message).toContain(
+      'controlador nao confirmou o latch e todas as saidas logicas',
+    );
+    expect(result.data).toMatchObject({
+      parada_emergencia: {
+        hardware_confirmado: false,
+        requer_intervencao: true,
+      },
+    });
   });
+
+  it('emergencyStop permite retry de processo interrompido sem duplicar evento semantico', async () => {
+    repository.findById.mockResolvedValue(
+      makeProcess(statusprocesso.INTERROMPIDO),
+    );
+    mockMutationWithAudit(
+      generalClosure.requestEmergencyStop,
+      {
+        state: makeEmergencyState(),
+        previous_status: statusprocesso.INTERROMPIDO,
+        command_results: [],
+        command_failures: [],
+        idempotent: true,
+      },
+      { once: true, executeAudit: false },
+    );
+
+    await service.emergencyStop(10, { motivo: 'Repetir parada' }, user);
+
+    expect(generalClosure.requestEmergencyStop).toHaveBeenCalledWith(
+      expect.objectContaining({ persistAudit: expect.any(Function) }),
+    );
+    expect(events.registerEmergencyStop).not.toHaveBeenCalled();
+    expect(logs.registerEmergencyStop).not.toHaveBeenCalled();
+    expect(socket.emitStatusChanged).not.toHaveBeenCalled();
+  });
+
+  function makeEmergencyState(overrides: Record<string, unknown> = {}) {
+    return {
+      ativa: true,
+      status: 'AGUARDANDO_CONFIRMACAO',
+      etapa: 'AGUARDANDO_TELEMETRIA',
+      hardware_confirmado: false,
+      nivel_confirmacao: 'NAO_CONFIRMADO',
+      latch_emergencia_confirmado: false,
+      saidas_controlador_confirmadas: false,
+      feedback_mecanico_disponivel: false,
+      requer_intervencao: false,
+      solicitada_em: new Date('2026-07-19T18:00:00.000Z'),
+      confirmada_em: null,
+      proxima_tentativa_em: null,
+      tentativa: 1,
+      comando_tentativas: 1,
+      ultimo_erro: null,
+      versao: 2,
+      ...overrides,
+    };
+  }
+
+  function makeAuxiliaryStateRaw() {
+    return {
+      id_processo: 10,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      processosauxiliares: {
+        status_subsistema: statussubsistemaauxiliar.INATIVO,
+        versao: 0,
+        motivo_bloqueio: null,
+        ultimo_erro: null,
+        atualizado_em: new Date('2026-01-01T00:00:00Z'),
+        controle_bomba_assumido_em: null,
+        controle_bomba_expira_em: null,
+        usuario_controle_bomba: null,
+        processo_tanque_atual: null,
+      },
+      processostanques: [
+        {
+          id_processo_tanque: 20,
+          id_tanque: 30,
+          tanques: {
+            nome: 'Tanque A',
+            sensoresacoplamentomangueiras: {
+              status_acoplamento: StatusAcoplamentoMangueira.ACOPLADA,
+            },
+            valvulas: [
+              {
+                id_valvula: 60,
+                nome_valvula: 'Valvula auxiliar T1',
+                codigo_hardware: 'VA_T1',
+                status_valvula: StatusValvula.FECHADA,
+                ativo: true,
+                ultimo_acionamento: null,
+                bombas: {
+                  id_bomba: 70,
+                  nome: 'Bomba auxiliar',
+                  codigo_hardware: 'BOMBA_AUXILIAR',
+                  status_padrao: statusbomba.ATIVA,
+                  ligada_hardware: false,
+                  disponivel_hardware: true,
+                  ultimo_status_hardware_em: new Date('2026-01-01T00:00:00Z'),
+                },
+              },
+            ],
+          },
+          processostanquesauxiliares: {
+            id_processo_tanque_auxiliar: 80,
+            status_auxilio: statusauxiliotanque.INATIVO,
+            prioridade: 0,
+            solicitado_em: null,
+            iniciado_em: null,
+            finalizado_em: null,
+            versao: 0,
+            motivo_bloqueio: null,
+            ultimo_erro: null,
+            controle_valvula_assumido_em: null,
+            controle_valvula_expira_em: null,
+            usuario_controle_valvula: null,
+          },
+        },
+      ],
+    };
+  }
 
   function makeProcess(status: statusprocesso) {
     return {
@@ -610,6 +1274,17 @@ describe('ProcessosService', () => {
       id_usuario: 7,
       nome_processo: 'Processo teste',
       status_processo: status,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
+      encerramento_versao: 0,
+      encerramento_tolerancia_vacuo_percentual: 10,
+      encerramento_limite_seguranca_vacuo: -95,
+      encerramento_tempo_estabilizacao_segundos: 30,
+      encerramento_estabilizacao_cobertura_minima_percentual: 80,
+      encerramento_intervalo_leitura_esperado_ms: 1000,
+      encerramento_timeout_leitura_sensor_ms: 2500,
+      encerramento_tempo_retencao_segundos: 30,
+      encerramento_perda_vacuo_maxima_retencao: 2,
       vacuo_alvo: -80,
       vacuo_inicial: null,
       vacuo_final: null,
@@ -634,6 +1309,17 @@ describe('ProcessosService', () => {
       id_usuario: 7,
       nome_processo: 'Processo teste',
       status_processo: status,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
+      encerramento_versao: 0,
+      encerramento_tolerancia_vacuo_percentual: 10,
+      encerramento_limite_seguranca_vacuo: -95,
+      encerramento_tempo_estabilizacao_segundos: 30,
+      encerramento_estabilizacao_cobertura_minima_percentual: 80,
+      encerramento_intervalo_leitura_esperado_ms: 1000,
+      encerramento_timeout_leitura_sensor_ms: 2500,
+      encerramento_tempo_retencao_segundos: 30,
+      encerramento_perda_vacuo_maxima_retencao: 2,
       vacuo_alvo: -80,
       vacuo_inicial: null,
       vacuo_final: null,
@@ -661,6 +1347,8 @@ describe('ProcessosService', () => {
           vacuo_medio: null,
           eficiencia: null,
           status_tanque_processo: statustanqueprocesso.CONFIGURADO,
+          status_encerramento: statusencerramentotanque.INATIVO,
+          encerramento_versao: 0,
           iniciado_em: null,
           finalizado_em: null,
           sensores: [
@@ -671,6 +1359,7 @@ describe('ProcessosService', () => {
               modelo_sensor: 'MPX',
               unidade_medida: 'kPa',
               status_sensor: statussensor.ATIVO,
+              tipo_sensor: tiposensor.VACUO,
               ultima_leitura: new Date(),
               ultimo_valor_lido: -70,
               ativo_no_processo: true,
@@ -681,7 +1370,12 @@ describe('ProcessosService', () => {
       ],
       safety: {
         hardware: {
+          mqtt_credentials_configured: true,
+          mqtt_credentials_verified: true,
+          mqtt_credentials_verified_at: new Date(),
+          mqtt_credentials_failure: null,
           mqtt_connected: true,
+          mqtt_operational: true,
           mqtt_status: statusconexaomqtt.CONECTADO,
           esp32_online: true,
           esp32_status: statusgeralsistema.OPERACIONAL,

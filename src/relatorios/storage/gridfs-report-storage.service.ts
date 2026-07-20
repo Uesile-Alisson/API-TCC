@@ -19,6 +19,7 @@ import type {
   ReadReportFileResult,
   SaveReportFileParams,
   SavedReportFileResult,
+  StoredReportFileCandidate,
 } from './report-storage.interface';
 
 const SAFE_BUCKET_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
@@ -146,6 +147,22 @@ export class GridFsReportStorageService {
       gridfs_file_id: result.fileId,
       bucket_name: result.bucketName,
     };
+  }
+
+  async findManagedFilesUploadedBefore(
+    uploadedBefore: Date,
+  ): Promise<StoredReportFileCandidate[]> {
+    const files = await this.gridFsService.findFilesUploadedBefore(
+      uploadedBefore,
+      { origem: 'RELATORIOS_MODULE' },
+      RELATORIO_GRIDFS_BUCKET_NAME,
+    );
+
+    return files.map((file) => ({
+      gridfs_file_id: file.fileId,
+      bucket_name: file.bucketName,
+      upload_date: file.uploadDate,
+    }));
   }
 
   buildDownloadDisposition(filename: string): string {

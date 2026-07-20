@@ -124,6 +124,11 @@ export class BackupMapper {
 
   private static isSensitiveKey(key: string): boolean {
     const normalized = key.toLowerCase();
+
+    if (normalized === 'senha_mqtt_configurada') {
+      return false;
+    }
+
     return (
       normalized.includes('senha') ||
       normalized.includes('password') ||

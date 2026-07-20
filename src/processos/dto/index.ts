@@ -4,3 +4,6 @@ export * from './list-processos-query.dto';
 export * from './finalizar-processo.dto';
 export * from './interromper-processo.dto';
 export * from './parada-emergencia-processo.dto';
+export * from './processo-auxiliar-control.dto';
+export * from './processo-tanque-closure.dto';
+export * from './processo-general-closure.dto';

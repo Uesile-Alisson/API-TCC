@@ -7,6 +7,8 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategys/jwt.strategy';
 import { MailModule } from '@/mail/mail.module';
 import { SignOptions } from 'jsonwebtoken';
+import { SocketAuthService } from './socket-auth.service';
+import { PasswordHasherService } from './password-hasher.service';
 
 @Module({
   imports: [
@@ -29,7 +31,12 @@ import { SignOptions } from 'jsonwebtoken';
     MailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    SocketAuthService,
+    PasswordHasherService,
+  ],
+  exports: [AuthService, JwtModule, SocketAuthService, PasswordHasherService],
 })
 export class AuthModule {}

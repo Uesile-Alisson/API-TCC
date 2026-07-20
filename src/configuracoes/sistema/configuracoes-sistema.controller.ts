@@ -2,6 +2,7 @@ import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -50,6 +51,10 @@ export class ConfiguracoesSistemaController {
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({
     description: 'Configuracao do sistema nao cadastrada.',
+  })
+  @ApiConflictResponse({
+    description:
+      'Alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
   })
   updateCurrent(
     @Body() dto: UpdateConfiguracoesSistemaDto,

@@ -3,6 +3,7 @@ const MQTT_PROTOCOLS = new Set(['mqtt:', 'mqtts:']);
 export function normalizeMqttBrokerUrl(
   input: string,
   defaultPort = 1883,
+  forceConfiguredPort = false,
 ): string {
   const value = input.trim();
 
@@ -11,10 +12,10 @@ export function normalizeMqttBrokerUrl(
   }
 
   if (value.includes('://')) {
-    return normalizeAbsoluteMqttUrl(value, defaultPort);
+    return normalizeAbsoluteMqttUrl(value, defaultPort, forceConfiguredPort);
   }
 
-  return normalizeHostAndPort(value, defaultPort);
+  return normalizeHostAndPort(value, defaultPort, forceConfiguredPort);
 }
 
 export function sanitizeMqttBrokerUrlForLog(input: string): string {
@@ -35,7 +36,11 @@ export function sanitizeMqttBrokerUrlForLog(input: string): string {
   }
 }
 
-function normalizeAbsoluteMqttUrl(input: string, defaultPort: number): string {
+function normalizeAbsoluteMqttUrl(
+  input: string,
+  defaultPort: number,
+  forceConfiguredPort = false,
+): string {
   let url: URL;
 
   try {
@@ -52,14 +57,24 @@ function normalizeAbsoluteMqttUrl(input: string, defaultPort: number): string {
     throw new Error('Broker MQTT deve informar um host.');
   }
 
-  if (!url.port) {
+  if (url.username || url.password) {
+    throw new Error(
+      'Broker MQTT nao deve conter credenciais na URL. Use o arquivo externo seguro.',
+    );
+  }
+
+  if (forceConfiguredPort || !url.port) {
     url.port = String(defaultPort);
   }
 
   return url.toString();
 }
 
-function normalizeHostAndPort(input: string, defaultPort: number): string {
+function normalizeHostAndPort(
+  input: string,
+  defaultPort: number,
+  forceConfiguredPort: boolean,
+): string {
   const [host, port, extra] = input.split(':');
 
   if (!host || extra !== undefined) {
@@ -71,5 +86,6 @@ function normalizeHostAndPort(input: string, defaultPort: number): string {
   return normalizeAbsoluteMqttUrl(
     `mqtt://${host}:${resolvedPort}`,
     defaultPort,
+    forceConfiguredPort,
   );
 }

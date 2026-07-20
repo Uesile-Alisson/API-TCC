@@ -1,14 +1,19 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { modooperacaoauxiliar } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
+  IsEnum,
   IsInt,
+  IsNegative,
   IsNumber,
   IsOptional,
   IsPositive,
   IsString,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -49,7 +54,9 @@ export class UpdateProcessoTanqueDTO {
 
   @ApiPropertyOptional({
     example: -80.5,
-    description: 'Novo vácuo alvo específico do tanque.',
+    maximum: -0.001,
+    description:
+      'Novo vácuo alvo manométrico do tanque em kPa, expresso como valor negativo.',
   })
   @IsOptional()
   @Type(() => Number)
@@ -57,6 +64,10 @@ export class UpdateProcessoTanqueDTO {
     { allowNaN: false, allowInfinity: false, maxDecimalPlaces: 3 },
     { message: 'O vacuo_alvo do tanque deve ser um número válido.' },
   )
+  @IsNegative({
+    message:
+      'O vacuo_alvo do tanque deve ser menor que zero (pressao manometrica em kPa).',
+  })
   vacuo_alvo?: number;
 
   @ApiPropertyOptional({
@@ -97,7 +108,9 @@ export class UpdateProcessoConfigDTO {
 
   @ApiPropertyOptional({
     example: -80.5,
-    description: 'Novo vácuo alvo geral do processo.',
+    maximum: -0.001,
+    description:
+      'Novo vácuo alvo manométrico geral do processo em kPa, expresso como valor negativo.',
   })
   @IsOptional()
   @Type(() => Number)
@@ -105,7 +118,112 @@ export class UpdateProcessoConfigDTO {
     { allowNaN: false, allowInfinity: false, maxDecimalPlaces: 3 },
     { message: 'O vacuo_alvo deve ser um número válido.' },
   )
+  @IsNegative({
+    message:
+      'O vacuo_alvo deve ser menor que zero (pressao manometrica em kPa).',
+  })
   vacuo_alvo?: number;
+
+  @ApiPropertyOptional({
+    enum: modooperacaoauxiliar,
+    example: modooperacaoauxiliar.ASSISTIDO,
+    description:
+      'Novo modo de operacao do subsistema auxiliar. So pode ser alterado enquanto o processo estiver configurado.',
+  })
+  @IsOptional()
+  @IsEnum(modooperacaoauxiliar, {
+    message: 'modo_operacao_auxiliar deve ser AUTOMATICO, ASSISTIDO ou MANUAL.',
+  })
+  modo_operacao_auxiliar?: modooperacaoauxiliar;
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'Habilita ou desabilita o encerramento automatico. So pode ser alterado enquanto o processo estiver configurado.',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'encerramento_automatico deve ser booleano.' })
+  encerramento_automatico?: boolean;
+
+  @ApiPropertyOptional({ example: 60, minimum: 10, maximum: 3600 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(10)
+  @Max(3600)
+  estagnacao_janela_segundos?: number;
+
+  @ApiPropertyOptional({ example: 2, minimum: 0, maximum: 1000 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 })
+  @Min(0)
+  @Max(1000)
+  estagnacao_variacao_minima?: number;
+
+  @ApiPropertyOptional({ example: 5, minimum: 3, maximum: 1000 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(3)
+  @Max(1000)
+  estagnacao_leituras_minimas?: number;
+
+  @ApiPropertyOptional({ example: 2, minimum: 1, maximum: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  estagnacao_janelas_consecutivas?: number;
+
+  @ApiPropertyOptional({ example: 30, minimum: 0, maximum: 3600 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(3600)
+  estagnacao_tempo_minimo_bomba_principal_segundos?: number;
+
+  @ApiPropertyOptional({ example: 180, minimum: 10, maximum: 86400 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(10)
+  @Max(86400)
+  estagnacao_tempo_maximo_sem_progresso_segundos?: number;
+
+  @ApiPropertyOptional({ example: 0.35, minimum: 0.05, maximum: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 })
+  @Min(0.05)
+  @Max(1)
+  estagnacao_fator_minimo_proximidade_alvo?: number;
+
+  @ApiPropertyOptional({ example: 30, minimum: 5, maximum: 3600 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(3600)
+  auxilio_janela_avaliacao_segundos?: number;
+
+  @ApiPropertyOptional({ example: 1, minimum: 0.001, maximum: 1000 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 })
+  @Min(0.001)
+  @Max(1000)
+  auxilio_melhoria_minima?: number;
+
+  @ApiPropertyOptional({ example: 180, minimum: 10, maximum: 86400 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(10)
+  @Max(86400)
+  auxilio_timeout_segundos?: number;
 
   @ApiPropertyOptional({
     type: [UpdateProcessoTanqueDTO],

@@ -44,6 +44,18 @@ describe('normalizeMqttBrokerUrl', () => {
       'mqtt://localhost:1884',
     );
   });
+
+  it('faz o campo porta prevalecer durante a aplicacao da configuracao', () => {
+    expect(normalizeMqttBrokerUrl('mqtt://localhost:1883', 1884, true)).toBe(
+      'mqtt://localhost:1884',
+    );
+  });
+
+  it('rejeita credenciais embutidas na URL do broker', () => {
+    expect(() =>
+      normalizeMqttBrokerUrl('mqtt://usuario:senha@localhost:1883'),
+    ).toThrow('nao deve conter credenciais');
+  });
 });
 
 describe('sanitizeMqttBrokerUrlForLog', () => {

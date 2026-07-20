@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { statusgeralsistema } from '@prisma/client';
+import { Prisma, statusgeralsistema } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ProcessoGeneralClosureService } from '../../processos/lifecycle';
+import { BombaHardwareStatusService } from '../bombas/bomba-hardware-status.service';
 import { MqttConfigService } from '../config/mqtt-config.service';
 import { Esp32StatusDTO } from '../dto/esp32-status.dto';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
@@ -14,6 +16,11 @@ type CurrentSystemConfig = {
   status_geral_sistema: statusgeralsistema;
 };
 
+// Retained MQTT status is a cached snapshot, not proof that the device was
+// observed after a new safety command. Epoch keeps it usable as state while
+// making it ineligible for freshness-based physical confirmation.
+const UNCONFIRMED_RETAINED_OBSERVATION_AT = new Date(0);
+
 @Injectable()
 export class StatusHandler implements MqttMessageHandler<MqttStatusHandlerResult | null> {
   private readonly logger = new Logger(StatusHandler.name);
@@ -21,18 +28,49 @@ export class StatusHandler implements MqttMessageHandler<MqttStatusHandlerResult
   constructor(
     private readonly prisma: PrismaService,
     private readonly mqttConfigService: MqttConfigService,
+    private readonly bombaHardwareStatusService: BombaHardwareStatusService,
     private readonly valvulaHardwareStatusService: ValvulaHardwareStatusService,
+    private readonly processoGeneralClosureService: ProcessoGeneralClosureService,
   ) {}
 
   async handle(message: MqttMessage): Promise<MqttStatusHandlerResult | null> {
     const dto = this.validatePayload(message);
     const statusAt = this.resolveStatusDate(dto, message);
+    const hardwareObservationAt = message.retain
+      ? UNCONFIRMED_RETAINED_OBSERVATION_AT
+      : message.receivedAt;
 
     await this.updateMqttLastSync();
-    await this.valvulaHardwareStatusService.processStatusPayload(
-      dto.valvulas,
-      statusAt,
-    );
+    const [bombas, valvulas] = await Promise.all([
+      this.bombaHardwareStatusService.processStatusPayload(
+        dto.bombas,
+        hardwareObservationAt,
+      ),
+      this.valvulaHardwareStatusService.processStatusPayload(
+        dto.valvulas,
+        hardwareObservationAt,
+      ),
+    ]);
+    let emergencyStopReconciled = false;
+    if (!message.retain) {
+      await this.mqttConfigService.registerHardwareStatusSnapshot({
+        topic: message.topic,
+        payload: this.buildCanonicalSnapshotPayload(dto, statusAt),
+        receivedAt: message.receivedAt,
+        statusAt,
+      });
+      if (dto.emergencia_ativa === true) {
+        emergencyStopReconciled = Boolean(
+          await this.processoGeneralClosureService.reconcileControllerEmergency(
+            {
+              motivo:
+                `Latch de emergencia reportado pelo controlador ${dto.device_id ?? 'nao identificado'}. ` +
+                `Erro atual: ${dto.erro_atual ?? 'nao informado'}.`,
+            },
+          ),
+        );
+      }
+    }
     const currentSystemConfig = await this.findcurrentSystemConfig();
 
     if (!currentSystemConfig) {
@@ -63,6 +101,9 @@ export class StatusHandler implements MqttMessageHandler<MqttStatusHandlerResult
       message,
       statusAt,
       statusChanged,
+      bombas,
+      valvulas,
+      emergencyStopReconciled,
     });
   }
 
@@ -71,23 +112,52 @@ export class StatusHandler implements MqttMessageHandler<MqttStatusHandlerResult
     message: MqttMessage;
     statusAt: Date;
     statusChanged: boolean;
+    bombas: MqttStatusHandlerResult['bombas'];
+    valvulas: MqttStatusHandlerResult['valvulas'];
+    emergencyStopReconciled: boolean;
   }): MqttStatusHandlerResult {
-    const { dto, message, statusAt, statusChanged } = params;
+    const {
+      dto,
+      message,
+      statusAt,
+      statusChanged,
+      bombas,
+      valvulas,
+      emergencyStopReconciled,
+    } = params;
 
     return {
       esp32_online: dto.esp32_on,
       status_geral_sistema: dto.status_geral,
       mensagem: dto.mensagem ?? null,
       device_id: dto.device_id ?? null,
+      emergencia_ativa: dto.emergencia_ativa ?? false,
+      erro_atual: dto.erro_atual ?? null,
+      emergency_stop_reconciled: emergencyStopReconciled,
       status_em: statusAt,
       receivedAt: message.receivedAt,
       topic: message.topic,
       status_changed: statusChanged,
+      bombas,
+      valvulas,
     };
   }
 
   private validatePayload(message: MqttMessage): Esp32StatusDTO {
     return MqttPayloadValidator.validateStatus(message.payload);
+  }
+
+  private buildCanonicalSnapshotPayload(
+    dto: Esp32StatusDTO,
+    statusAt: Date,
+  ): Prisma.InputJsonObject {
+    return JSON.parse(
+      JSON.stringify({
+        ...dto,
+        tipo: 'HARDWARE_STATUS',
+        enviado_em: statusAt.toISOString(),
+      }),
+    ) as Prisma.InputJsonObject;
   }
 
   private resolveStatusDate(dto: Esp32StatusDTO, message: MqttMessage): Date {

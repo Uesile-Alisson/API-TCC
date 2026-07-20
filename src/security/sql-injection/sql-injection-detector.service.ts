@@ -28,6 +28,10 @@ export class SqlInjectionDetectorService {
     path: string,
     matches: SqlInjectionDetectionMatch[],
   ): void {
+    if (this.isSensitiveField(path)) {
+      return;
+    }
+
     if (this.shouldIgnoreValue(value)) {
       return;
     }
@@ -109,6 +113,11 @@ export class SqlInjectionDetectorService {
     return SQL_INJECTION_TECHNICAL_FIELDS.some((field) =>
       normalizedPath.includes(`.${field}`),
     );
+  }
+
+  private isSensitiveField(path: string): boolean {
+    const fieldName = path.split('.').at(-1)?.toLowerCase() ?? '';
+    return /(?:senha|password|secret|token)/u.test(fieldName);
   }
 
   private maskExcerpt(value: string): string {

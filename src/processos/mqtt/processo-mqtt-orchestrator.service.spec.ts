@@ -9,6 +9,7 @@ import {
 } from '../../mqtt-hardware/commands/interfaces/command-name.interface';
 import { CommandResult } from '../../mqtt-hardware/commands/interfaces/command-result.interface';
 import { MqttHealthService } from '../../mqtt-hardware/connection/mqtt-health.service';
+import { MqttCredentialsService } from '../../mqtt-hardware/config/mqtt-credentials.service';
 import { HardwareState } from '../../mqtt-hardware/interfaces/hardware-state.interface';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProcessoMqttOrchestratorService } from './processo-mqtt-orchestrator.service';
@@ -19,6 +20,8 @@ type CommandServiceMock = {
   fecharTodasValvulas: Mock<() => Promise<CommandResult>>;
   sincronizarHardware: Mock<() => Promise<CommandResult>>;
   iniciarProcessoVacuo: Mock<() => Promise<CommandResult>>;
+  abrirValvula: Mock<(...args: unknown[]) => Promise<CommandResult>>;
+  ligarBomba: Mock<(...args: unknown[]) => Promise<CommandResult>>;
   paradaEmergencia: Mock<
     (params: { motivo: string }) => Promise<CommandResult>
   >;
@@ -26,6 +29,7 @@ type CommandServiceMock = {
 
 type MqttHealthServiceMock = {
   getCurrentState: Mock<() => HardwareState>;
+  isCurrentConfigApplied: Mock<() => boolean>;
 };
 
 type PrismaServiceMock = {
@@ -44,6 +48,9 @@ describe('ProcessoMqttOrchestratorService', () => {
   let service: ProcessoMqttOrchestratorService;
   let commandService: CommandServiceMock;
   let mqttHealthService: MqttHealthServiceMock;
+  let mqttCredentialsService: {
+    getCredentialReadiness: Mock<() => unknown>;
+  };
   let prisma: PrismaServiceMock;
 
   const context: ProcessoMqttCommandContext = {
@@ -94,6 +101,14 @@ describe('ProcessoMqttOrchestratorService', () => {
         .fn<() => Promise<CommandResult>>()
         .mockResolvedValue(commandResult(MQTT_COMMANDS.INICIAR_PROCESSO_VACUO)),
 
+      abrirValvula: jest
+        .fn<(...args: unknown[]) => Promise<CommandResult>>()
+        .mockResolvedValue(commandResult(MQTT_COMMANDS.ABRIR_VALVULA)),
+
+      ligarBomba: jest
+        .fn<(...args: unknown[]) => Promise<CommandResult>>()
+        .mockResolvedValue(commandResult(MQTT_COMMANDS.LIGAR_BOMBA)),
+
       paradaEmergencia: jest
         .fn<(params: { motivo: string }) => Promise<CommandResult>>()
         .mockResolvedValue(commandResult(MQTT_COMMANDS.PARADA_EMERGENCIA)),
@@ -103,6 +118,18 @@ describe('ProcessoMqttOrchestratorService', () => {
       getCurrentState: jest
         .fn<() => HardwareState>()
         .mockReturnValue(hardwareState),
+      isCurrentConfigApplied: jest.fn<() => boolean>().mockReturnValue(true),
+    };
+    mqttCredentialsService = {
+      getCredentialReadiness: jest.fn<() => unknown>().mockReturnValue({
+        usuarioConfigurado: true,
+        senhaConfigurada: true,
+        credenciaisConfiguradas: true,
+        credenciaisVerificadas: true,
+        verificadasEm: new Date('2026-01-01T00:00:00Z'),
+        ultimaFalha: null,
+        atualizadoEm: new Date('2026-01-01T00:00:00Z'),
+      }),
     };
 
     prisma = {
@@ -130,6 +157,7 @@ describe('ProcessoMqttOrchestratorService', () => {
     service = new ProcessoMqttOrchestratorService(
       commandService as unknown as CommandService,
       mqttHealthService as unknown as MqttHealthService,
+      mqttCredentialsService as unknown as MqttCredentialsService,
       prisma as unknown as PrismaService,
     );
   });
@@ -138,10 +166,48 @@ describe('ProcessoMqttOrchestratorService', () => {
     const result = service.getHardwareReadiness();
 
     expect(result).toEqual({
+      credentialsConfigured: true,
+      credentialsVerified: true,
+      credentialsVerifiedAt: new Date('2026-01-01T00:00:00Z'),
+      credentialsFailure: null,
       mqttConnected: true,
+      configurationApplied: true,
+      mqttOperational: true,
       esp32Online: true,
       communicationReady: true,
       currentStatus: hardwareState,
+    });
+  });
+
+  it('nao considera a comunicacao pronta antes de o broker verificar as credenciais', () => {
+    mqttCredentialsService.getCredentialReadiness.mockReturnValueOnce({
+      usuarioConfigurado: true,
+      senhaConfigurada: true,
+      credenciaisConfiguradas: true,
+      credenciaisVerificadas: false,
+      verificadasEm: null,
+      ultimaFalha: 'Credenciais recusadas.',
+      atualizadoEm: new Date(),
+    });
+
+    expect(service.getHardwareReadiness()).toMatchObject({
+      credentialsConfigured: true,
+      credentialsVerified: false,
+      mqttConnected: true,
+      mqttOperational: false,
+      esp32Online: true,
+      communicationReady: false,
+    });
+  });
+
+  it('nao considera MQTT operacional quando a configuracao persistida nao foi aplicada', () => {
+    mqttHealthService.isCurrentConfigApplied.mockReturnValueOnce(false);
+
+    expect(service.getHardwareReadiness()).toMatchObject({
+      mqttConnected: true,
+      configurationApplied: false,
+      mqttOperational: false,
+      communicationReady: false,
     });
   });
 
@@ -163,6 +229,7 @@ describe('ProcessoMqttOrchestratorService', () => {
     expect(commandService.iniciarProcessoVacuo).toHaveBeenCalledWith(
       expect.objectContaining({
         tipo: 'INICIAR_PROCESSO_VACUO',
+        schema_version: 2,
         id_processo: 10,
         bomba: expect.objectContaining({
           codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
@@ -181,18 +248,74 @@ describe('ProcessoMqttOrchestratorService', () => {
                 codigo_hardware: 'VP_T1',
                 tipo: 'PRINCIPAL',
                 bomba_codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
+                numero_saida_manifold: 1,
               }),
               expect.objectContaining({
                 codigo_hardware: 'VA_T1',
                 tipo: 'AUXILIAR',
                 bomba_codigo_hardware: 'BOMBA_VACUO_AUXILIAR',
+                numero_saida_manifold: 1,
               }),
             ]),
           }),
         ],
       }),
+      { id_processo: 10 },
     );
+    expect(commandService.abrirValvula).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10 }),
+      70,
+      'VP_T1',
+      { id_tanque: 30, id_processo_tanque: 20 },
+    );
+    expect(commandService.ligarBomba).toHaveBeenCalledWith(
+      expect.objectContaining({ id_processo: 10 }),
+      1,
+      'BOMBA_VACUO_PRINCIPAL',
+    );
+    expect(result.command_results).toHaveLength(3);
   });
+
+  it('executa rollback seguro quando a bomba principal nao confirma inicio', async () => {
+    commandService.ligarBomba.mockRejectedValueOnce(
+      new Error('ACK da bomba expirou'),
+    );
+
+    const result = await service.startVacuumOperation(context);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('ACK da bomba expirou');
+    expect(result.message).toContain('Parada segura confirmada');
+    expect(commandService.desligarTodasBombas).toHaveBeenCalledTimes(1);
+    expect(commandService.fecharTodasValvulas).toHaveBeenCalledTimes(1);
+    expect(result.command_results).toHaveLength(4);
+  });
+
+  it.each([
+    {
+      label: 'principal',
+      fixture: { includeMain: false },
+      expected: 'exatamente uma valvula principal',
+    },
+    {
+      label: 'auxiliar',
+      fixture: { includeAuxiliary: false },
+      expected: 'exatamente uma valvula auxiliar',
+    },
+  ])(
+    'bloqueia inicio quando faltar valvula $label',
+    async ({ fixture, expected }) => {
+      prisma.processos.findUnique.mockResolvedValueOnce(
+        processoRecord(fixture),
+      );
+
+      const result = await service.startVacuumOperation(context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain(expected);
+      expect(commandService.iniciarProcessoVacuo).not.toHaveBeenCalled();
+    },
+  );
 
   it('pauseVacuumOperation desliga atuadores', async () => {
     const result = await service.pauseVacuumOperation(context);
@@ -219,31 +342,23 @@ describe('ProcessoMqttOrchestratorService', () => {
     expect(commandService.fecharTodasValvulas).toHaveBeenCalledTimes(1);
   });
 
-  it('executeEmergencyStop chama paradaEmergencia', async () => {
-    const result = await service.executeEmergencyStop({
-      id_processo: 10,
-      motivo: 'Falha crítica',
-    });
-
-    expect(result.success).toBe(true);
-    expect(commandService.paradaEmergencia).toHaveBeenCalledWith({
-      motivo: 'Processo 10: Falha crítica',
-    });
-    expect(result.command_results).toHaveLength(1);
-  });
-
   it('shutdownAllActuators desliga bombas e fecha valvulas', async () => {
     const result = await service.shutdownAllActuators(10);
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       success: true,
+      message: 'Atuadores desligados com segurança.',
       id_processo: 10,
+      command_results: [
+        commandResult(MQTT_COMMANDS.DESLIGAR_TODAS_BOMBAS),
+        commandResult(MQTT_COMMANDS.FECHAR_TODAS_VALVULAS),
+      ],
     });
     expect(commandService.desligarTodasBombas).toHaveBeenCalledTimes(1);
     expect(commandService.fecharTodasValvulas).toHaveBeenCalledTimes(1);
   });
 
-  it('retorna success false quando comando falha', async () => {
+  it('tenta fechar valvulas quando desligar bombas falha e preserva o resultado parcial', async () => {
     commandService.desligarTodasBombas.mockRejectedValueOnce(
       new Error('Broker indisponível'),
     );
@@ -252,9 +367,74 @@ describe('ProcessoMqttOrchestratorService', () => {
 
     expect(result).toEqual({
       success: false,
-      message: 'Broker indisponível',
+      message:
+        'Falha ao confirmar todos os comandos de parada segura: DESLIGAR_TODAS_BOMBAS: Broker indisponível',
       id_processo: 10,
+      command_results: [commandResult(MQTT_COMMANDS.FECHAR_TODAS_VALVULAS)],
+      command_failures: [
+        {
+          comando: MQTT_COMMANDS.DESLIGAR_TODAS_BOMBAS,
+          message: 'Broker indisponível',
+        },
+      ],
     });
+    expect(commandService.desligarTodasBombas).toHaveBeenCalledTimes(1);
+    expect(commandService.fecharTodasValvulas).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserva o desligamento das bombas quando fechar valvulas falha', async () => {
+    commandService.fecharTodasValvulas.mockRejectedValueOnce(
+      new Error('ACK das válvulas expirou'),
+    );
+
+    const result = await service.shutdownAllActuators(10);
+
+    expect(result).toEqual({
+      success: false,
+      message:
+        'Falha ao confirmar todos os comandos de parada segura: FECHAR_TODAS_VALVULAS: ACK das válvulas expirou',
+      id_processo: 10,
+      command_results: [commandResult(MQTT_COMMANDS.DESLIGAR_TODAS_BOMBAS)],
+      command_failures: [
+        {
+          comando: MQTT_COMMANDS.FECHAR_TODAS_VALVULAS,
+          message: 'ACK das válvulas expirou',
+        },
+      ],
+    });
+    expect(commandService.desligarTodasBombas).toHaveBeenCalledTimes(1);
+    expect(commandService.fecharTodasValvulas).toHaveBeenCalledTimes(1);
+  });
+
+  it('relata independentemente a falha dos dois comandos de parada segura', async () => {
+    commandService.desligarTodasBombas.mockRejectedValueOnce(
+      new Error('Falha nas bombas'),
+    );
+    commandService.fecharTodasValvulas.mockRejectedValueOnce(
+      new Error('Falha nas válvulas'),
+    );
+
+    const result = await service.shutdownAllActuators(10);
+
+    expect(result).toEqual({
+      success: false,
+      message:
+        'Falha ao confirmar todos os comandos de parada segura: DESLIGAR_TODAS_BOMBAS: Falha nas bombas; FECHAR_TODAS_VALVULAS: Falha nas válvulas',
+      id_processo: 10,
+      command_results: [],
+      command_failures: [
+        {
+          comando: MQTT_COMMANDS.DESLIGAR_TODAS_BOMBAS,
+          message: 'Falha nas bombas',
+        },
+        {
+          comando: MQTT_COMMANDS.FECHAR_TODAS_VALVULAS,
+          message: 'Falha nas válvulas',
+        },
+      ],
+    });
+    expect(commandService.desligarTodasBombas).toHaveBeenCalledTimes(1);
+    expect(commandService.fecharTodasValvulas).toHaveBeenCalledTimes(1);
   });
 
   function commandResult(comando: CommandName): CommandResult {
@@ -268,9 +448,12 @@ describe('ProcessoMqttOrchestratorService', () => {
     };
   }
 
-  function processoRecord(): unknown {
+  function processoRecord(
+    options: { includeMain?: boolean; includeAuxiliary?: boolean } = {},
+  ): unknown {
     return {
       id_processo: 10,
+      modo_operacao_auxiliar: 'AUTOMATICO',
       vacuo_alvo: -80,
       processostanques: [
         {
@@ -290,32 +473,42 @@ describe('ProcessoMqttOrchestratorService', () => {
               },
             },
             valvulas: [
-              {
-                id_valvula: 70,
-                codigo_hardware: 'VP_T1',
-                nome_valvula: 'Valvula principal do tanque 1',
-                funcao_valvula: 'VACUO',
-                id_bomba: 1,
-                bombas: {
-                  id_bomba: 1,
-                  codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
-                  nome: 'Bomba de Vacuo Principal',
-                  tipo_bomba: 'PRINCIPAL',
-                },
-              },
-              {
-                id_valvula: 71,
-                codigo_hardware: 'VA_T1',
-                nome_valvula: 'Valvula auxiliar do tanque 1',
-                funcao_valvula: 'VACUO',
-                id_bomba: 2,
-                bombas: {
-                  id_bomba: 2,
-                  codigo_hardware: 'BOMBA_VACUO_AUXILIAR',
-                  nome: 'Bomba Auxiliar de Estabilizacao',
-                  tipo_bomba: 'AUXILIAR',
-                },
-              },
+              ...(options.includeMain === false
+                ? []
+                : [
+                    {
+                      id_valvula: 70,
+                      codigo_hardware: 'VP_T1',
+                      numero_saida_manifold: 1,
+                      nome_valvula: 'Valvula principal do tanque 1',
+                      funcao_valvula: 'VACUO',
+                      id_bomba: 1,
+                      bombas: {
+                        id_bomba: 1,
+                        codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
+                        nome: 'Bomba de Vacuo Principal',
+                        tipo_bomba: 'PRINCIPAL',
+                      },
+                    },
+                  ]),
+              ...(options.includeAuxiliary === false
+                ? []
+                : [
+                    {
+                      id_valvula: 71,
+                      codigo_hardware: 'VA_T1',
+                      numero_saida_manifold: 1,
+                      nome_valvula: 'Valvula auxiliar do tanque 1',
+                      funcao_valvula: 'VACUO',
+                      id_bomba: 2,
+                      bombas: {
+                        id_bomba: 2,
+                        codigo_hardware: 'BOMBA_VACUO_AUXILIAR',
+                        nome: 'Bomba Auxiliar de Estabilizacao',
+                        tipo_bomba: 'AUXILIAR',
+                      },
+                    },
+                  ]),
             ],
           },
           processostanquessensores: [

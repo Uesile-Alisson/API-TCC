@@ -3,10 +3,12 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import type { Server, Socket } from 'socket.io';
+import type { Namespace, Socket } from 'socket.io';
+import { SocketAuthService } from '../../auth/socket-auth.service';
 import type {
   AcknowledgeAlarmeResult,
   AlarmeDashboard,
@@ -18,22 +20,35 @@ import {
   ALARMES_SOCKET_NAMESPACE,
 } from './alarmes-socket.events';
 
-@WebSocketGateway({
-  namespace: ALARMES_SOCKET_NAMESPACE,
-  cors: {
-    origin: '*',
-  },
-})
+@WebSocketGateway({ namespace: ALARMES_SOCKET_NAMESPACE })
 export class AlarmesSocketGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   private readonly logger = new Logger(AlarmesSocketGateway.name);
 
+  constructor(private readonly socketAuthService: SocketAuthService) {}
+
   @WebSocketServer()
-  private server!: Server;
+  private server!: Namespace;
+
+  afterInit(namespace: Namespace): void {
+    this.socketAuthService.registerAuthenticationMiddleware(namespace);
+  }
 
   handleConnection(@ConnectedSocket() client: Socket): void {
-    this.logger.log(`Cliente conectado ao socket de alarmes: ${client.id}`);
+    const user = this.socketAuthService.getAuthenticatedUser(client);
+    if (!user) {
+      this.logger.warn(
+        `Conexao sem contexto autenticado recusada no socket de alarmes: ${client.id}`,
+      );
+      client.disconnect(true);
+      return;
+    }
+
+    this.logger.log(
+      `Cliente autenticado no socket de alarmes: ${client.id}. ` +
+        `Usuario: ${user.id_usuario}.`,
+    );
 
     client.emit(ALARMES_SOCKET_EVENTS.CONNECTED, {
       message: 'Conectado ao canal de alarmes.',

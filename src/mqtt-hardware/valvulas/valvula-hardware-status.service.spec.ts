@@ -102,6 +102,43 @@ describe('ValvulaHardwareStatusService', () => {
     );
   });
 
+  it('processa lista v2 e resolve valvula pelo codigo de hardware', async () => {
+    const prisma = makePrisma();
+    const service = new ValvulaHardwareStatusService(
+      prisma as unknown as PrismaService,
+    );
+
+    const result = await service.processStatusPayload(
+      [
+        {
+          codigo_hardware: 'VP_T1',
+          status_valvula: StatusValvula.FECHADA,
+          ack: true,
+          falha: false,
+        },
+        {
+          codigo_hardware: 'VA_T1',
+          status_valvula: StatusValvula.FECHADA,
+          ack: true,
+          falha: false,
+        },
+      ],
+      new Date(),
+    );
+
+    expect(prisma.valvulas.findUnique).toHaveBeenCalledWith({
+      where: { codigo_hardware: 'VP_T1' },
+      select: { id_valvula: true, ativo: true },
+    });
+    expect(prisma.valvulas.findUnique).toHaveBeenNthCalledWith(2, {
+      where: { codigo_hardware: 'VA_T1' },
+      select: { id_valvula: true, ativo: true },
+    });
+    expect(result[0]).toEqual(
+      expect.objectContaining({ id_valvula: 1, atualizado: true }),
+    );
+  });
+
   function makePrisma() {
     return {
       valvulas: {

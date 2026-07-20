@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
+import { MqttModule } from '../../mqtt-hardware/mqtt.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { BackupController } from './backup.controller';
 import { BackupService } from './backup.service';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, MqttModule],
   controllers: [BackupController],
   providers: [BackupService],
   exports: [BackupService],

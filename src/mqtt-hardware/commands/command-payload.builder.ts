@@ -6,6 +6,7 @@ import {
   CommandParams,
 } from './interfaces/command-params.interface';
 import { CommandPayload } from './interfaces/command-payload.interface';
+import { ESP32_MQTT_SCHEMA_VERSION } from '../interfaces/esp32-contracts.interface';
 
 export class CommandPayloadBuilder {
   private static readonly CORRELATION_ID_PREFIX = 'cmd';
@@ -16,9 +17,14 @@ export class CommandPayloadBuilder {
     options?: CommandOptions,
   ): CommandPayload<TParams> {
     return {
+      tipo: 'COMANDO',
+      schema_version: ESP32_MQTT_SCHEMA_VERSION,
       comando,
       correlation_id: this.resolveCorrelationId(comando, options),
-      enviado_em: new Date(),
+      enviado_em: new Date().toISOString(),
+      ...(options?.id_processo !== undefined
+        ? { id_processo: options.id_processo }
+        : {}),
       solicitado_por: this.resolveSolicitadoPor(options),
       motivo: this.resolveMotivo(options),
       parametros,

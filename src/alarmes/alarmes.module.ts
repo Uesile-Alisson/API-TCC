@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AlarmesController } from './alarmes.controller';
 import { AlarmesService } from './alarmes.service';
@@ -15,7 +16,7 @@ import { AlarmesSocketGateway } from './socket';
 import { AlarmeStateValidator } from './validators';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AuthModule],
   controllers: [AlarmesController],
   providers: [
     AlarmesService,

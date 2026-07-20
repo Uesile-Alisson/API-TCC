@@ -3,6 +3,7 @@ import { statustanque } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsNegative,
   IsNumber,
   IsOptional,
   IsString,
@@ -35,13 +36,22 @@ export class UpdateTanqueConfiguracaoDto {
   })
   unidade_volume?: string;
 
-  @ApiPropertyOptional({ example: -80.5 })
+  @ApiPropertyOptional({
+    example: -80.5,
+    maximum: -0.001,
+    description:
+      'Vácuo padrão manométrico em kPa, expresso como valor negativo.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsNumber(
     { allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 },
     { message: 'vacuo_padrao deve ser um numero valido.' },
   )
+  @IsNegative({
+    message:
+      'vacuo_padrao deve ser menor que zero (pressao manometrica em kPa).',
+  })
   vacuo_padrao?: number;
 
   @ApiPropertyOptional({ enum: statustanque, example: statustanque.ATIVO })

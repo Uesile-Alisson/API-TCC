@@ -1,5 +1,6 @@
 import {
   StatusValvula,
+  funcaovalvula,
   nivelacesso,
   statusbomba,
   tipobomba,
@@ -95,15 +96,18 @@ export interface ProcessoPrecheckOptions {
 
 export interface ProcessoPrecheckValve {
   id_valvula: number;
+  codigo_hardware: string | null;
   id_bomba: number;
   id_tanque: number | null;
   numero_saida_manifold: number;
   nome_valvula: string;
   status_valvula: StatusValvula;
   ativo: boolean;
+  funcao_valvula: funcaovalvula;
   ultimo_acionamento: Date | null;
   bomba: {
     id_bomba: number;
+    codigo_hardware: string | null;
     nome: string;
     status_padrao: statusbomba;
     tipo_bomba: tipobomba;

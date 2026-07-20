@@ -6,8 +6,8 @@ import {
   tipoeventoprocesso,
 } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { CommandService } from '@/mqtt-hardware/commands/command.service';
 import { MqttSocketGateway } from '@/mqtt-hardware/socket/mqtt-socket.gateway';
+import { ProcessoGeneralClosureService } from '@/processos/lifecycle';
 import { ReadingAlarmClassifier } from '../classifiers/reading-alarm.classifier';
 import { EventProcessingStatus } from '../enums';
 import { AlarmEventHandler } from './alarm-event.handler';
@@ -27,7 +27,7 @@ export class ReadingEventHandler {
     private readonly prisma: PrismaService,
     private readonly readingAlaarmClassifier: ReadingAlarmClassifier,
     private readonly alarmEventHandler: AlarmEventHandler,
-    private readonly commandService: CommandService,
+    private readonly processoGeneralClosureService: ProcessoGeneralClosureService,
     private readonly mqttSocketGateway: MqttSocketGateway,
   ) {}
 
@@ -35,15 +35,15 @@ export class ReadingEventHandler {
     try {
       const socketEmitted = this.emitSensorReading(input);
       const classification = await this.readingAlaarmClassifier.classify(input);
+      const emergencyStopSent = await this.requestEmergencyStopIfNeeded({
+        input,
+        classification,
+      });
       const idEventoProcesso =
         await this.createProcessEventIfNeeded(classification);
       const alarmResult =
         await this.alarmEventHandler.handleClassification(classification);
       const idAlarme = alarmResult.id_alarme ?? null;
-      const emergencyStopSent = await this.requestEmergencyStopIfNeeded({
-        input,
-        classification,
-      });
 
       if (!idEventoProcesso && !idAlarme && !emergencyStopSent) {
         return {
@@ -206,7 +206,11 @@ export class ReadingEventHandler {
       return false;
     }
 
-    await this.commandService.paradaEmergencia({
+    await this.processoGeneralClosureService.requestEmergencyStopForCurrent({
+      ...(classification.id_processo
+        ? { id_processo: classification.id_processo }
+        : {}),
+      id_usuario: null,
       motivo:
         `Parada de emergência acionada automaticamente por leitura crítica de vácuo. ` +
         `Motivo: ${classification.titulo}. ` +

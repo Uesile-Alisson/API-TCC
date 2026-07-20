@@ -13,6 +13,9 @@ type GridFsServiceMock = {
   openDownloadStream: jest.MockedFunction<GridFsService['openDownloadStream']>;
   fileExists: jest.MockedFunction<GridFsService['fileExists']>;
   deleteFile: jest.MockedFunction<GridFsService['deleteFile']>;
+  findFilesUploadedBefore: jest.MockedFunction<
+    GridFsService['findFilesUploadedBefore']
+  >;
 };
 
 type ReportFileServiceMock = {
@@ -35,6 +38,8 @@ describe('GridFsReportStorageService', () => {
       openDownloadStream: jest.fn<GridFsService['openDownloadStream']>(),
       fileExists: jest.fn<GridFsService['fileExists']>(),
       deleteFile: jest.fn<GridFsService['deleteFile']>(),
+      findFilesUploadedBefore:
+        jest.fn<GridFsService['findFilesUploadedBefore']>(),
     };
 
     reportFileService = {
@@ -167,5 +172,36 @@ describe('GridFsReportStorageService', () => {
         bucket_name: 'relatorios',
       }),
     ).resolves.toMatchObject({ deleted: true });
+  });
+
+  it('lista somente candidatos gerenciados anteriores ao limite', async () => {
+    const uploadedBefore = new Date('2026-01-02T00:00:00.000Z');
+    const uploadDate = new Date('2026-01-01T00:00:00.000Z');
+    gridFsService.findFilesUploadedBefore.mockResolvedValue([
+      {
+        fileId: '507f1f77bcf86cd799439011',
+        filename: 'relatorio.pdf',
+        contentType: 'application/pdf',
+        bucketName: 'relatorios',
+        length: 10,
+        uploadDate,
+        metadata: { origem: 'RELATORIOS_MODULE' },
+      },
+    ]);
+
+    await expect(
+      service.findManagedFilesUploadedBefore(uploadedBefore),
+    ).resolves.toEqual([
+      {
+        gridfs_file_id: '507f1f77bcf86cd799439011',
+        bucket_name: 'relatorios',
+        upload_date: uploadDate,
+      },
+    ]);
+    expect(gridFsService.findFilesUploadedBefore).toHaveBeenCalledWith(
+      uploadedBefore,
+      { origem: 'RELATORIOS_MODULE' },
+      'relatorios',
+    );
   });
 });

@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  GatewayTimeoutException,
+  Injectable,
+  Optional,
+} from '@nestjs/common';
+import { statuscomandomqtt } from '@prisma/client';
 import { MQTT_COMMANDS } from '../commands/interfaces/command-name.interface';
 import { CommandOptions } from '../commands/interfaces/command-options.interface';
 import { CommandPayloadBuilder } from '../commands/command-payload.builder';
@@ -6,16 +12,24 @@ import { CommandResult } from '../commands/interfaces/command-result.interface';
 import { MqttClientService } from '../connection/mqtt-client.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MqttConfigService } from './mqtt-config.service';
-import { Esp32SyncConfigPayload } from '../interfaces/esp32-contracts.interface';
+import {
+  ESP32_MQTT_SCHEMA_VERSION,
+  Esp32SyncConfigPayload,
+} from '../interfaces/esp32-contracts.interface';
+import {
+  CommandAckHandler,
+  CommandAckRecord,
+} from '../handlers/command-ack.handler';
+import { CommandLedgerService } from '../commands/command-ledger.service';
 
 @Injectable()
 export class Esp32SyncConfigService {
-  private readonly SCHEMA_VERSION = 1;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly mqttClientService: MqttClientService,
     private readonly mqttConfigService: MqttConfigService,
+    private readonly commandAckHandler: CommandAckHandler,
+    @Optional() private readonly commandLedgerService?: CommandLedgerService,
   ) {}
 
   async publishSyncConfig(options: CommandOptions): Promise<CommandResult> {
@@ -26,25 +40,83 @@ export class Esp32SyncConfigService {
       options,
     );
     const payload = await this.buildPayload(commandPayload.correlation_id);
-
-    await this.mqttClientService.publish(
-      mqttConfig.topico_configuracoes,
+    const qos = options.qos ?? 1;
+    const persisted = await this.commandLedgerService?.prepare({
+      correlationId: payload.correlation_id,
+      comando: MQTT_COMMANDS.SINCRONIZAR_HARDWARE,
+      topic: mqttConfig.topico_configuracoes,
       payload,
-      {
-        qos: options.qos ?? 1,
-        retain: true,
-      },
+      qos,
+      retain: true,
+      timeoutMs: mqttConfig.timeout_comunicacao,
+    });
+    if (persisted?.restoredAck) {
+      this.commandAckHandler.restorePersistedAck(persisted.restoredAck);
+    }
+    const waitRegistration = this.commandAckHandler.waitForFinalAck(
+      payload.correlation_id,
+      MQTT_COMMANDS.SINCRONIZAR_HARDWARE,
+      mqttConfig.timeout_comunicacao,
     );
+    const publicationAttemptedAt = new Date();
+    const shouldPublish =
+      (persisted?.shouldPublish ?? true) && waitRegistration.shouldPublish;
+
+    if (shouldPublish) {
+      try {
+        await this.mqttClientService.publish(
+          mqttConfig.topico_configuracoes,
+          payload,
+          {
+            qos,
+            retain: true,
+          },
+        );
+        await this.commandLedgerService?.markPublished(
+          payload.correlation_id,
+          publicationAttemptedAt,
+        );
+      } catch (error) {
+        waitRegistration.cancel(error);
+        await waitRegistration.promise.catch(() => undefined);
+        await this.commandLedgerService?.markFailure(
+          payload.correlation_id,
+          statuscomandomqtt.ERRO,
+          error,
+        );
+        throw error;
+      }
+    }
+
+    let ack: CommandAckRecord;
+    try {
+      ack = await waitRegistration.promise;
+      await this.commandLedgerService?.recordAck(ack);
+    } catch (error) {
+      await this.commandLedgerService?.markFailure(
+        payload.correlation_id,
+        error instanceof GatewayTimeoutException
+          ? statuscomandomqtt.TIMEOUT
+          : statuscomandomqtt.ERRO,
+        error,
+      );
+      throw error;
+    }
 
     await this.mqttConfigService.updateLastSync();
 
     return {
       comando: MQTT_COMMANDS.SINCRONIZAR_HARDWARE,
       topic: mqttConfig.topico_configuracoes,
-      qos: options.qos ?? 1,
+      qos,
       retain: true,
       correlation_id: payload.correlation_id,
-      published_at: new Date(),
+      published_at: shouldPublish ? publicationAttemptedAt : ack.recebido_em,
+      acknowledged: true,
+      ack_status: 'EXECUTADO',
+      ack_received_at: ack.recebido_em,
+      ack_message: ack.mensagem,
+      reused_ack: !shouldPublish,
     };
   }
 
@@ -85,7 +157,7 @@ export class Esp32SyncConfigService {
 
     return {
       tipo: 'SYNC_CONFIG',
-      schema_version: this.SCHEMA_VERSION,
+      schema_version: ESP32_MQTT_SCHEMA_VERSION,
       correlation_id: correlationId,
       enviado_em: new Date().toISOString(),
       sistema: {

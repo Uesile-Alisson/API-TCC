@@ -1,6 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { Prisma, statussensor } from '@prisma/client';
+import {
+  Prisma,
+  statussensor,
+  statusintegridadesensor,
+  tiposensor,
+} from '@prisma/client';
 import type { Mock } from 'jest-mock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
@@ -69,6 +74,7 @@ describe('ReadingHandler', () => {
       id_sensor: 3,
       codigo_hardware: 'VACUO_T1',
       excluido_em: null,
+      modo_calibracao_ativo: true,
     });
     prisma.sensores.update.mockResolvedValueOnce({});
 
@@ -89,9 +95,8 @@ describe('ReadingHandler', () => {
     expect(prisma.sensores.update).toHaveBeenCalledWith({
       where: { id_sensor: 3 },
       data: {
-        ultimo_valor_lido: new Prisma.Decimal(-2.5),
+        ultimo_valor_bruto: new Prisma.Decimal(-2.5),
         ultima_leitura: new Date('2026-07-07T12:00:00.000Z'),
-        status_sensor: statussensor.ATIVO,
       },
     });
   });
@@ -101,6 +106,7 @@ describe('ReadingHandler', () => {
       id_sensor: 3,
       codigo_hardware: 'VACUO_T1',
       excluido_em: null,
+      modo_calibracao_ativo: true,
     });
     prisma.sensores.update.mockResolvedValueOnce({});
 
@@ -145,8 +151,25 @@ describe('ReadingHandler', () => {
       sensores: {
         id_sensor: 3,
         excluido_em: null,
+        status_sensor: statussensor.ATIVO,
+        status_integridade: statusintegridadesensor.VALIDO,
+        modo_calibracao_ativo: false,
+        tipo_sensor: tiposensor.VACUO,
+        calibrado_em: new Date('2026-07-01T00:00:00.000Z'),
+        calibracao_valida_ate: new Date('2027-07-01T00:00:00.000Z'),
+        fator_calibracao: new Prisma.Decimal(2),
+        offset_calibracao: new Prisma.Decimal(0),
+        ultima_leitura: null,
+        ultimo_valor_lido: null,
+        tempo_travado_segundos: 60,
+        precisao: new Prisma.Decimal(0.01),
+        limite_minimo_operacional: null,
+        limite_maximo_operacional: null,
+        variacao_maxima_por_segundo: null,
+        oscilacao_maxima: null,
       },
       processostanques: {
+        id_processo_tanque: 20,
         id_processo: 10,
         id_tanque: 1,
         processos: {},
@@ -166,7 +189,7 @@ describe('ReadingHandler', () => {
       makeMessage({
         id_processo_tanque_sensor: 40,
         codigo_hardware: 'VACUO_T1',
-        valor_vacuo: -80,
+        valor_vacuo: -40,
         unidade_medida: 'kPa',
         leitura_em: leituraEm.toISOString(),
       }),
@@ -178,8 +201,17 @@ describe('ReadingHandler', () => {
         id_processo_tanque_sensor: 40,
         id_sensor: 3,
         id_processo: 10,
+        id_processo_tanque: 20,
         id_tanque: 1,
         valor_vacuo: -80,
+      }),
+    );
+    expect(prisma.leiturasensores.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          valor_vacuo: new Prisma.Decimal(-80),
+          valor: new Prisma.Decimal(-80),
+        }),
       }),
     );
   });

@@ -1,3 +1,4 @@
+import { CommandName } from '../../mqtt-hardware/commands/interfaces/command-name.interface';
 import { CommandResult } from '../../mqtt-hardware/commands/interfaces/command-result.interface';
 import { HardwareState } from '../../mqtt-hardware/interfaces/hardware-state.interface';
 
@@ -21,7 +22,13 @@ export interface ProcessoMqttCommandContext {
 }
 
 export interface ProcessoMqttHardwareReadiness {
+  credentialsConfigured: boolean;
+  credentialsVerified: boolean;
+  credentialsVerifiedAt: Date | null;
+  credentialsFailure: string | null;
   mqttConnected: boolean;
+  configurationApplied: boolean;
+  mqttOperational: boolean;
   esp32Online: boolean;
   communicationReady: boolean;
   currentStatus?: HardwareState;
@@ -32,4 +39,21 @@ export interface ProcessoMqttOperationResult {
   message: string;
   id_processo: number;
   command_results?: CommandResult[];
+  command_failures?: ProcessoMqttCommandFailure[];
+}
+
+export interface ProcessoMqttCommandFailure {
+  comando: CommandName;
+  message: string;
+}
+
+export type ProcessoMqttStartupStage =
+  | 'SINCRONIZANDO_HARDWARE'
+  | 'CARREGANDO_PROCESSO'
+  | 'ABRINDO_VALVULAS_PRINCIPAIS'
+  | 'LIGANDO_BOMBA_PRINCIPAL';
+
+export interface ProcessoMqttStartHooks {
+  correlationPrefix?: string;
+  onStage?: (stage: ProcessoMqttStartupStage) => Promise<void>;
 }

@@ -1,19 +1,26 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
   StatusAcoplamentoMangueira,
   StatusValvula,
+  funcaovalvula,
   nivelacesso,
   resultadooperacao,
   statusconexaomqtt,
   statusgeralsistema,
+  statusencerramentoprocesso,
+  statusencerramentotanque,
   statusprocesso,
   statussensor,
+  statusintegridadesensor,
   statustanque,
   statusbomba,
+  tipobomba,
+  tiposensor,
 } from '@prisma/client';
 import { CommandService } from '../../mqtt-hardware/commands/command.service';
 import { MqttConfigService } from '../../mqtt-hardware/config/mqtt-config.service';
@@ -49,6 +56,8 @@ import {
 
 @Injectable()
 export class ProcessoPrecheckService {
+  private readonly logger = new Logger(ProcessoPrecheckService.name);
+
   constructor(
     private readonly processosRepository: ProcessosRepository,
     private readonly processoStartValidator: ProcessoStartValidator,
@@ -185,12 +194,13 @@ export class ProcessoPrecheckService {
       acao: 'VALIDAR',
       status: 'NAO_SUPORTADO',
       mensagem:
-        'Validacao fisica de valvula depende de protocolo/ACK do ESP32 ainda nao disponivel.',
+        'O ACK elétrico do ESP32 está disponível, mas a validação mecânica da posição exige sensor de fim de curso ou equivalente.',
       evidencia: `Valvula vinculada: ${valvula.nome_valvula}.`,
       detalhes: {
         id_bomba: valvula.id_bomba,
         id_tanque: valvula.id_tanque,
-        ack_disponivel: false,
+        ack_comando_disponivel: true,
+        feedback_mecanico_disponivel: false,
       },
     });
   }
@@ -201,34 +211,49 @@ export class ProcessoPrecheckService {
     user: ProcessoPrecheckUser,
   ): Promise<ProcessoValveActionResult> {
     await this.assertCanOperateValveDuringProcess(id_processo, 'abrir');
-    await this.getRequiredValve(id_processo, id_valvula);
+    const valvula = await this.getRequiredValve(id_processo, id_valvula);
+    this.assertNotAuxiliaryValve(valvula);
+    if (valvula.id_tanque) {
+      const closure =
+        await this.processosRepository.findTankClosureByProcessAndTank(
+          id_processo,
+          valvula.id_tanque,
+        );
+      if (closure?.status_encerramento === statusencerramentotanque.CONCLUIDO) {
+        throw new ConflictException(
+          'Nao e permitido reabrir valvula de tanque com isolamento e retencao concluidos.',
+        );
+      }
+    }
     const readiness =
       this.processoMqttOrchestratorService.getHardwareReadiness();
     this.assertHardwareReadyForValveCommand(readiness);
 
     const command = await this.commandService.abrirValvula(
       {
+        id_processo,
         solicitado_por: user.sub,
         motivo: `Abertura manual da valvula ${id_valvula} no processo ${id_processo}.`,
       },
       id_valvula,
+      valvula.codigo_hardware ?? undefined,
     );
 
     await this.registrarLogComandoValvula(
       id_processo,
       user.sub,
-      'VALVULA_ABRIR_SOLICITADA',
-      `Comando MQTT de abertura publicado para a valvula ${id_valvula}. Confirmacao fisica pendente.`,
+      'VALVULA_ABRIR_EXECUTADA',
+      `Comando MQTT de abertura confirmado pelo ESP32 para a valvula ${id_valvula}.`,
     );
 
     return this.buildValveActionResult({
       id_processo,
       id_valvula,
       acao: 'ABRIR',
-      status: 'NAO_CONFIRMADO',
+      status: 'APROVADO',
       mensagem:
-        'Comando de abertura publicado, mas nao ha ACK fisico confiavel do ESP32.',
-      evidencia: `correlation_id=${command.correlation_id}`,
+        'Abertura elétrica confirmada pelo ESP32 com ACK EXECUTADO. A posição mecânica exige sensor dedicado.',
+      evidencia: `correlation_id=${command.correlation_id}; ack=${command.ack_status ?? 'AUSENTE'}`,
       detalhes: { command },
     });
   }
@@ -239,34 +264,37 @@ export class ProcessoPrecheckService {
     user: ProcessoPrecheckUser,
   ): Promise<ProcessoValveActionResult> {
     await this.assertCanOperateValveDuringProcess(id_processo, 'fechar');
-    await this.getRequiredValve(id_processo, id_valvula);
+    const valvula = await this.getRequiredValve(id_processo, id_valvula);
+    this.assertNotAuxiliaryValve(valvula);
     const readiness =
       this.processoMqttOrchestratorService.getHardwareReadiness();
     this.assertHardwareReadyForValveCommand(readiness);
 
     const command = await this.commandService.fecharValvula(
       {
+        id_processo,
         solicitado_por: user.sub,
         motivo: `Fechamento manual da valvula ${id_valvula} no processo ${id_processo}.`,
       },
       id_valvula,
+      valvula.codigo_hardware ?? undefined,
     );
 
     await this.registrarLogComandoValvula(
       id_processo,
       user.sub,
-      'VALVULA_FECHAR_SOLICITADA',
-      `Comando MQTT de fechamento publicado para a valvula ${id_valvula}. Confirmacao fisica pendente.`,
+      'VALVULA_FECHAR_EXECUTADA',
+      `Comando MQTT de fechamento confirmado pelo ESP32 para a valvula ${id_valvula}.`,
     );
 
     return this.buildValveActionResult({
       id_processo,
       id_valvula,
       acao: 'FECHAR',
-      status: 'NAO_CONFIRMADO',
+      status: 'APROVADO',
       mensagem:
-        'Comando de fechamento publicado, mas nao ha ACK fisico confiavel do ESP32.',
-      evidencia: `correlation_id=${command.correlation_id}`,
+        'Fechamento elétrico confirmado pelo ESP32 com ACK EXECUTADO. A posição mecânica exige sensor dedicado.',
+      evidencia: `correlation_id=${command.correlation_id}; ack=${command.ack_status ?? 'AUSENTE'}`,
       detalhes: { command },
     });
   }
@@ -298,6 +326,7 @@ export class ProcessoPrecheckService {
       ...this.buildTankItems(enrichedContext),
       ...this.buildSensorItems(enrichedContext),
       ...this.buildAcoplamentoItems(enrichedContext, executedAt),
+      ...this.buildClosureTopologyItems(enrichedContext, valvulas),
       ...this.buildValveItems(valvulas),
       ...this.buildBombItems(valvulas),
       ...this.buildMqttItems(readiness, mqttConfig),
@@ -538,6 +567,35 @@ export class ProcessoPrecheckService {
       });
     }
 
+    if (
+      sensor.tipo_sensor === tiposensor.VACUO &&
+      ((sensor.status_integridade !== undefined &&
+        sensor.status_integridade !== statusintegridadesensor.VALIDO) ||
+        sensor.calibrado_em === null ||
+        sensor.liberado_em === null ||
+        (sensor.calibracao_valida_ate !== null &&
+          sensor.calibracao_valida_ate <= new Date()))
+    ) {
+      return ProcessoPrecheckMapper.buildItem({
+        codigo: `SENSOR_${sensor.id_sensor}_CALIBRACAO`,
+        titulo: sensor.nome_sensor,
+        grupo: 'SENSORES',
+        status: 'REPROVADO',
+        mensagem:
+          'Sensor de vacuo sem calibracao valida, integridade aprovada ou liberacao tecnica.',
+        evidencia:
+          `integridade=${sensor.status_integridade}; ` +
+          `calibrado_em=${sensor.calibrado_em?.toISOString() ?? 'ausente'}; ` +
+          `liberado_em=${sensor.liberado_em?.toISOString() ?? 'ausente'}`,
+        detalhes: {
+          calibracao_valida_ate: sensor.calibracao_valida_ate,
+          integridade_ultimo_erro: sensor.integridade_ultimo_erro,
+        },
+        id_recurso: sensor.id_sensor,
+        tipo_recurso: 'SENSOR',
+      });
+    }
+
     if (this.isAcoplamentoSensor(sensor)) {
       return ProcessoPrecheckMapper.buildItem({
         codigo: `SENSOR_${sensor.id_sensor}_ACOPLAMENTO`,
@@ -703,6 +761,69 @@ export class ProcessoPrecheckService {
     });
   }
 
+  private buildClosureTopologyItems(
+    context: ProcessoOperationalContext,
+    valvulas: ProcessoPrecheckValve[],
+  ): ProcessoPrecheckItem[] {
+    return context.tanques.map((tanque) => {
+      const tankValves = valvulas.filter(
+        (valvula) =>
+          valvula.id_tanque === tanque.id_tanque &&
+          valvula.ativo &&
+          valvula.funcao_valvula === funcaovalvula.VACUO,
+      );
+      const principalValves = tankValves.filter(
+        (valvula) => valvula.bomba.tipo_bomba === tipobomba.PRINCIPAL,
+      );
+      const auxiliaryValves = tankValves.filter(
+        (valvula) => valvula.bomba.tipo_bomba === tipobomba.AUXILIAR,
+      );
+      const vacuumSensors = tanque.sensores.filter(
+        (sensor) =>
+          sensor.ativo_no_processo && sensor.tipo_sensor === tiposensor.VACUO,
+      );
+      const couplingSensors = tanque.sensores.filter(
+        (sensor) =>
+          sensor.ativo_no_processo &&
+          sensor.acoplamento?.id_sensor === sensor.id_sensor &&
+          sensor.acoplamento.id_tanque === tanque.id_tanque,
+      );
+      const valid =
+        principalValves.length === 1 &&
+        auxiliaryValves.length === 1 &&
+        vacuumSensors.length === 1 &&
+        couplingSensors.length === 1 &&
+        vacuumSensors[0]?.id_sensor !== couplingSensors[0]?.id_sensor;
+
+      return ProcessoPrecheckMapper.buildItem({
+        codigo: `TOPOLOGIA_ENCERRAMENTO_TANQUE_${tanque.id_tanque}`,
+        titulo: `Topologia de encerramento do tanque ${tanque.nome_tanque}`,
+        grupo: 'TANQUES',
+        status: valid ? 'APROVADO' : 'REPROVADO',
+        mensagem: valid
+          ? 'Tanque possui exatamente uma valvula principal, uma auxiliar, um sensor de vacuo e um sensor de acoplamento.'
+          : 'Cada tanque deve possuir exatamente uma valvula principal de vacuo, uma valvula auxiliar de vacuo, um sensor de vacuo e um sensor de acoplamento.',
+        evidencia:
+          `vp=${principalValves.length}; va=${auxiliaryValves.length}; ` +
+          `vacuo=${vacuumSensors.length}; acoplamento=${couplingSensors.length}`,
+        detalhes: {
+          valvulas_principais: principalValves.map(
+            (valvula) => valvula.id_valvula,
+          ),
+          valvulas_auxiliares: auxiliaryValves.map(
+            (valvula) => valvula.id_valvula,
+          ),
+          sensores_vacuo: vacuumSensors.map((sensor) => sensor.id_sensor),
+          sensores_acoplamento: couplingSensors.map(
+            (sensor) => sensor.id_sensor,
+          ),
+        },
+        id_recurso: tanque.id_tanque,
+        tipo_recurso: 'TANQUE',
+      });
+    });
+  }
+
   private evaluateValvePrecheck(
     valvula: ProcessoPrecheckValve,
     now: Date,
@@ -839,6 +960,36 @@ export class ProcessoPrecheckService {
         tipo_recurso: 'MQTT',
       }),
       ProcessoPrecheckMapper.buildItem({
+        codigo: 'MQTT_CREDENCIAIS_CONFIGURADAS',
+        titulo: 'Credenciais MQTT configuradas',
+        grupo: 'MQTT',
+        status: readiness.credentialsConfigured ? 'APROVADO' : 'REPROVADO',
+        mensagem: readiness.credentialsConfigured
+          ? 'Usuario e senha MQTT estao configurados no arquivo externo seguro.'
+          : 'Usuario e senha MQTT ainda nao estao configurados no arquivo externo seguro.',
+        evidencia: String(readiness.credentialsConfigured),
+        detalhes: {
+          usuario_configurado: mqttConfig?.usuario_mqtt_configurado ?? false,
+          senha_configurada: mqttConfig?.senha_mqtt_configurada ?? false,
+        },
+        tipo_recurso: 'MQTT',
+      }),
+      ProcessoPrecheckMapper.buildItem({
+        codigo: 'MQTT_CREDENCIAIS_VERIFICADAS',
+        titulo: 'Credenciais MQTT verificadas',
+        grupo: 'MQTT',
+        status: readiness.credentialsVerified ? 'APROVADO' : 'REPROVADO',
+        mensagem: readiness.credentialsVerified
+          ? 'O broker aceitou as credenciais MQTT nesta execucao da API.'
+          : 'As credenciais MQTT ainda nao foram aceitas pelo broker nesta execucao da API.',
+        evidencia: readiness.credentialsVerifiedAt?.toISOString() ?? null,
+        detalhes: {
+          verificadas_em: readiness.credentialsVerifiedAt,
+          ultima_falha: readiness.credentialsFailure,
+        },
+        tipo_recurso: 'MQTT',
+      }),
+      ProcessoPrecheckMapper.buildItem({
         codigo: 'MQTT_CONECTADO',
         titulo: 'Conexao MQTT',
         grupo: 'MQTT',
@@ -849,6 +1000,23 @@ export class ProcessoPrecheckService {
         evidencia: readiness.mqttConnected
           ? statusconexaomqtt.CONECTADO
           : statusconexaomqtt.DESCONECTADO,
+        tipo_recurso: 'MQTT',
+      }),
+      ProcessoPrecheckMapper.buildItem({
+        codigo: 'MQTT_CONFIGURACAO_APLICADA',
+        titulo: 'Configuracao MQTT aplicada',
+        grupo: 'MQTT',
+        status:
+          (readiness.configurationApplied ?? readiness.mqttConnected)
+            ? 'APROVADO'
+            : 'REPROVADO',
+        mensagem:
+          (readiness.configurationApplied ?? readiness.mqttConnected)
+            ? 'O cliente conectado usa a configuracao MQTT persistida.'
+            : 'A configuracao MQTT persistida nao foi confirmada no cliente conectado.',
+        evidencia: String(
+          readiness.configurationApplied ?? readiness.mqttConnected,
+        ),
         tipo_recurso: 'MQTT',
       }),
     ];
@@ -1019,11 +1187,38 @@ export class ProcessoPrecheckService {
         `Nao e permitido ${action} valvula sem processo ativo.`,
       );
     }
+
+    const generalClosureStatus =
+      processo.status_encerramento_geral ?? statusencerramentoprocesso.INATIVO;
+    if (
+      generalClosureStatus !== statusencerramentoprocesso.INATIVO &&
+      generalClosureStatus !== statusencerramentoprocesso.AGUARDANDO_TANQUES
+    ) {
+      throw new ConflictException(
+        `Nao e permitido ${action} valvula durante o encerramento geral do processo.`,
+      );
+    }
+  }
+
+  private assertNotAuxiliaryValve(valvula: ProcessoPrecheckValve): void {
+    if (valvula.bomba.tipo_bomba === tipobomba.AUXILIAR) {
+      throw new ConflictException(
+        'Valvulas auxiliares devem ser controladas exclusivamente pelas rotas do subsistema auxiliar.',
+      );
+    }
   }
 
   private assertHardwareReadyForValveCommand(
     readiness: ProcessoMqttHardwareReadiness,
   ): void {
+    if (!readiness.credentialsConfigured) {
+      throw new ConflictException('Credenciais MQTT nao configuradas.');
+    }
+
+    if (!readiness.credentialsVerified) {
+      throw new ConflictException('Credenciais MQTT nao verificadas.');
+    }
+
     if (!readiness.mqttConnected) {
       throw new ConflictException('MQTT desconectado.');
     }
@@ -1045,7 +1240,12 @@ export class ProcessoPrecheckService {
         ...context.safety,
         hardware: {
           ...context.safety.hardware,
+          mqtt_credentials_configured: readiness.credentialsConfigured,
+          mqtt_credentials_verified: readiness.credentialsVerified,
+          mqtt_credentials_verified_at: readiness.credentialsVerifiedAt,
+          mqtt_credentials_failure: readiness.credentialsFailure,
           mqtt_connected: readiness.mqttConnected,
+          mqtt_operational: readiness.mqttOperational,
           mqtt_status: readiness.mqttConnected
             ? statusconexaomqtt.CONECTADO
             : statusconexaomqtt.DESCONECTADO,
@@ -1120,13 +1320,23 @@ export class ProcessoPrecheckService {
     acao: string,
     descricao: string,
   ): Promise<void> {
-    await this.processoLogService.registerUserAction({
-      id_usuario,
-      id_processo,
-      acao,
-      descricao,
-      resultado: resultadooperacao.SUCESSO,
-    });
+    try {
+      await this.processoLogService.registerUserAction({
+        id_usuario,
+        id_processo,
+        acao,
+        descricao,
+        resultado: resultadooperacao.SUCESSO,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Falha ao registrar auditoria pos-ACK da acao ${acao} no processo ${id_processo}: ${this.getErrorMessage(error)}`,
+      );
+    }
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private buildAvisos(itens: ProcessoPrecheckItem[]): string[] {
@@ -1138,7 +1348,7 @@ export class ProcessoPrecheckService {
   private buildRecomendacoes(itens: ProcessoPrecheckItem[]): string[] {
     if (itens.some((item) => item.status === 'NAO_CONFIRMADO')) {
       return [
-        'Implementar ACK/timeout confiavel do ESP32 para confirmar sensores e valvulas fisicamente.',
+        'Verificar heartbeat, status e leituras recentes do ESP32. O ACK de comando confirma a saída elétrica; posição mecânica exige sensor dedicado.',
       ];
     }
 

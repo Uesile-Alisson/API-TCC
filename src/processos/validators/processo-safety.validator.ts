@@ -4,7 +4,9 @@ import {
   statusgeralsistema,
   statusprocesso,
   statussensor,
+  statusintegridadesensor,
   statustanque,
+  tiposensor,
 } from '@prisma/client';
 import {
   ProcessoOperationalContext,
@@ -69,8 +71,22 @@ export class ProcessoSafetyValidator {
       return;
     }
 
+    if (!hardware.mqtt_credentials_configured) {
+      reasons.push(
+        'Credenciais MQTT nao configuradas no arquivo externo seguro.',
+      );
+    } else if (!hardware.mqtt_credentials_verified) {
+      reasons.push(
+        'Credenciais MQTT ainda nao foram verificadas pelo broker nesta execucao da API.',
+      );
+    }
+
     if (!hardware.mqtt_connected) {
       reasons.push('MQTT desconectado.');
+    }
+
+    if (!hardware.mqtt_operational) {
+      reasons.push('Subsistema MQTT nao esta operacional.');
     }
 
     if (!hardware.esp32_online) {
@@ -180,6 +196,20 @@ export class ProcessoSafetyValidator {
     if (sensor.status_sensor === statussensor.DESCONECTADO) {
       reasons.push(
         `Sensor ${sensor.nome_sensor} do tanque ${tanque.nome_tanque} está desconectado.`,
+      );
+    }
+
+    if (
+      sensor.tipo_sensor === tiposensor.VACUO &&
+      ((sensor.status_integridade !== undefined &&
+        sensor.status_integridade !== statusintegridadesensor.VALIDO) ||
+        sensor.calibrado_em === null ||
+        sensor.liberado_em === null ||
+        (sensor.calibracao_valida_ate !== null &&
+          sensor.calibracao_valida_ate <= new Date()))
+    ) {
+      reasons.push(
+        `Sensor ${sensor.nome_sensor} do tanque ${tanque.nome_tanque} nao possui calibracao e liberacao tecnica validas.`,
       );
     }
   }

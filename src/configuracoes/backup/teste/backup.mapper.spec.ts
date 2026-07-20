@@ -24,6 +24,7 @@ describe('BackupMapper', () => {
           mqtt: {
             configuracao_mqtt: {
               broker_url: 'mqtt://localhost',
+              senha_mqtt_configurada: true,
               senha_mqtt_hash: 'hash-secreto',
               senha: 'senha-mqtt',
               nested: {
@@ -40,6 +41,7 @@ describe('BackupMapper', () => {
       mqtt: {
         configuracao_mqtt: {
           broker_url: 'mqtt://localhost',
+          senha_mqtt_configurada: true,
           senha_mqtt_hash: '[OMITIDO]',
           senha: '[OMITIDO]',
           nested: {

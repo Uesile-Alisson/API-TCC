@@ -2,19 +2,36 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Patch,
   Post,
+  Put,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiAcceptedResponse,
+  ApiBearerAuth,
+  ApiBody,
+  ApiConflictResponse,
+  ApiOperation,
+  ApiServiceUnavailableResponse,
+  ApiTags,
+  ApiUnprocessableEntityResponse,
+} from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { MqttService } from './mqtt.service';
 import { UpdateMqttConfigDTO } from './dto/update-mqtt-config.dto';
-import { MqttCommandRequestDto } from './dto/mqtt-command-request.dto';
+import {
+  MqttCommandRequestDto,
+  MqttEmergencyStopRequestDto,
+} from './dto/mqtt-command-request.dto';
+import { UpdateMqttCredentialsDTO } from './dto/update-mqtt-credentials.dto';
 import type { CommandOptions } from './commands/interfaces/command-options.interface';
 
 type AuthenticatedUserPayload = {
@@ -27,6 +44,9 @@ type AuthenticatedUserPayload = {
 @ApiTags('MQTT / Hardware')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Throttle({
+  default: { limit: 60, ttl: 60_000, blockDuration: 60_000 },
+})
 @Controller('mqtt-hardware')
 export class MqttController {
   constructor(private readonly mqttService: MqttService) {}
@@ -54,17 +74,64 @@ export class MqttController {
   }
 
   @Patch('config')
+  @Throttle({
+    default: { limit: 10, ttl: 5 * 60_000, blockDuration: 5 * 60_000 },
+  })
   @Roles('ADMINISTRADOR')
   @ApiOperation({
     summary: 'Atualizar configuração MQTT.',
     description:
-      'Atualiza a configuração principal do MQTT e registra o usuário responsável pela alteração.',
+      'Testa a configuracao candidata em um cliente isolado, grava e reconecta o cliente principal. Se a aplicacao falhar, restaura a configuracao anterior.',
+  })
+  @ApiConflictResponse({
+    description:
+      'A atualizacao foi bloqueada por processo operacional, por outro update MQTT ou por perda do lease.',
+  })
+  @ApiUnprocessableEntityResponse({
+    description:
+      'O broker recusou autenticacao ou uma assinatura obrigatoria. A configuracao anterior foi preservada.',
+  })
+  @ApiServiceUnavailableResponse({
+    description:
+      'O broker nao confirmou a candidata ou a aplicacao principal falhou. A resposta informa o resultado do rollback.',
   })
   async updateConfig(
     @Body() dto: UpdateMqttConfigDTO,
     @CurrentUser() user: AuthenticatedUserPayload,
   ) {
     return await this.mqttService.updateConfig(dto, this.resolveUserId(user));
+  }
+
+  @Put('credentials')
+  @Throttle({
+    default: { limit: 3, ttl: 15 * 60_000, blockDuration: 15 * 60_000 },
+  })
+  @Roles('ADMINISTRADOR')
+  @ApiOperation({
+    summary: 'Configurar credenciais MQTT externas.',
+    description:
+      'Testa usuario e senha em uma conexao MQTT temporaria. Somente apos o broker aceitar a conexao e as assinaturas obrigatorias, substitui o arquivo seguro externo, reconecta o cliente principal e retorna indicadores sem expor as credenciais.',
+  })
+  @ApiConflictResponse({
+    description:
+      'A atualizacao foi bloqueada porque existe um processo em partida, execucao ou pausa, ou porque outra atualizacao de credenciais ja esta em andamento.',
+  })
+  @ApiUnprocessableEntityResponse({
+    description:
+      'O broker recusou a autenticacao ou alguma assinatura obrigatoria. As credenciais anteriores foram preservadas.',
+  })
+  @ApiServiceUnavailableResponse({
+    description:
+      'O broker estava indisponivel e a credencial candidata nao pode ser confirmada. As credenciais anteriores foram preservadas.',
+  })
+  async updateCredentials(
+    @Body() dto: UpdateMqttCredentialsDTO,
+    @CurrentUser() user: AuthenticatedUserPayload,
+  ) {
+    return await this.mqttService.updateCredentials(
+      dto,
+      this.resolveUserId(user),
+    );
   }
 
   @Post('commands/test')
@@ -83,10 +150,14 @@ export class MqttController {
   @ApiOperation({
     summary: 'Reconectar cliente MQTT.',
     description:
-      'Força uma conexão do backend com o broker MQTT usando a configuração ativa.',
+      'Força uma conexão do backend com o broker MQTT usando a configuração ativa. É bloqueado durante qualquer estado operacional protegido.',
   })
-  async reconnect() {
-    return await this.mqttService.reconnect();
+  @ApiConflictResponse({
+    description:
+      'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
+  })
+  async reconnect(@CurrentUser() user: AuthenticatedUserPayload) {
+    return await this.mqttService.reconnect(this.resolveUserId(user));
   }
 
   @Post('commands/disconnect')
@@ -94,10 +165,14 @@ export class MqttController {
   @ApiOperation({
     summary: 'Desconectar cliente MQTT.',
     description:
-      'Desconecta o cliente MQTT ao broker. Rota restrita a administradores.',
+      'Desconecta o cliente MQTT do broker quando não existe estado operacional protegido. Rota restrita a administradores.',
   })
-  async disconnect() {
-    return await this.mqttService.disconnect();
+  @ApiConflictResponse({
+    description:
+      'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
+  })
+  async disconnect(@CurrentUser() user: AuthenticatedUserPayload) {
+    return await this.mqttService.disconnect(this.resolveUserId(user));
   }
 
   @Post('commands/sincronizar-hardware')
@@ -105,7 +180,11 @@ export class MqttController {
   @ApiOperation({
     summary: 'Sincronizar hardware.',
     description:
-      'Publica comando MQTT para sincronizar o estado do ESP32/hardware com o backend.',
+      'Publica a configuração retida para sincronizar o ESP32/hardware somente fora de estados operacionais protegidos.',
+  })
+  @ApiConflictResponse({
+    description:
+      'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
   async sincronizarHardware(
@@ -122,7 +201,11 @@ export class MqttController {
   @ApiOperation({
     summary: 'Reiniciar comunicação do hardware.',
     description:
-      'Publica comando MQTT para reiniciar a comunicação do ESP32/hardware.',
+      'Publica comando MQTT para reiniciar a comunicação do ESP32/hardware somente fora de estados operacionais protegidos.',
+  })
+  @ApiConflictResponse({
+    description:
+      'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
   async reiniciarComuicacao(
@@ -136,14 +219,19 @@ export class MqttController {
 
   @Post('commands/parada-emergencia')
   @Roles('ADMINISTRADOR', 'TECNICO', 'OPERADOR')
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary: 'Acionar parada de emergência.',
     description:
-      'Publica comando MQTT de parada de emergência. Deve usar Qos 2 no CommandService.',
+      'Delega ao coordenador persistente quando existe processo operacional e executa a sequencia global best-effort somente quando nao existe processo alvo. HTTP 202 nao significa confirmacao do controlador.',
   })
-  @ApiBody({ type: MqttCommandRequestDto, required: false })
+  @ApiAcceptedResponse({
+    description:
+      'Solicitacao aceita; o corpo distingue persistencia, escopo e confirmacao pendente.',
+  })
+  @ApiBody({ type: MqttEmergencyStopRequestDto, required: false })
   async paradaEmergencia(
-    @Body() dto: MqttCommandRequestDto = {},
+    @Body() dto: MqttEmergencyStopRequestDto = {},
     @CurrentUser() user: AuthenticatedUserPayload,
   ) {
     return await this.mqttService.paradaEmergencia(
@@ -156,7 +244,11 @@ export class MqttController {
   @ApiOperation({
     summary: 'Desligar todas bombas.',
     description:
-      'Publica comando para desligar todas bombas controladas pelo ESP32.',
+      'Publica comando para desligar todas bombas controladas pelo ESP32 somente fora de estados operacionais protegidos.',
+  })
+  @ApiConflictResponse({
+    description:
+      'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
   async desligarTodasBombas(
@@ -173,7 +265,11 @@ export class MqttController {
   @ApiOperation({
     summary: 'Abrir todas válvulas.',
     description:
-      'Publica comando para abrir todas válvulas controladas pelo ESP32.',
+      'Publica comando para abrir todas válvulas controladas pelo ESP32 somente fora de estados operacionais protegidos.',
+  })
+  @ApiConflictResponse({
+    description:
+      'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
   async abrirTodasValvulas(
@@ -190,7 +286,11 @@ export class MqttController {
   @ApiOperation({
     summary: 'Fechar todas válvulas.',
     description:
-      'Publica comando para fechar todas válvulas controladas pelo ESP32.',
+      'Publica comando para fechar todas válvulas controladas pelo ESP32 somente fora de estados operacionais protegidos.',
+  })
+  @ApiConflictResponse({
+    description:
+      'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
   async fecharTodasValvulas(
@@ -203,12 +303,16 @@ export class MqttController {
   }
 
   private buildCommandOptions(
-    dto: MqttCommandRequestDto,
+    dto: MqttCommandRequestDto & { id_processo?: number },
     user: AuthenticatedUserPayload,
   ): CommandOptions {
     return {
       motivo: dto.motivo,
       qos: dto.qos,
+      correlation_id: dto.correlation_id,
+      ...(dto.id_processo !== undefined
+        ? { id_processo: dto.id_processo }
+        : {}),
       solicitado_por: this.resolveUserId(user),
     };
   }

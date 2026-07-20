@@ -27,7 +27,10 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { ConfiguracoesBombasService } from './configuracoes-bombas.service';
-import { BombaConfiguracaoResponseDto } from './dto/bomba-configuracao-response.dto';
+import {
+  BombaConfiguracaoResponseDto,
+  BombasConfiguracaoListResponseDto,
+} from './dto/bomba-configuracao-response.dto';
 import { CreateBombaConfiguracaoDto } from './dto/create-bomba-configuracao.dto';
 import { QueryBombasConfiguracaoDto } from './dto/query-bombas-configuracao.dto';
 import { UpdateBombaConfiguracaoDto } from './dto/update-bomba-configuracao.dto';
@@ -44,7 +47,7 @@ export class ConfiguracoesBombasController {
   @Get()
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista bombas configuradas.' })
-  @ApiOkResponse({ type: BombaConfiguracaoResponseDto, isArray: true })
+  @ApiOkResponse({ type: BombasConfiguracaoListResponseDto })
   @ApiBadRequestResponse({ description: 'Filtros invalidos.' })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
@@ -71,7 +74,10 @@ export class ConfiguracoesBombasController {
   @ApiBadRequestResponse({ description: 'Payload invalido.' })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
-  @ApiConflictResponse({ description: 'Bomba duplicada.' })
+  @ApiConflictResponse({
+    description:
+      'Bomba duplicada ou alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   create(
     @Body() dto: CreateBombaConfiguracaoDto,
     @CurrentUser() currentUser: AuthenticatedUser,
@@ -89,7 +95,10 @@ export class ConfiguracoesBombasController {
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Bomba nao encontrada.' })
-  @ApiConflictResponse({ description: 'Bomba duplicada.' })
+  @ApiConflictResponse({
+    description:
+      'Bomba duplicada ou alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   update(
     @Param('id_bomba', ParseIntPipe) id_bomba: number,
     @Body() dto: UpdateBombaConfiguracaoDto,
@@ -108,6 +117,10 @@ export class ConfiguracoesBombasController {
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Bomba nao encontrada.' })
+  @ApiConflictResponse({
+    description:
+      'Alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   ativar(
     @Param('id_bomba', ParseIntPipe) id_bomba: number,
     @CurrentUser() currentUser: AuthenticatedUser,
@@ -125,6 +138,10 @@ export class ConfiguracoesBombasController {
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Bomba nao encontrada.' })
+  @ApiConflictResponse({
+    description:
+      'Alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   desativar(
     @Param('id_bomba', ParseIntPipe) id_bomba: number,
     @CurrentUser() currentUser: AuthenticatedUser,

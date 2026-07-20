@@ -10,20 +10,21 @@ import { LeiturasEventosModule } from './leituras-eventos/leituras-eventos.modul
 import { HistoricoModule } from './historico/historico.module';
 import { RelatoriosModule } from './relatorios/relatorios.module';
 import { ConfiguracoesModule } from './configuracoes/configuracoes.module';
-import { DynamicModule, Module, Type } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { SecurityModule } from './security/security.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { validateEnvironment } from './security/http-security';
 
-const optionalModules: Array<Type<unknown> | DynamicModule> = [];
-
-if (process.env.MONGODB_ENABLED === 'true') {
-  optionalModules.push(MongoDbModule);
-}
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      cache: true,
+      validate: validateEnvironment,
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
+    MongoDbModule,
     SecurityModule,
     AuthModule,
     UserModule,
@@ -34,7 +35,6 @@ if (process.env.MONGODB_ENABLED === 'true') {
     HistoricoModule,
     RelatoriosModule,
     ConfiguracoesModule,
-    ...optionalModules,
   ],
   controllers: [],
   providers: [],

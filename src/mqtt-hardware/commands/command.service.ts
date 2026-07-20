@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  GatewayTimeoutException,
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { MqttClientService } from '../connection/mqtt-client.service';
@@ -25,6 +27,12 @@ import {
 import { CommandPayload } from './interfaces/command-payload.interface';
 import { CommandResult } from './interfaces/command-result.interface';
 import { Esp32ProcessStartPayload } from '../interfaces/esp32-contracts.interface';
+import {
+  CommandAckHandler,
+  CommandAckRecord,
+} from '../handlers/command-ack.handler';
+import { statuscomandomqtt } from '@prisma/client';
+import { CommandLedgerService } from './command-ledger.service';
 
 type PublishOptions = {
   qos: CommandQos;
@@ -42,11 +50,14 @@ export class CommandService {
     private readonly mqttClientService: MqttClientService,
     private readonly mqttConfigService: MqttConfigService,
     private readonly esp32SyncConfigService: Esp32SyncConfigService,
+    private readonly commandAckHandler: CommandAckHandler,
+    @Optional() private readonly commandLedgerService?: CommandLedgerService,
   ) {}
 
   async ligarBomba(
     options: CommandOptions,
     idBomba: number,
+    codigoHardware?: string,
   ): Promise<CommandResult> {
     this.validatePositiveId(idBomba, 'id_bomba');
 
@@ -54,6 +65,7 @@ export class CommandService {
       MQTT_COMMANDS.LIGAR_BOMBA,
       {
         id_bomba: idBomba,
+        ...(codigoHardware ? { codigo_hardware: codigoHardware } : {}),
       },
       this.resolveStandardPublishOptions(options),
       options,
@@ -63,6 +75,7 @@ export class CommandService {
   async desligarBomba(
     options: CommandOptions,
     idBomba: number,
+    codigoHardware?: string,
   ): Promise<CommandResult> {
     this.validatePositiveId(idBomba, 'id_bomba');
 
@@ -70,6 +83,7 @@ export class CommandService {
       MQTT_COMMANDS.DESLIGAR_BOMBA,
       {
         id_bomba: idBomba,
+        ...(codigoHardware ? { codigo_hardware: codigoHardware } : {}),
       },
       this.resolveStandardPublishOptions(options),
       options,
@@ -88,6 +102,8 @@ export class CommandService {
   async abrirValvula(
     options: CommandOptions,
     idValvula: number,
+    codigoHardware?: string,
+    context?: Pick<ValvulaCommandParams, 'id_tanque' | 'id_processo_tanque'>,
   ): Promise<CommandResult> {
     this.validatePositiveId(idValvula, 'id_valvula');
 
@@ -95,6 +111,13 @@ export class CommandService {
       MQTT_COMMANDS.ABRIR_VALVULA,
       {
         id_valvula: idValvula,
+        ...(codigoHardware ? { codigo_hardware: codigoHardware } : {}),
+        ...(context?.id_tanque !== undefined
+          ? { id_tanque: context.id_tanque }
+          : {}),
+        ...(context?.id_processo_tanque !== undefined
+          ? { id_processo_tanque: context.id_processo_tanque }
+          : {}),
       },
       this.resolveStandardPublishOptions(options),
       options,
@@ -104,6 +127,8 @@ export class CommandService {
   async fecharValvula(
     options: CommandOptions,
     idValvula: number,
+    codigoHardware?: string,
+    context?: Pick<ValvulaCommandParams, 'id_tanque' | 'id_processo_tanque'>,
   ): Promise<CommandResult> {
     this.validatePositiveId(idValvula, 'id_valvula');
 
@@ -111,6 +136,13 @@ export class CommandService {
       MQTT_COMMANDS.FECHAR_VALVULA,
       {
         id_valvula: idValvula,
+        ...(codigoHardware ? { codigo_hardware: codigoHardware } : {}),
+        ...(context?.id_tanque !== undefined
+          ? { id_tanque: context.id_tanque }
+          : {}),
+        ...(context?.id_processo_tanque !== undefined
+          ? { id_processo_tanque: context.id_processo_tanque }
+          : {}),
       },
       this.resolveStandardPublishOptions(options),
       options,
@@ -164,32 +196,37 @@ export class CommandService {
   async deligarBomba(
     options: CommandOptions,
     idBomba: number,
+    codigoHardware?: string,
   ): Promise<CommandResult> {
-    return await this.desligarBomba(options, idBomba);
+    return await this.desligarBomba(options, idBomba, codigoHardware);
   }
 
   async iniciarProcessoVacuo(
     payload: Esp32ProcessStartPayload,
     options?: CommandOptions,
   ): Promise<CommandResult> {
-    const topic = await this.resolveCommandTopic();
+    const target = await this.resolveCommandTarget();
     const publishOptions = this.resolveStandardPublishOptions(options);
-
-    await this.mqttClientService.publish(topic, payload, publishOptions);
-
-    const result: CommandResult = {
+    const execution = await this.publishAndAwaitAck({
+      topic: target.topic,
+      payload,
+      publishOptions,
       comando: MQTT_COMMANDS.INICIAR_PROCESSO_VACUO,
-      topic,
-      qos: publishOptions.qos,
-      retain: publishOptions.retain,
-      correlation_id: payload.correlation_id,
-      published_at: new Date(),
-    };
+      correlationId: payload.correlation_id,
+      ackTimeoutMs: target.ackTimeoutMs,
+    });
+    const result = this.buildAcknowledgedResult({
+      comando: MQTT_COMMANDS.INICIAR_PROCESSO_VACUO,
+      topic: target.topic,
+      publishOptions,
+      correlationId: payload.correlation_id,
+      execution,
+    });
 
     this.logger.log(
       `Comando MQTT de inicio de processo de vacuo publicado. ` +
         `Processo: ${payload.id_processo}. ` +
-        `Topico: ${topic}. ` +
+        `Topico: ${target.topic}. ` +
         `Correlation ID: ${payload.correlation_id}.`,
     );
 
@@ -202,30 +239,36 @@ export class CommandService {
     publishOptions: PublishOptions,
     comandoOptions: CommandOptions,
   ): Promise<CommandResult> {
-    const topic = await this.resolveCommandTopic();
-
     const payload = CommandPayloadBuilder.build(
       comando,
       params,
       comandoOptions,
     );
-
-    await this.publishToMqtt(topic, payload, publishOptions);
-
-    const result: CommandResult = {
+    const target = await this.resolveCommandTarget();
+    const execution = await this.publishAndAwaitAck({
+      topic: target.topic,
+      payload,
+      publishOptions,
       comando,
-      topic,
-      qos: publishOptions.qos,
-      retain: publishOptions.retain,
-      correlation_id: payload.correlation_id,
-      published_at: new Date(),
-    };
+      correlationId: payload.correlation_id,
+      ackTimeoutMs: target.ackTimeoutMs,
+    });
+    const result = this.buildAcknowledgedResult({
+      comando,
+      topic: target.topic,
+      publishOptions,
+      correlationId: payload.correlation_id,
+      execution,
+    });
 
     this.logCommandPublished(payload, result);
     return result;
   }
 
-  private async resolveCommandTopic(): Promise<string> {
+  private async resolveCommandTarget(): Promise<{
+    topic: string;
+    ackTimeoutMs: number;
+  }> {
     const config = await this.mqttConfigService.getConfig();
 
     if (!config.topico_comandos || config.topico_comandos.trim().length === 0) {
@@ -234,18 +277,114 @@ export class CommandService {
       );
     }
 
-    return config.topico_comandos;
+    return {
+      topic: config.topico_comandos,
+      ackTimeoutMs: config.timeout_comunicacao,
+    };
   }
 
-  private async publishToMqtt<TParams extends CommandParams>(
-    topic: string,
-    payload: CommandPayload<TParams>,
-    options: PublishOptions,
-  ): Promise<void> {
-    await this.mqttClientService.publish(topic, payload, {
-      qos: options.qos,
-      retain: options.retain,
+  private async publishAndAwaitAck<TPayload extends object>(input: {
+    topic: string;
+    payload: TPayload;
+    publishOptions: PublishOptions;
+    comando: CommandName;
+    correlationId: string;
+    ackTimeoutMs: number;
+  }): Promise<{
+    ack: CommandAckRecord;
+    publishedAt: Date;
+    reusedAck: boolean;
+  }> {
+    const persisted = await this.commandLedgerService?.prepare({
+      correlationId: input.correlationId,
+      comando: input.comando,
+      topic: input.topic,
+      payload: input.payload,
+      qos: input.publishOptions.qos,
+      retain: input.publishOptions.retain,
+      timeoutMs: input.ackTimeoutMs,
     });
+    if (persisted?.restoredAck) {
+      this.commandAckHandler.restorePersistedAck(persisted.restoredAck);
+    }
+
+    const waitRegistration = this.commandAckHandler.waitForFinalAck(
+      input.correlationId,
+      input.comando,
+      input.ackTimeoutMs,
+    );
+    const publicationAttemptedAt = new Date();
+    const shouldPublish =
+      (persisted?.shouldPublish ?? true) && waitRegistration.shouldPublish;
+
+    if (shouldPublish) {
+      try {
+        await this.mqttClientService.publish(input.topic, input.payload, {
+          qos: input.publishOptions.qos,
+          retain: input.publishOptions.retain,
+        });
+        await this.commandLedgerService?.markPublished(
+          input.correlationId,
+          publicationAttemptedAt,
+        );
+      } catch (error) {
+        waitRegistration.cancel(error);
+        await waitRegistration.promise.catch(() => undefined);
+        await this.commandLedgerService?.markFailure(
+          input.correlationId,
+          statuscomandomqtt.ERRO,
+          error,
+        );
+        throw error;
+      }
+    }
+
+    let ack: CommandAckRecord;
+    try {
+      ack = await waitRegistration.promise;
+      await this.commandLedgerService?.recordAck(ack);
+    } catch (error) {
+      await this.commandLedgerService?.markFailure(
+        input.correlationId,
+        error instanceof GatewayTimeoutException
+          ? statuscomandomqtt.TIMEOUT
+          : statuscomandomqtt.ERRO,
+        error,
+      );
+      throw error;
+    }
+
+    return {
+      ack,
+      publishedAt: shouldPublish ? publicationAttemptedAt : ack.recebido_em,
+      reusedAck: !shouldPublish,
+    };
+  }
+
+  private buildAcknowledgedResult(input: {
+    comando: CommandName;
+    topic: string;
+    publishOptions: PublishOptions;
+    correlationId: string;
+    execution: {
+      ack: CommandAckRecord;
+      publishedAt: Date;
+      reusedAck: boolean;
+    };
+  }): CommandResult {
+    return {
+      comando: input.comando,
+      topic: input.topic,
+      qos: input.publishOptions.qos,
+      retain: input.publishOptions.retain,
+      correlation_id: input.correlationId,
+      published_at: input.execution.publishedAt,
+      acknowledged: true,
+      ack_status: 'EXECUTADO',
+      ack_received_at: input.execution.ack.recebido_em,
+      ack_message: input.execution.ack.mensagem,
+      reused_ack: input.execution.reusedAck,
+    };
   }
 
   private resolveStandardPublishOptions(
@@ -285,6 +424,7 @@ export class CommandService {
       `QoS: ${result.qos}. ` +
       `Retain: ${String(result.retain)}. ` +
       `Correlation ID: ${result.correlation_id}. ` +
+      `ACK: ${result.ack_status ?? 'nao confirmado'}. ` +
       `Solicitado por: ${payload.solicitado_por ?? 'sistema'}. ` +
       `Motivo: ${payload.motivo ?? 'não informado'}.`;
 

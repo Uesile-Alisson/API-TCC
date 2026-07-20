@@ -1,9 +1,10 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class SignInDTO {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(60)
   @ApiProperty({
     example: 'joao.silva',
     description: 'Login único utilizado para acessar o sistema.',
@@ -13,9 +14,11 @@ export class SignInDTO {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(128)
   @ApiProperty({
-    example: 'Admin@123',
+    example: 'uma frase longa e memorável',
     description: 'Senha do usuário.',
+    maxLength: 128,
   })
   senha!: string;
 }

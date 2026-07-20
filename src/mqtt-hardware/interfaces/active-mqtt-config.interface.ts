@@ -6,8 +6,10 @@ export interface ActiveMqttConfig {
   id_usuario_alteracao: number | null;
   broker_url: string;
   porta: number;
-  usuario_mqtt?: string | null;
-  senha_mqtt_hash?: string | null;
+  usuario_mqtt_configurado: boolean;
+  senha_mqtt_configurada: boolean;
+  credenciais_verificadas_em: Date | null;
+  ultima_falha_credenciais: string | null;
   topico_leituras: string;
   topico_comandos: string;
   topico_alarmes: string;

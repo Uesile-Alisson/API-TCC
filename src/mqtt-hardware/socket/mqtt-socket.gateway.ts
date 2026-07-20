@@ -2,11 +2,13 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
-import { Server, Socket } from 'socket.io';
+import type { Namespace, Socket } from 'socket.io';
+import { SocketAuthService } from '../../auth/socket-auth.service';
 import {
   AlarmCreatedSocketPayload,
   HardwareStatusSocketPayload,
@@ -18,22 +20,35 @@ import {
 } from '../interfaces/mqtt-socket-events.interface';
 import { HardwareState } from '../interfaces/hardware-state.interface';
 
-@WebSocketGateway({
-  namespace: 'mqtt-hardware',
-  cors: {
-    origin: '*',
-  },
-})
+@WebSocketGateway({ namespace: 'mqtt-hardware' })
 export class MqttSocketGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   private readonly logger = new Logger(MqttSocketGateway.name);
 
+  constructor(private readonly socketAuthService: SocketAuthService) {}
+
   @WebSocketServer()
-  private server!: Server;
+  private server!: Namespace;
+
+  afterInit(namespace: Namespace): void {
+    this.socketAuthService.registerAuthenticationMiddleware(namespace);
+  }
 
   handleConnection(@ConnectedSocket() client: Socket): void {
-    this.logger.log(`Cliente conectado ao socket MQTT/Hardware: ${client.id}`);
+    const user = this.socketAuthService.getAuthenticatedUser(client);
+    if (!user) {
+      this.logger.warn(
+        `Conexao sem contexto autenticado recusada no socket MQTT/Hardware: ${client.id}`,
+      );
+      client.disconnect(true);
+      return;
+    }
+
+    this.logger.log(
+      `Cliente autenticado no socket MQTT/Hardware: ${client.id}. ` +
+        `Usuario: ${user.id_usuario}.`,
+    );
 
     client.emit('socket:connected', {
       message: 'Conectado ao canal MQTT/Hardware',

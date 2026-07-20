@@ -10,6 +10,7 @@ const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const {
   faseprocesso,
+  modooperacaoauxiliar,
   motivoresolucaoalarme,
   origemalarme,
   severidadealarme,
@@ -100,8 +101,11 @@ async function createValidationProcess(idUsuario, status, label) {
           : faseprocesso.GERANDO_VACUO,
       vacuo_alvo: -80,
       tempo_maximo: 900,
-      iniciado_em:
-        status === statusprocesso.CONFIGURADO ? null : new Date(now),
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      processosauxiliares: {
+        create: {},
+      },
+      iniciado_em: status === statusprocesso.CONFIGURADO ? null : new Date(now),
       pausado_em: status === statusprocesso.PAUSADO ? new Date(now) : null,
       finalizado_em: [
         statusprocesso.CONCLUIDO,
@@ -236,7 +240,11 @@ async function main() {
       statusprocesso.INTERROMPIDO,
       'INTERROMPIDO',
     ),
-    falha: await createValidationProcess(tecnicoId, statusprocesso.FALHA, 'FALHA'),
+    falha: await createValidationProcess(
+      tecnicoId,
+      statusprocesso.FALHA,
+      'FALHA',
+    ),
   };
 
   const processIds = Object.values(processes).map(
@@ -389,11 +397,7 @@ async function main() {
     alarms.ativoInterrompido.id_alarme,
     tecnicoToken,
   );
-  assertStatus(
-    'PATCH ativo interrompido',
-    checks.patchAtivoInterrompido,
-    200,
-  );
+  assertStatus('PATCH ativo interrompido', checks.patchAtivoInterrompido, 200);
 
   checks.patchAtivoFalha = await resolveAlarm(
     'PATCH',
@@ -439,7 +443,11 @@ async function main() {
     alarms.ativoEmExecucao.id_alarme,
     tecnicoToken,
   );
-  assertStatus('GET detalhe apos reconhecer', checks.detalheAposReconhecer, 200);
+  assertStatus(
+    'GET detalhe apos reconhecer',
+    checks.detalheAposReconhecer,
+    200,
+  );
 
   if (checks.detalheAposReconhecer.body?.status_alarme !== statusalarme.ATIVO) {
     throw new Error(

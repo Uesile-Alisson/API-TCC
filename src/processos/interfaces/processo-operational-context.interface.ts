@@ -1,17 +1,26 @@
 import {
   StatusAcoplamentoMangueira,
+  modooperacaoauxiliar,
   severidadealarme,
   statusalarme,
   statusconexaomqtt,
+  statusencerramentotanque,
   statusgeralsistema,
   statusprocesso,
   statussensor,
+  statusintegridadesensor,
   statustanque,
   statustanqueprocesso,
+  tiposensor,
 } from '@prisma/client';
 
 export interface ProcessoHardwareOperationalContext {
+  mqtt_credentials_configured: boolean;
+  mqtt_credentials_verified: boolean;
+  mqtt_credentials_verified_at: Date | null;
+  mqtt_credentials_failure: string | null;
   mqtt_connected: boolean;
+  mqtt_operational: boolean;
   mqtt_status: statusconexaomqtt | null;
   esp32_online: boolean;
   esp32_status: statusgeralsistema | null;
@@ -46,6 +55,12 @@ export interface ProcessoSensorOperationalContext {
   modelo_sensor: string;
   unidade_medida: string;
   status_sensor: statussensor;
+  status_integridade: statusintegridadesensor;
+  calibrado_em: Date | null;
+  calibracao_valida_ate: Date | null;
+  liberado_em: Date | null;
+  integridade_ultimo_erro: string | null;
+  tipo_sensor: tiposensor;
   ultima_leitura: Date | null;
   ultimo_valor_lido: number | null;
   ativo_no_processo: boolean;
@@ -64,7 +79,11 @@ export interface ProcessoTanqueOperationalContext {
   vacuo_final: number | null;
   vacuo_medio: number | null;
   eficiencia: number | null;
+  vacuo_atingido: boolean;
+  vacuo_estabilizado: boolean;
   status_tanque_processo: statustanqueprocesso;
+  status_encerramento: statusencerramentotanque;
+  encerramento_versao: number;
   iniciado_em: Date | null;
   finalizado_em: Date | null;
   sensores: ProcessoSensorOperationalContext[];
@@ -86,6 +105,17 @@ export interface ProcessoOperationalContext {
   id_usuario: number;
   nome_processo: string | null;
   status_processo: statusprocesso;
+  modo_operacao_auxiliar: modooperacaoauxiliar;
+  encerramento_automatico: boolean;
+  encerramento_versao: number;
+  encerramento_tolerancia_vacuo_percentual: number;
+  encerramento_limite_seguranca_vacuo: number;
+  encerramento_tempo_estabilizacao_segundos: number;
+  encerramento_estabilizacao_cobertura_minima_percentual: number;
+  encerramento_intervalo_leitura_esperado_ms: number;
+  encerramento_timeout_leitura_sensor_ms: number;
+  encerramento_tempo_retencao_segundos: number;
+  encerramento_perda_vacuo_maxima_retencao: number;
   vacuo_alvo: number;
   vacuo_inicial: number | null;
   vacuo_final: number | null;

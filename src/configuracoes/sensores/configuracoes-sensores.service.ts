@@ -1,17 +1,29 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, statussensor } from '@prisma/client';
+import {
+  Prisma,
+  motivoresolucaoalarme,
+  statusalarme,
+  statussensor,
+  statusintegridadesensor,
+  tiposensor,
+  tipoalarme,
+} from '@prisma/client';
+import { MqttConfigService } from '../../mqtt-hardware/config/mqtt-config.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaginatedConfiguracoesResponse } from '../common/paginated-configuracoes-response.interface';
+import { ConfiguracoesCurrentUser } from '../common/configuracoes-current-user.interface';
 import { buildPagination } from '../common/query.helpers';
 import {
   ConfiguracoesSensoresMapper,
   sensorConfiguracaoSelect,
 } from './configuracoes-sensores.mapper';
 import { CreateSensorConfiguracaoDto } from './dto/create-sensor-configuracao.dto';
+import { CalibrarSensorDto } from './dto/calibrar-sensor.dto';
 import { QuerySensoresConfiguracaoDto } from './dto/query-sensores-configuracao.dto';
 import { SensorConfiguracaoResponseDto } from './dto/sensor-configuracao-response.dto';
 import { SensorProcessoOptionResponseDto } from './dto/sensor-processo-option-response.dto';
@@ -26,7 +38,10 @@ import {
 
 @Injectable()
 export class ConfiguracoesSensoresService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly operationalInterlock: MqttConfigService,
+  ) {}
 
   async findAll(
     query: QuerySensoresConfiguracaoDto,
@@ -72,37 +87,230 @@ export class ConfiguracoesSensoresService {
   async create(
     dto: CreateSensorConfiguracaoDto,
   ): Promise<SensorConfiguracaoResponseDto> {
-    await this.validateNomeAvailable(dto.nome);
+    return await this.operationalInterlock.executeProtectedEquipmentMutation(
+      'CREATE_SENSOR',
+      async (tx) => {
+        await this.validateNomeAvailable(dto.nome, undefined, tx);
 
-    const created = await this.prisma.sensores.create({
-      data: buildSensorCreateData(dto),
-      select: sensorConfiguracaoSelect,
-    });
+        const created = await tx.sensores.create({
+          data: buildSensorCreateData(dto),
+          select: sensorConfiguracaoSelect,
+        });
 
-    return ConfiguracoesSensoresMapper.toResponse(created);
+        return ConfiguracoesSensoresMapper.toResponse(created);
+      },
+    );
   }
 
   async update(
     id_sensor: number,
     dto: UpdateSensorConfiguracaoDto,
   ): Promise<SensorConfiguracaoResponseDto> {
-    await this.findRecordById(id_sensor);
-
-    if (dto.nome !== undefined) {
-      await this.validateNomeAvailable(dto.nome, id_sensor);
+    if (
+      dto.status_sensor === statussensor.ATIVO ||
+      dto.fator_calibracao !== undefined
+    ) {
+      throw new ConflictException(
+        'Ativacao e fator de calibracao exigem o fluxo tecnico de calibracao/liberacao.',
+      );
     }
 
-    const updated = await this.prisma.sensores.update({
-      where: { id_sensor },
-      data: buildSensorUpdateData(dto),
-      select: sensorConfiguracaoSelect,
-    });
+    return await this.operationalInterlock.executeProtectedEquipmentMutation(
+      'UPDATE_SENSOR',
+      async (tx) => {
+        const current = await this.findRecordById(id_sensor, tx);
+        const minimum =
+          dto.limite_minimo_operacional ??
+          current.limite_minimo_operacional?.toNumber() ??
+          null;
+        const maximum =
+          dto.limite_maximo_operacional ??
+          current.limite_maximo_operacional?.toNumber() ??
+          null;
+        if (minimum !== null && maximum !== null && minimum >= maximum) {
+          throw new BadRequestException(
+            'limite_minimo_operacional deve ser menor que limite_maximo_operacional.',
+          );
+        }
 
-    return ConfiguracoesSensoresMapper.toResponse(updated);
+        if (dto.nome !== undefined) {
+          await this.validateNomeAvailable(dto.nome, id_sensor, tx);
+        }
+
+        const updated = await tx.sensores.update({
+          where: { id_sensor },
+          data: buildSensorUpdateData(dto),
+          select: sensorConfiguracaoSelect,
+        });
+
+        return ConfiguracoesSensoresMapper.toResponse(updated);
+      },
+    );
   }
 
-  async ativar(id_sensor: number): Promise<SensorConfiguracaoResponseDto> {
-    return this.updateStatus(id_sensor, statussensor.ATIVO);
+  async iniciarCalibracao(
+    id_sensor: number,
+    currentUser: ConfiguracoesCurrentUser,
+  ): Promise<SensorConfiguracaoResponseDto> {
+    this.validateCurrentUser(currentUser);
+    return await this.operationalInterlock.executeProtectedEquipmentMutation(
+      'START_SENSOR_CALIBRATION',
+      async (tx) => {
+        const sensor = await this.findRecordById(id_sensor, tx);
+
+        if (sensor.tipo_sensor !== tiposensor.VACUO) {
+          throw new ConflictException(
+            'O modo de calibracao numerica e exclusivo para sensores de vacuo.',
+          );
+        }
+
+        const updated = await tx.sensores.update({
+          where: { id_sensor },
+          data: {
+            status_sensor: statussensor.INATIVO,
+            status_integridade: statusintegridadesensor.PENDENTE_CALIBRACAO,
+            modo_calibracao_ativo: true,
+            calibracao_iniciada_em: new Date(),
+            ultimo_valor_bruto: null,
+            integridade_ultimo_erro: null,
+            id_usuario_calibracao: currentUser.id_usuario,
+          },
+          select: sensorConfiguracaoSelect,
+        });
+
+        return ConfiguracoesSensoresMapper.toResponse(updated);
+      },
+    );
+  }
+
+  async calibrar(
+    id_sensor: number,
+    dto: CalibrarSensorDto,
+    currentUser: ConfiguracoesCurrentUser,
+  ): Promise<SensorConfiguracaoResponseDto> {
+    this.validateCurrentUser(currentUser);
+    return await this.operationalInterlock.executeProtectedEquipmentMutation(
+      'FINISH_SENSOR_CALIBRATION',
+      async (tx) => {
+        const sensor = await this.findRecordById(id_sensor, tx);
+
+        if (!sensor.modo_calibracao_ativo) {
+          throw new ConflictException(
+            'Inicie o modo de calibracao antes de finalizar a calibracao.',
+          );
+        }
+
+        const observed =
+          dto.valor_observado ?? sensor.ultimo_valor_bruto?.toNumber() ?? null;
+        if (observed === null || !Number.isFinite(observed) || observed === 0) {
+          throw new BadRequestException(
+            'Valor observado valido e diferente de zero e obrigatorio.',
+          );
+        }
+
+        const offset = dto.offset_calibracao ?? 0;
+        const factor = (dto.valor_referencia - offset) / observed;
+        if (!Number.isFinite(factor) || factor <= 0) {
+          throw new BadRequestException(
+            'A referencia e o valor observado resultaram em fator de calibracao invalido.',
+          );
+        }
+
+        const validUntil = dto.valida_ate ? new Date(dto.valida_ate) : null;
+        if (validUntil && validUntil <= new Date()) {
+          throw new BadRequestException(
+            'calibracao_valida_ate deve ser uma data futura.',
+          );
+        }
+
+        const now = new Date();
+        const updated = await tx.sensores.update({
+          where: { id_sensor },
+          data: {
+            fator_calibracao: new Prisma.Decimal(factor),
+            offset_calibracao: new Prisma.Decimal(offset),
+            status_sensor: statussensor.INATIVO,
+            status_integridade: statusintegridadesensor.VALIDO,
+            calibrado_em: now,
+            calibracao_valida_ate: validUntil,
+            calibracao_referencia: dto.referencia.trim(),
+            calibracao_incerteza:
+              dto.incerteza === undefined
+                ? null
+                : new Prisma.Decimal(dto.incerteza),
+            calibracao_observacoes: dto.observacoes?.trim() ?? null,
+            id_usuario_calibracao: currentUser.id_usuario,
+            modo_calibracao_ativo: false,
+            integridade_validada_em: now,
+            integridade_ultimo_erro: null,
+            liberado_em: null,
+            id_usuario_liberacao: null,
+          },
+          select: sensorConfiguracaoSelect,
+        });
+
+        return ConfiguracoesSensoresMapper.toResponse(updated);
+      },
+    );
+  }
+
+  async ativar(
+    id_sensor: number,
+    currentUser: ConfiguracoesCurrentUser,
+  ): Promise<SensorConfiguracaoResponseDto> {
+    this.validateCurrentUser(currentUser);
+    return await this.operationalInterlock.executeProtectedEquipmentMutation(
+      'ACTIVATE_SENSOR',
+      async (tx) => {
+        const sensor = await this.findRecordById(id_sensor, tx);
+        const now = new Date();
+
+        if (
+          sensor.tipo_sensor === tiposensor.VACUO &&
+          (sensor.modo_calibracao_ativo ||
+            sensor.status_integridade !== statusintegridadesensor.VALIDO ||
+            sensor.calibrado_em === null ||
+            (sensor.calibracao_valida_ate !== null &&
+              sensor.calibracao_valida_ate <= now))
+        ) {
+          throw new ConflictException(
+            'Sensor de vacuo sem calibracao valida ou ainda sem liberacao tecnica.',
+          );
+        }
+
+        const released = await tx.sensores.update({
+          where: { id_sensor },
+          data: {
+            status_sensor: statussensor.ATIVO,
+            liberado_em: now,
+            id_usuario_liberacao: currentUser.id_usuario,
+            integridade_validada_em: now,
+            integridade_ultimo_erro: null,
+          },
+          select: sensorConfiguracaoSelect,
+        });
+        await tx.alarmes.updateMany({
+          where: {
+            id_processo_tanque_sensor: { not: null },
+            processostanquessensores: { id_sensor },
+            tipo_alarme: tipoalarme.SENSOR,
+            status_alarme: statusalarme.ATIVO,
+            excluido_em: null,
+          },
+          data: {
+            status_alarme: statusalarme.NORMALIZADO,
+            normalizado_em: now,
+            resolvido_em: now,
+            ultima_validacao_em: now,
+            id_usuario_responsavel: currentUser.id_usuario,
+            motivo_resolucao:
+              motivoresolucaoalarme.NORMALIZADO_CONFIRMADO_PELO_USUARIO,
+          },
+        });
+
+        return ConfiguracoesSensoresMapper.toResponse(released);
+      },
+    );
   }
 
   async desativar(id_sensor: number): Promise<SensorConfiguracaoResponseDto> {
@@ -135,19 +343,38 @@ export class ConfiguracoesSensoresService {
     id_sensor: number,
     status_sensor: statussensor,
   ): Promise<SensorConfiguracaoResponseDto> {
-    await this.findRecordById(id_sensor);
+    return await this.operationalInterlock.executeProtectedEquipmentMutation(
+      status_sensor === statussensor.ATIVO
+        ? 'ACTIVATE_SENSOR'
+        : 'DEACTIVATE_SENSOR',
+      async (tx) => {
+        await this.findRecordById(id_sensor, tx);
 
-    const updated = await this.prisma.sensores.update({
-      where: { id_sensor },
-      data: { status_sensor },
-      select: sensorConfiguracaoSelect,
-    });
+        const updated = await tx.sensores.update({
+          where: { id_sensor },
+          data: { status_sensor },
+          select: sensorConfiguracaoSelect,
+        });
 
-    return ConfiguracoesSensoresMapper.toResponse(updated);
+        return ConfiguracoesSensoresMapper.toResponse(updated);
+      },
+    );
   }
 
-  private async findRecordById(id_sensor: number) {
-    const sensor = await this.prisma.sensores.findFirst({
+  private validateCurrentUser(currentUser: ConfiguracoesCurrentUser): void {
+    if (
+      !Number.isInteger(currentUser?.id_usuario) ||
+      currentUser.id_usuario <= 0
+    ) {
+      throw new BadRequestException('Usuario tecnico invalido.');
+    }
+  }
+
+  private async findRecordById(
+    id_sensor: number,
+    client: Prisma.TransactionClient = this.prisma,
+  ) {
+    const sensor = await client.sensores.findFirst({
       where: {
         id_sensor,
         excluido_em: null,
@@ -165,8 +392,9 @@ export class ConfiguracoesSensoresService {
   private async validateNomeAvailable(
     nome: string,
     currentId?: number,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
-    const existing = await this.prisma.sensores.findUnique({
+    const existing = await client.sensores.findUnique({
       where: { nome: nome.trim() },
       select: { id_sensor: true },
     });

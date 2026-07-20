@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma, statusbomba } from '@prisma/client';
+import { MqttConfigService } from '../../mqtt-hardware/config/mqtt-config.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfiguracoesCurrentUser } from '../common/configuracoes-current-user.interface';
 import { PaginatedConfiguracoesResponse } from '../common/paginated-configuracoes-response.interface';
@@ -26,7 +27,10 @@ import {
 
 @Injectable()
 export class ConfiguracoesBombasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mqttConfigService: MqttConfigService,
+  ) {}
 
   async findAll(
     query: QueryBombasConfiguracaoDto,
@@ -74,15 +78,21 @@ export class ConfiguracoesBombasService {
     currentUser: ConfiguracoesCurrentUser,
   ): Promise<BombaConfiguracaoResponseDto> {
     this.validateCurrentUser(currentUser);
-    await this.validateNomeAvailable(dto.nome);
-    const id_configuracao_sistema = await this.findCurrentSystemConfigId();
+    return this.mqttConfigService.executeProtectedEquipmentMutation(
+      'CREATE_PUMP',
+      async (tx) => {
+        await this.validateNomeAvailable(dto.nome, undefined, tx);
+        const id_configuracao_sistema =
+          await this.findCurrentSystemConfigId(tx);
 
-    const created = await this.prisma.bombas.create({
-      data: buildBombaCreateData(dto, id_configuracao_sistema, currentUser),
-      select: bombaConfiguracaoSelect,
-    });
+        const created = await tx.bombas.create({
+          data: buildBombaCreateData(dto, id_configuracao_sistema, currentUser),
+          select: bombaConfiguracaoSelect,
+        });
 
-    return ConfiguracoesBombasMapper.toResponse(created);
+        return ConfiguracoesBombasMapper.toResponse(created);
+      },
+    );
   }
 
   async update(
@@ -91,58 +101,82 @@ export class ConfiguracoesBombasService {
     currentUser: ConfiguracoesCurrentUser,
   ): Promise<BombaConfiguracaoResponseDto> {
     this.validateCurrentUser(currentUser);
-    await this.findRecordById(id_bomba);
+    return this.mqttConfigService.executeProtectedEquipmentMutation(
+      'UPDATE_PUMP',
+      async (tx) => {
+        await this.findRecordById(id_bomba, tx);
 
-    if (dto.nome !== undefined) {
-      await this.validateNomeAvailable(dto.nome, id_bomba);
-    }
+        if (dto.nome !== undefined) {
+          await this.validateNomeAvailable(dto.nome, id_bomba, tx);
+        }
 
-    const updated = await this.prisma.bombas.update({
-      where: { id_bomba },
-      data: buildBombaUpdateData(dto, currentUser),
-      select: bombaConfiguracaoSelect,
-    });
+        const updated = await tx.bombas.update({
+          where: { id_bomba },
+          data: buildBombaUpdateData(dto, currentUser),
+          select: bombaConfiguracaoSelect,
+        });
 
-    return ConfiguracoesBombasMapper.toResponse(updated);
+        return ConfiguracoesBombasMapper.toResponse(updated);
+      },
+    );
   }
 
   async ativar(
     id_bomba: number,
     currentUser: ConfiguracoesCurrentUser,
   ): Promise<BombaConfiguracaoResponseDto> {
-    return this.updateStatus(id_bomba, statusbomba.ATIVA, currentUser);
+    return this.updateStatus(
+      id_bomba,
+      statusbomba.ATIVA,
+      'ACTIVATE_PUMP',
+      currentUser,
+    );
   }
 
   async desativar(
     id_bomba: number,
     currentUser: ConfiguracoesCurrentUser,
   ): Promise<BombaConfiguracaoResponseDto> {
-    return this.updateStatus(id_bomba, statusbomba.INATIVA, currentUser);
+    return this.updateStatus(
+      id_bomba,
+      statusbomba.INATIVA,
+      'DEACTIVATE_PUMP',
+      currentUser,
+    );
   }
 
   private async updateStatus(
     id_bomba: number,
     status_padrao: statusbomba,
+    action: 'ACTIVATE_PUMP' | 'DEACTIVATE_PUMP',
     currentUser: ConfiguracoesCurrentUser,
   ): Promise<BombaConfiguracaoResponseDto> {
     this.validateCurrentUser(currentUser);
-    await this.findRecordById(id_bomba);
+    return this.mqttConfigService.executeProtectedEquipmentMutation(
+      action,
+      async (tx) => {
+        await this.findRecordById(id_bomba, tx);
 
-    const updated = await this.prisma.bombas.update({
-      where: { id_bomba },
-      data: {
-        status_padrao,
-        id_usuario_alteracao: currentUser.id_usuario,
-        atualizado_em: new Date(),
+        const updated = await tx.bombas.update({
+          where: { id_bomba },
+          data: {
+            status_padrao,
+            id_usuario_alteracao: currentUser.id_usuario,
+            atualizado_em: new Date(),
+          },
+          select: bombaConfiguracaoSelect,
+        });
+
+        return ConfiguracoesBombasMapper.toResponse(updated);
       },
-      select: bombaConfiguracaoSelect,
-    });
-
-    return ConfiguracoesBombasMapper.toResponse(updated);
+    );
   }
 
-  private async findRecordById(id_bomba: number) {
-    const bomba = await this.prisma.bombas.findUnique({
+  private async findRecordById(
+    id_bomba: number,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const bomba = await client.bombas.findUnique({
       where: { id_bomba },
       select: bombaConfiguracaoSelect,
     });
@@ -154,8 +188,10 @@ export class ConfiguracoesBombasService {
     return bomba;
   }
 
-  private async findCurrentSystemConfigId(): Promise<number> {
-    const config = await this.prisma.configuracoessistema.findFirst({
+  private async findCurrentSystemConfigId(
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<number> {
+    const config = await client.configuracoessistema.findFirst({
       orderBy: {
         id_configuracao_sistema: 'asc',
       },
@@ -174,8 +210,9 @@ export class ConfiguracoesBombasService {
   private async validateNomeAvailable(
     nome: string,
     currentId?: number,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<void> {
-    const existing = await this.prisma.bombas.findUnique({
+    const existing = await client.bombas.findUnique({
       where: { nome: nome.trim() },
       select: { id_bomba: true },
     });

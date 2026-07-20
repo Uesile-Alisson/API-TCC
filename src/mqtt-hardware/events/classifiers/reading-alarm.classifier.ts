@@ -122,7 +122,12 @@ export class ReadingAlarmClassifier {
   }): boolean {
     return (
       context.status_processo === statusprocesso.EM_EXECUCAO &&
-      context.status_tanque_processo === statustanqueprocesso.EM_EXECUCAO
+      (context.status_tanque_processo === statustanqueprocesso.EM_EXECUCAO ||
+        context.status_tanque_processo === statustanqueprocesso.GERANDO_VACUO ||
+        context.status_tanque_processo ===
+          statustanqueprocesso.VACUO_ATINGIDO ||
+        context.status_tanque_processo ===
+          statustanqueprocesso.VACUO_ESTABILIZADO)
     );
   }
 

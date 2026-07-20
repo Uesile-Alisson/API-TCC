@@ -1,5 +1,14 @@
-import { statusprocesso, statustanqueprocesso } from '@prisma/client';
+import {
+  etapaencerramentoprocesso,
+  modooperacaoauxiliar,
+  nivelacesso,
+  statusestagnacao,
+  statusprocesso,
+  statussubsistemaauxiliar,
+  statustanqueprocesso,
+} from '@prisma/client';
 import type { Socket } from 'socket.io';
+import { SocketAuthService } from '../../auth/socket-auth.service';
 import { ProcessoDashboardData } from '../interfaces';
 import { PROCESSOS_SOCKET_EVENTS } from './processos-socket.events';
 import { ProcessosSocketGateway } from './processos-socket.gateway';
@@ -19,6 +28,11 @@ type SocketMock = {
   emit: jest.Mock;
   join: jest.Mock;
   leave: jest.Mock;
+  disconnect: jest.Mock;
+};
+
+type NamespaceMock = {
+  name: string;
 };
 
 describe('ProcessosSocketGateway', () => {
@@ -26,9 +40,23 @@ describe('ProcessosSocketGateway', () => {
   let server: ServerMock;
   let roomEmitter: RoomEmitterMock;
   let client: SocketMock;
+  let socketAuthService: {
+    registerAuthenticationMiddleware: jest.Mock;
+    getAuthenticatedUser: jest.Mock;
+  };
 
   beforeEach(() => {
-    gateway = new ProcessosSocketGateway();
+    socketAuthService = {
+      registerAuthenticationMiddleware: jest.fn(),
+      getAuthenticatedUser: jest.fn().mockReturnValue({
+        id_usuario: 7,
+        login: 'operador',
+        nivel_acesso: nivelacesso.OPERADOR,
+      }),
+    };
+    gateway = new ProcessosSocketGateway(
+      socketAuthService as unknown as SocketAuthService,
+    );
     roomEmitter = {
       emit: jest.fn(),
     };
@@ -44,6 +72,7 @@ describe('ProcessosSocketGateway', () => {
       emit: jest.fn(),
       join: jest.fn(),
       leave: jest.fn(),
+      disconnect: jest.fn(),
     };
 
     Object.defineProperty(gateway, 'server', {
@@ -52,9 +81,20 @@ describe('ProcessosSocketGateway', () => {
     });
   });
 
-  it('handleConnection emite process:socket-connected para o cliente', () => {
+  it('afterInit registra o middleware de autenticacao antes das conexoes', () => {
+    const namespace: NamespaceMock = { name: '/processos' };
+
+    gateway.afterInit(namespace as never);
+
+    expect(
+      socketAuthService.registerAuthenticationMiddleware,
+    ).toHaveBeenCalledWith(namespace);
+  });
+
+  it('handleConnection emite process:socket-connected para cliente autenticado', () => {
     gateway.handleConnection(client as unknown as Socket);
 
+    expect(socketAuthService.getAuthenticatedUser).toHaveBeenCalledWith(client);
     expect(client.emit).toHaveBeenCalledWith(
       PROCESSOS_SOCKET_EVENTS.CONNECTED,
       expect.objectContaining({
@@ -128,6 +168,24 @@ describe('ProcessosSocketGateway', () => {
       id_processo: 10,
       motivo: 'Falha crítica',
       message: 'Parada de emergência executada.',
+      parada_emergencia: {
+        ativa: true,
+        status: 'AGUARDANDO_CONFIRMACAO' as const,
+        etapa: etapaencerramentoprocesso.AGUARDANDO_TELEMETRIA,
+        hardware_confirmado: false,
+        nivel_confirmacao: 'NAO_CONFIRMADO' as const,
+        latch_emergencia_confirmado: false,
+        saidas_controlador_confirmadas: false,
+        feedback_mecanico_disponivel: false,
+        requer_intervencao: false,
+        solicitada_em: new Date('2026-01-01T00:00:00Z'),
+        confirmada_em: null,
+        proxima_tentativa_em: null,
+        tentativa: 1,
+        comando_tentativas: 1,
+        ultimo_erro: null,
+        versao: 2,
+      },
       emitted_at: new Date('2026-01-01T00:00:00Z'),
     };
 
@@ -161,6 +219,59 @@ describe('ProcessosSocketGateway', () => {
     );
   });
 
+  it('emitAuxiliaryStateUpdated emite estado apenas para sala do processo', () => {
+    const auxiliaryState = makeDashboard().subsistema_auxiliar;
+    const payload = {
+      id_processo: 10,
+      auxiliary_state: auxiliaryState,
+      emitted_at: new Date('2026-01-01T00:01:00Z'),
+    };
+
+    gateway.emitAuxiliaryStateUpdated(payload);
+
+    expect(server.emit).not.toHaveBeenCalled();
+    expect(server.to).toHaveBeenCalledWith('process:10');
+    expect(roomEmitter.emit).toHaveBeenCalledWith(
+      PROCESSOS_SOCKET_EVENTS.AUXILIARY_STATE_UPDATED,
+      payload,
+    );
+  });
+
+  it('emitTankUpdated emite atualizacao incremental apenas para sala', () => {
+    const dashboard = makeDashboard();
+    const { leituras, ...tank } = dashboard.tanques[0];
+    const payload = {
+      id_processo: 10,
+      id_processo_tanque: 20,
+      id_tanque: 30,
+      lifecycle_changed: true,
+      previous_status: statustanqueprocesso.GERANDO_VACUO,
+      stagnation_changed: false,
+      previous_stagnation_status: statusestagnacao.NORMAL,
+      tank,
+      reading: leituras[0],
+      emitted_at: new Date('2026-01-01T00:01:00Z'),
+    };
+
+    gateway.emitTankUpdated(payload);
+
+    expect(server.emit).not.toHaveBeenCalled();
+    expect(server.to).toHaveBeenCalledWith('process:10');
+    expect(roomEmitter.emit).toHaveBeenCalledWith(
+      PROCESSOS_SOCKET_EVENTS.TANK_UPDATED,
+      payload,
+    );
+  });
+
+  it('handleConnection recusa defesa em profundidade sem contexto autenticado', () => {
+    socketAuthService.getAuthenticatedUser.mockReturnValueOnce(null);
+
+    gateway.handleConnection(client as unknown as Socket);
+
+    expect(client.emit).not.toHaveBeenCalled();
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+  });
+
   it('payload invalido em handleJoinProcess emite process:error', () => {
     const response = gateway.handleJoinProcess(client as unknown as Socket, {
       id_processo: 0,
@@ -184,6 +295,7 @@ describe('ProcessosSocketGateway', () => {
   function makeDashboard(): ProcessoDashboardData {
     return {
       id_processo: 10,
+      snapshot_at: new Date('2026-01-01T00:01:00Z'),
       nome_processo: 'Processo teste',
       status_processo: statusprocesso.EM_EXECUCAO,
       vacuo_alvo: -80,
@@ -193,20 +305,57 @@ describe('ProcessosSocketGateway', () => {
       iniciado_em: new Date('2026-01-01T00:00:00Z'),
       finalizado_em: null,
       progresso_percentual: 20,
+      subsistema_auxiliar: {
+        id_processo: 10,
+        modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+        status_subsistema: statussubsistemaauxiliar.DISPONIVEL,
+        versao: 1,
+        tanque_em_atendimento: null,
+        bomba_auxiliar: null,
+        tanques: [],
+        motivo_bloqueio: null,
+        ultimo_erro: null,
+        atualizado_em: new Date('2026-01-01T00:01:00Z'),
+        snapshot_at: new Date('2026-01-01T00:01:00Z'),
+      },
       tanques: [
         {
           id_processo_tanque: 20,
           id_tanque: 30,
           nome_tanque: 'Tanque A',
           status_tanque_processo: statustanqueprocesso.EM_EXECUCAO,
+          vacuo_atingido: false,
+          vacuo_estabilizado: false,
           vacuo_alvo: -80,
           vacuo_atual: -40,
           vacuo_inicial: -5,
           vacuo_final: null,
           vacuo_medio: -30,
           eficiencia: 50,
+          iniciado_em: new Date('2026-01-01T00:00:00Z'),
+          finalizado_em: null,
+          ultima_leitura_em: new Date('2026-01-01T00:01:00Z'),
+          ultima_leitura_recebida_em: new Date('2026-01-01T00:01:01Z'),
           total_sensores: 1,
           total_leituras: 1,
+          estagnacao: {
+            status: statusestagnacao.NORMAL,
+            suspeita: false,
+            detectada: false,
+            iniciada_em: null,
+            detectada_em: null,
+            ultima_avaliacao_em: null,
+            duracao_segundos: 0,
+            variacao_vacuo: null,
+            janela_segundos: 60,
+            variacao_minima_esperada: 2,
+            leituras_janela: 0,
+            leituras_minimas: 5,
+            janelas_sem_progresso: 0,
+            janelas_consecutivas_necessarias: 2,
+            id_alarme_ativo: null,
+            mensagem: 'Detector aguardando janela valida.',
+          },
           leituras: [
             {
               id_leitura_sensor: 1,
@@ -215,6 +364,7 @@ describe('ProcessosSocketGateway', () => {
               id_sensor: 50,
               valor_vacuo: -40,
               leitura_em: new Date('2026-01-01T00:01:00Z'),
+              recebido_em: new Date('2026-01-01T00:01:01Z'),
             },
           ],
         },

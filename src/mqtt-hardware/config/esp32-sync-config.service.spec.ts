@@ -4,6 +4,7 @@ import { MqttClientService } from '../connection/mqtt-client.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MqttConfigService } from './mqtt-config.service';
 import { Esp32SyncConfigService } from './esp32-sync-config.service';
+import { CommandAckHandler } from '../handlers/command-ack.handler';
 
 type AsyncMock = Mock<(...args: unknown[]) => Promise<unknown>>;
 
@@ -14,6 +15,21 @@ describe('Esp32SyncConfigService', () => {
   it('publica SYNC_CONFIG com valvulas principais e auxiliares', async () => {
     const publish = asyncMock().mockResolvedValue(undefined);
     const updateLastSync = asyncMock().mockResolvedValue(undefined);
+    const waitForFinalAck = jest.fn().mockReturnValue({
+      promise: Promise.resolve({
+        correlation_id: 'sync-1',
+        comando: 'SINCRONIZAR_HARDWARE',
+        status: 'EXECUTADO',
+        codigo_hardware: null,
+        id_processo: null,
+        mensagem: 'Sincronizado.',
+        erro: null,
+        recebido_em: new Date('2026-01-01T00:00:01.000Z'),
+        topic: 'tsea/acks',
+      }),
+      shouldPublish: true,
+      cancel: jest.fn(),
+    });
     const getConfig = asyncMock().mockResolvedValue({
       topico_configuracoes: 'tsea/config',
       topico_comandos: 'tsea/comandos',
@@ -64,13 +80,17 @@ describe('Esp32SyncConfigService', () => {
       prisma as unknown as PrismaService,
       { publish } as unknown as MqttClientService,
       { getConfig, updateLastSync } as unknown as MqttConfigService,
+      { waitForFinalAck } as unknown as CommandAckHandler,
     );
 
-    await service.publishSyncConfig({ correlation_id: 'sync-1' });
+    const result = await service.publishSyncConfig({
+      correlation_id: 'sync-1',
+    });
 
     expect(publish).toHaveBeenCalledWith(
       'tsea/config',
       expect.objectContaining({
+        schema_version: 2,
         hardware: expect.objectContaining({
           valvulas: expect.arrayContaining([
             expect.objectContaining({
@@ -90,6 +110,17 @@ describe('Esp32SyncConfigService', () => {
       }),
       { qos: 1, retain: true },
     );
+    expect(waitForFinalAck).toHaveBeenCalledWith(
+      'sync-1',
+      'SINCRONIZAR_HARDWARE',
+      10000,
+    );
+    expect(result).toMatchObject({
+      acknowledged: true,
+      ack_status: 'EXECUTADO',
+      ack_message: 'Sincronizado.',
+      reused_ack: false,
+    });
   });
 
   function makePump(

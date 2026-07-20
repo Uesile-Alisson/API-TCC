@@ -29,6 +29,12 @@ export class TopicValidator {
       throw new BadRequestException(`${fieldname} não pode conter "//".`);
     }
 
+    if (topic.includes('+') || topic.includes('#')) {
+      throw new BadRequestException(
+        `${fieldname} deve ser um topico exato e nao pode conter curingas MQTT.`,
+      );
+    }
+
     if (topic.startsWith('/')) {
       throw new BadRequestException(`${fieldname} não pode começar com "/".`);
     }

@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -22,9 +24,15 @@ import {
   tipologoperacional,
   funcaovalvula,
 } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
 import { createHash } from 'node:crypto';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
+import { MqttConfigService } from '../../mqtt-hardware/config/mqtt-config.service';
+import { MqttClientService } from '../../mqtt-hardware/connection/mqtt-client.service';
+import { MqttHealthService } from '../../mqtt-hardware/connection/mqtt-health.service';
+import {
+  ReadingContextCacheService,
+  SystemConfigCacheService,
+} from '../../mqtt-hardware/events/cache';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BackupMapper, backupSelect } from './backup.mapper';
 import { BackupQueryDto } from './dto/backup-query.dto';
@@ -60,9 +68,16 @@ type RestoreContext = {
 
 @Injectable()
 export class BackupService {
-  private readonly snapshotVersion = '1.0.0';
+  private readonly snapshotVersion = '1.1.0';
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mqttConfigService: MqttConfigService,
+    private readonly mqttClientService: MqttClientService,
+    private readonly mqttHealthService: MqttHealthService,
+    private readonly systemConfigCache: SystemConfigCacheService,
+    private readonly readingContextCache: ReadingContextCacheService,
+  ) {}
 
   async create(dto: CreateBackupDto, currentUser: AuthenticatedUser) {
     const userId = this.getUserId(currentUser);
@@ -169,7 +184,7 @@ export class BackupService {
     currentUser: AuthenticatedUser,
   ) {
     const userId = this.getUserId(currentUser);
-    let transactionStarted = false;
+    let restoreStarted = false;
 
     try {
       if (dto.confirmar_restauracao !== true) {
@@ -178,58 +193,88 @@ export class BackupService {
         );
       }
 
-      const backup = await this.findBackupOrFail(id_backup);
-      const snapshot = this.requireSnapshotRecord(backup.snapshot);
+      const result =
+        await this.mqttConfigService.executeProtectedEquipmentMutation(
+          'RESTORE_BACKUP',
+          async (tx) => {
+            // O callback pode ser repetido em retry de serializacao. Cada tentativa
+            // precisa reler o backup e reconstruir avisos sem reutilizar estado.
+            restoreStarted = false;
+            const backup = await this.findBackupOrFail(id_backup, tx);
+            const snapshot = this.requireSnapshotRecord(backup.snapshot);
 
-      this.validateRestoreBackup(backup, snapshot, dto);
+            this.validateRestoreBackup(backup, snapshot);
 
-      const context: RestoreContext = {
-        warnings: [],
-        userId,
-      };
+            const context: RestoreContext = {
+              warnings: [],
+              userId,
+            };
 
-      transactionStarted = true;
-      const restored = await this.prisma.$transaction(async (tx) => {
-        if (isSystemBackupType(backup.tipo_backup)) {
-          await this.restoreSystemSnapshot(tx, snapshot, context);
-        }
+            // A partir daqui a tentativa executa a primeira escrita de restauracao.
+            restoreStarted = true;
 
-        if (isMqttBackupType(backup.tipo_backup)) {
-          await this.restoreMqttSnapshot(tx, snapshot, dto, context);
-        }
+            if (isSystemBackupType(backup.tipo_backup)) {
+              await this.restoreSystemSnapshot(tx, snapshot, context);
+            }
 
-        const updated = await tx.backups.update({
-          where: { id_backup },
-          data: {
-            status_backup: statusbackup.RESTAURADO,
-            restaurado_em: new Date(),
-            id_usuario_restauracao: userId,
-            erro: null,
-            metadados: this.toJsonInput({
-              ...this.jsonToRecord(backup.metadados),
-              ultima_restauracao: {
-                motivo: this.optionalText(dto.motivo),
-                warnings: context.warnings,
+            if (isMqttBackupType(backup.tipo_backup)) {
+              await this.restoreMqttSnapshot(tx, snapshot, context);
+            }
+
+            const updated = await tx.backups.update({
+              where: { id_backup },
+              data: {
+                status_backup: statusbackup.RESTAURADO,
+                restaurado_em: new Date(),
+                id_usuario_restauracao: userId,
+                erro: null,
+                metadados: this.toJsonInput({
+                  ...this.jsonToRecord(backup.metadados),
+                  ultima_restauracao: {
+                    motivo: this.optionalText(dto.motivo),
+                    warnings: context.warnings,
+                  },
+                }),
               },
-            }),
+              select: backupSelect,
+            });
+
+            await this.createOperationalLog(tx, {
+              userId,
+              action: 'RESTAURAR_BACKUP',
+              result: resultadooperacao.SUCESSO,
+              origin: origemlogoperacional.USUARIO,
+              description: `Backup ${backup.id_backup} restaurado com sucesso.`,
+            });
+
+            return {
+              restored: updated,
+              warnings: [...context.warnings],
+              systemRestored: isSystemBackupType(backup.tipo_backup),
+              mqttRestored: isMqttBackupType(backup.tipo_backup),
+            };
           },
-          select: backupSelect,
-        });
+        );
 
-        await this.createOperationalLog(tx, {
-          userId,
-          action: 'RESTAURAR_BACKUP',
-          result: resultadooperacao.SUCESSO,
-          origin: origemlogoperacional.USUARIO,
-          description: `Backup ${backup.id_backup} restaurado com sucesso.`,
-        });
+      // A transacao protegida ja foi confirmada; falhas posteriores de mapeamento
+      // nao devem reclassificar um backup restaurado como falha.
+      restoreStarted = false;
+      const warnings = [...result.warnings];
 
-        return updated;
-      });
+      if (result.systemRestored) {
+        this.systemConfigCache.invalidate();
+        this.readingContextCache.invalidate();
+      }
 
-      return BackupMapper.toRestoreResult(restored, context.warnings);
+      if (result.mqttRestored) {
+        await this.reconcileMqttRuntimeAfterRestore(warnings);
+      }
+
+      return BackupMapper.toRestoreResult(result.restored, warnings);
     } catch (error) {
-      if (transactionStarted) {
+      const isOperationalConflict = error instanceof ConflictException;
+
+      if (restoreStarted && !isOperationalConflict) {
         await this.markRestoreFailure(id_backup, userId, error);
       } else {
         await this.logRestoreFailure(id_backup, userId, error);
@@ -328,13 +373,18 @@ export class BackupService {
         id_usuario_alteracao: true,
         broker_url: true,
         porta: true,
-        usuario_mqtt: true,
+        usuario_mqtt_configurado: true,
+        senha_mqtt_configurada: true,
+        credenciais_verificadas_em: true,
+        ultima_falha_credenciais: true,
         topico_leituras: true,
         topico_comandos: true,
         topico_status: true,
         topico_alarmes: true,
         topico_heartbeat: true,
         topico_acoplamentos: true,
+        topico_configuracoes: true,
+        topico_acks: true,
         reconexao_automatica: true,
         timeout_comunicacao: true,
         status_conexao: true,
@@ -364,13 +414,18 @@ export class BackupService {
         id_usuario_alteracao: config.id_usuario_alteracao,
         broker_url: config.broker_url,
         porta: config.porta,
-        usuario_mqtt: config.usuario_mqtt,
+        usuario_mqtt_configurado: config.usuario_mqtt_configurado,
+        senha_mqtt_configurada: config.senha_mqtt_configurada,
+        credenciais_verificadas_em: config.credenciais_verificadas_em,
+        ultima_falha_credenciais: config.ultima_falha_credenciais,
         topico_leituras: config.topico_leituras,
         topico_comandos: config.topico_comandos,
         topico_status: config.topico_status,
         topico_alarmes: config.topico_alarmes,
         topico_heartbeat: config.topico_heartbeat,
         topico_acoplamentos: config.topico_acoplamentos,
+        topico_configuracoes: config.topico_configuracoes,
+        topico_acks: config.topico_acks,
         reconexao_automatica: config.reconexao_automatica,
         timeout_comunicacao: config.timeout_comunicacao,
         status_conexao: config.status_conexao,
@@ -382,7 +437,7 @@ export class BackupService {
         atualizado_em: config.atualizado_em,
         chave_configuracao: config.chave_configuracao,
       }),
-      senha_mqtt_omitida: true,
+      credenciais_mqtt_nao_incluidas: true,
     };
 
     return {
@@ -392,7 +447,9 @@ export class BackupService {
         latestHistory?.id_mqtt_configuracao_historico ?? null,
       resumo: {
         chave_configuracao: config.chave_configuracao,
-        senha_mqtt_omitida: true,
+        usuario_mqtt_configurado: config.usuario_mqtt_configurado,
+        senha_mqtt_configurada: config.senha_mqtt_configurada,
+        credenciais_mqtt_nao_incluidas: true,
       },
     };
   }
@@ -443,6 +500,30 @@ export class BackupService {
       encerramento_automatico: this.booleanValue(
         record.encerramento_automatico,
       ),
+      tempo_estabilizacao_vacuo_segundos:
+        record.tempo_estabilizacao_vacuo_segundos === undefined
+          ? 30
+          : this.numberValue(record.tempo_estabilizacao_vacuo_segundos),
+      estabilizacao_cobertura_minima_percentual:
+        record.estabilizacao_cobertura_minima_percentual === undefined
+          ? '80.00'
+          : this.stringValue(record.estabilizacao_cobertura_minima_percentual),
+      intervalo_leitura_esperado_ms:
+        record.intervalo_leitura_esperado_ms === undefined
+          ? 1000
+          : this.numberValue(record.intervalo_leitura_esperado_ms),
+      timeout_leitura_sensor_ms:
+        record.timeout_leitura_sensor_ms === undefined
+          ? 2500
+          : this.numberValue(record.timeout_leitura_sensor_ms),
+      tempo_retencao_vacuo_segundos:
+        record.tempo_retencao_vacuo_segundos === undefined
+          ? 30
+          : this.numberValue(record.tempo_retencao_vacuo_segundos),
+      perda_vacuo_maxima_retencao:
+        record.perda_vacuo_maxima_retencao === undefined
+          ? '2.000'
+          : this.stringValue(record.perda_vacuo_maxima_retencao),
       limite_seguranca_vacuo: this.stringValue(record.limite_seguranca_vacuo),
       vacuo_padrao: this.stringValue(record.vacuo_padrao),
       quantidade_maxima_tanques: this.numberValue(
@@ -650,13 +731,9 @@ export class BackupService {
             TipoValvula,
             'tipo_valvula',
           ),
-          status_valvula: this.enumValue(
-            record.status_valvula,
-            StatusValvula,
-            'status_valvula',
-          ),
+          status_valvula: StatusValvula.DESCONHECIDA,
           ativo: this.booleanValue(record.ativo),
-          ultimo_acionamento: this.dateValue(record.ultimo_acionamento),
+          ultimo_acionamento: null,
           criado_em: this.dateValue(record.criado_em) ?? new Date(),
           atualizado_em: new Date(),
           funcao_valvula: this.enumValue(
@@ -673,13 +750,7 @@ export class BackupService {
             TipoValvula,
             'tipo_valvula',
           ),
-          status_valvula: this.enumValue(
-            record.status_valvula,
-            StatusValvula,
-            'status_valvula',
-          ),
           ativo: this.booleanValue(record.ativo),
-          ultimo_acionamento: this.dateValue(record.ultimo_acionamento),
           atualizado_em: new Date(),
           funcao_valvula: this.enumValue(
             record.funcao_valvula,
@@ -690,22 +761,23 @@ export class BackupService {
         },
       });
     }
+
+    if (records.length > 0) {
+      context.warnings.push(
+        'Estados fisicos historicos das valvulas nao foram restaurados; a telemetria atual foi preservada e novas valvulas ficaram como DESCONHECIDA.',
+      );
+    }
   }
 
   private async restoreMqttSnapshot(
     tx: Prisma.TransactionClient,
     snapshot: JsonRecord,
-    dto: RestoreBackupDto,
     context: RestoreContext,
   ): Promise<void> {
     const mqtt = this.requireRecord(snapshot.mqtt, 'snapshot.mqtt');
     const config = this.requireRecord(
       mqtt.configuracao_mqtt,
       'snapshot.mqtt.configuracao_mqtt',
-    );
-    const senhaHash = await bcrypt.hash(
-      this.stringValue(dto.nova_senha_mqtt),
-      10,
     );
     const chave_configuracao =
       this.optionalText(this.stringValue(config.chave_configuracao)) ??
@@ -717,14 +789,19 @@ export class BackupService {
         id_usuario_alteracao: context.userId,
         broker_url: this.stringValue(config.broker_url),
         porta: this.numberValue(config.porta),
-        usuario_mqtt: this.optionalText(config.usuario_mqtt),
-        senha_mqtt_hash: senhaHash,
+        usuario_mqtt_configurado: false,
+        senha_mqtt_configurada: false,
+        credenciais_verificadas_em: null,
+        ultima_falha_credenciais: null,
         topico_leituras: this.stringValue(config.topico_leituras),
         topico_comandos: this.stringValue(config.topico_comandos),
         topico_status: this.stringValue(config.topico_status),
         topico_alarmes: this.stringValue(config.topico_alarmes),
         topico_heartbeat: this.stringValue(config.topico_heartbeat),
         topico_acoplamentos: this.stringValue(config.topico_acoplamentos),
+        topico_configuracoes:
+          this.optionalText(config.topico_configuracoes) ?? 'tsea/config',
+        topico_acks: this.optionalText(config.topico_acks) ?? 'tsea/acks',
         reconexao_automatica: this.booleanValue(config.reconexao_automatica),
         timeout_comunicacao: this.numberValue(config.timeout_comunicacao),
         status_conexao: statusconexaomqtt.DESCONECTADO,
@@ -740,14 +817,19 @@ export class BackupService {
         id_usuario_alteracao: context.userId,
         broker_url: this.stringValue(config.broker_url),
         porta: this.numberValue(config.porta),
-        usuario_mqtt: this.optionalText(config.usuario_mqtt),
-        senha_mqtt_hash: senhaHash,
+        usuario_mqtt_configurado: false,
+        senha_mqtt_configurada: false,
+        credenciais_verificadas_em: null,
+        ultima_falha_credenciais: null,
         topico_leituras: this.stringValue(config.topico_leituras),
         topico_comandos: this.stringValue(config.topico_comandos),
         topico_status: this.stringValue(config.topico_status),
         topico_alarmes: this.stringValue(config.topico_alarmes),
         topico_heartbeat: this.stringValue(config.topico_heartbeat),
         topico_acoplamentos: this.stringValue(config.topico_acoplamentos),
+        topico_configuracoes:
+          this.optionalText(config.topico_configuracoes) ?? 'tsea/config',
+        topico_acks: this.optionalText(config.topico_acks) ?? 'tsea/acks',
         reconexao_automatica: this.booleanValue(config.reconexao_automatica),
         timeout_comunicacao: this.numberValue(config.timeout_comunicacao),
         status_conexao: statusconexaomqtt.DESCONECTADO,
@@ -762,14 +844,18 @@ export class BackupService {
         id_usuario_alteracao: true,
         broker_url: true,
         porta: true,
-        usuario_mqtt: true,
-        senha_mqtt_hash: true,
+        usuario_mqtt_configurado: true,
+        senha_mqtt_configurada: true,
+        credenciais_verificadas_em: true,
+        ultima_falha_credenciais: true,
         topico_leituras: true,
         topico_comandos: true,
         topico_status: true,
         topico_alarmes: true,
         topico_heartbeat: true,
         topico_acoplamentos: true,
+        topico_configuracoes: true,
+        topico_acks: true,
         reconexao_automatica: true,
         timeout_comunicacao: true,
         status_conexao: true,
@@ -788,22 +874,19 @@ export class BackupService {
         registrado_em: new Date(),
       },
     });
+
+    context.warnings.push(
+      'As credenciais MQTT externas nao fazem parte do backup e devem ser configuradas e verificadas novamente.',
+    );
   }
 
   private validateRestoreBackup(
     backup: BackupRecord,
     snapshot: JsonRecord,
-    dto: RestoreBackupDto,
   ): void {
     if (!canRestoreStatus(backup.status_backup)) {
       throw new BadRequestException(
         `Backup com status ${backup.status_backup} nao pode ser restaurado.`,
-      );
-    }
-
-    if (isMqttBackupType(backup.tipo_backup) && !dto.nova_senha_mqtt) {
-      throw new BadRequestException(
-        'nova_senha_mqtt e obrigatoria para restaurar backup MQTT ou COMPLETO.',
       );
     }
 
@@ -816,8 +899,11 @@ export class BackupService {
     }
   }
 
-  private async findBackupOrFail(id_backup: number): Promise<BackupRecord> {
-    const backup = await this.prisma.backups.findUnique({
+  private async findBackupOrFail(
+    id_backup: number,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ): Promise<BackupRecord> {
+    const backup = await client.backups.findUnique({
       where: { id_backup },
       select: backupSelect,
     });
@@ -869,6 +955,31 @@ export class BackupService {
       });
     } catch {
       return;
+    }
+  }
+
+  private async reconcileMqttRuntimeAfterRestore(
+    warnings: string[],
+  ): Promise<void> {
+    try {
+      const disconnected = await this.mqttClientService.disconnect();
+      if (!disconnected.success) {
+        warnings.push(
+          'A configuracao MQTT foi restaurada, mas o cliente MQTT nao confirmou a desconexao. Reinicie a API antes de iniciar processos.',
+        );
+      }
+    } catch (error) {
+      warnings.push(
+        `A configuracao MQTT foi restaurada, mas a desconexao do cliente falhou: ${this.summarizeError(error)} Reinicie a API antes de iniciar processos.`,
+      );
+    }
+
+    try {
+      await this.mqttHealthService.reloadHealthConfig();
+    } catch (error) {
+      warnings.push(
+        `A configuracao MQTT foi restaurada, mas o monitor de saude nao foi recarregado: ${this.summarizeError(error)}`,
+      );
     }
   }
 
@@ -1143,11 +1254,7 @@ export class BackupService {
   }
 
   private toHttpException(error: unknown, fallbackMessage: string): Error {
-    if (
-      error instanceof BadRequestException ||
-      error instanceof NotFoundException ||
-      error instanceof UnauthorizedException
-    ) {
+    if (error instanceof HttpException) {
       return error;
     }
 

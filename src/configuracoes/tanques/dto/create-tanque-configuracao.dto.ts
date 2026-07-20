@@ -1,7 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { statustanque } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsNumber, IsString, MaxLength, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsNegative,
+  IsNumber,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CreateTanqueConfiguracaoDto {
   @ApiProperty({ example: 'Tanque 01', maxLength: 80 })
@@ -25,12 +32,21 @@ export class CreateTanqueConfiguracaoDto {
   })
   unidade_volume!: string;
 
-  @ApiProperty({ example: -80.5 })
+  @ApiProperty({
+    example: -80.5,
+    maximum: -0.001,
+    description:
+      'Vácuo padrão manométrico em kPa, expresso como valor negativo.',
+  })
   @Type(() => Number)
   @IsNumber(
     { allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 },
     { message: 'vacuo_padrao deve ser um numero valido.' },
   )
+  @IsNegative({
+    message:
+      'vacuo_padrao deve ser menor que zero (pressao manometrica em kPa).',
+  })
   vacuo_padrao!: number;
 
   @ApiProperty({ enum: statustanque, example: statustanque.ATIVO })

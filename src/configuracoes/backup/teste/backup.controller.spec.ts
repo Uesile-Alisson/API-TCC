@@ -78,7 +78,6 @@ describe('BackupController', () => {
   it('restore delega para BackupService.restore', async () => {
     const dto = {
       confirmar_restauracao: true,
-      nova_senha_mqtt: '123456',
     };
     const currentUser = makeCurrentUser();
     const response = { id_backup: 10, status_backup: statusbackup.RESTAURADO };

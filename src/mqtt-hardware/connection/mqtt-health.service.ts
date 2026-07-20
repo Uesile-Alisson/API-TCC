@@ -10,6 +10,7 @@ import { MqttClientService } from './mqtt-client.service';
 import { MqttConfigService } from '../config/mqtt-config.service';
 import { HardwareState } from '../interfaces/hardware-state.interface';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
+import { ActiveMqttConfig } from '../interfaces/active-mqtt-config.interface';
 import { TopicMatcher } from '../topics/topic-matcher';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class MqttHealthService implements OnModuleDestroy, OnModuleInit {
   private readonly interval_comunicationMs = 1000;
   private timeout_heartbeat = 10000;
   private interval_comunication: ReturnType<typeof setInterval> | null = null;
+  private activeMqttConfig: ActiveMqttConfig | null = null;
   private state: HardwareState = {
     mqttConnected: false,
     esp32Online: false,
@@ -67,6 +69,13 @@ export class MqttHealthService implements OnModuleDestroy, OnModuleInit {
     return this.state.mqttConnected;
   }
 
+  isCurrentConfigApplied(): boolean {
+    return (
+      this.activeMqttConfig !== null &&
+      this.mqttClientService.isConfigApplied(this.activeMqttConfig)
+    );
+  }
+
   getLastHeartbeatAt(): Date | null {
     return this.state.lastHeartbeatAt;
   }
@@ -93,6 +102,7 @@ export class MqttHealthService implements OnModuleDestroy, OnModuleInit {
     }
 
     this.timeout_heartbeat = config.timeout_comunicacao;
+    this.activeMqttConfig = config;
 
     this.logger.log(
       `Timeout de heartbeat MQTT carregado: ${this.timeout_heartbeat} ms.`,

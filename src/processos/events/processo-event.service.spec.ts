@@ -82,12 +82,15 @@ describe('ProcessoEventService', () => {
       id_usuario: 20,
     });
 
-    expect(createSpy).toHaveBeenCalledWith({
-      id_processo: 10,
-      tipo_evento: tipoeventoprocesso.PROCESSO_INICIADO,
-      origem_evento: origemevento.USUARIO,
-      severidade_evento: severidadeevento.INFO,
-    });
+    expect(createSpy).toHaveBeenCalledWith(
+      {
+        id_processo: 10,
+        tipo_evento: tipoeventoprocesso.PROCESSO_INICIADO,
+        origem_evento: origemevento.USUARIO,
+        severidade_evento: severidadeevento.INFO,
+      },
+      undefined,
+    );
   });
 
   it('registerEmergencyStop monta evento de parada de emergencia', async () => {
@@ -103,12 +106,34 @@ describe('ProcessoEventService', () => {
       motivo: 'Falha critica',
     });
 
-    expect(createSpy).toHaveBeenCalledWith({
-      id_processo: 10,
-      tipo_evento: tipoeventoprocesso.PARADA_EMERGENCIA,
-      origem_evento: origemevento.SISTEMA,
-      severidade_evento: severidadeevento.CRITICO,
-    });
+    expect(createSpy).toHaveBeenCalledWith(
+      {
+        id_processo: 10,
+        tipo_evento: tipoeventoprocesso.PARADA_EMERGENCIA,
+        origem_evento: origemevento.SISTEMA,
+        severidade_evento: severidadeevento.CRITICO,
+      },
+      undefined,
+    );
+  });
+
+  it('usa o cliente Prisma transacional quando ele e informado', async () => {
+    const transactionCreate = jest
+      .fn<(args: unknown) => Promise<ProcessoEventoMock>>()
+      .mockResolvedValue(eventRecord);
+    const tx = {
+      eventos: {
+        create: transactionCreate,
+      },
+    };
+
+    await service.registerProcessStarted(
+      { id_processo: 10, id_usuario: 20 },
+      tx as never,
+    );
+
+    expect(transactionCreate).toHaveBeenCalledTimes(1);
+    expect(prisma.eventos.create).not.toHaveBeenCalled();
   });
 
   it('findByProcessId chama findMany com filtro, ordenacao desc e limite', async () => {

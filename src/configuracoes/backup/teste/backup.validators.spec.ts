@@ -85,13 +85,13 @@ describe('Backup DTOs', () => {
     await expect(validate(invalid)).resolves.toHaveLength(2);
   });
 
-  it('RestoreBackupDto exige confirmacao e valida tamanho da senha MQTT', async () => {
+  it('RestoreBackupDto exige confirmacao e limita o motivo', async () => {
     const valid = plainToInstance(RestoreBackupDto, {
       confirmar_restauracao: true,
-      nova_senha_mqtt: '123456',
+      motivo: 'Restauracao controlada',
     });
     const invalid = plainToInstance(RestoreBackupDto, {
-      nova_senha_mqtt: '12345',
+      motivo: 'x'.repeat(501),
     });
 
     await expect(validate(valid)).resolves.toHaveLength(0);

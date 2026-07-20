@@ -4,6 +4,7 @@ import {
   criticidadepermissao,
   faseprocesso,
   funcaovalvula,
+  modooperacaoauxiliar,
   modulosistema,
   nivelacesso,
   origemlogoperacional,
@@ -17,6 +18,7 @@ import {
   statusgeralsistema,
   statusprocesso,
   statussensor,
+  statusintegridadesensor,
   statustanque,
   statustanqueprocesso,
   TipoValvula,
@@ -42,9 +44,10 @@ type SeedUserInput = {
   nome: string;
   login: string;
   email: string;
-  senha: string;
   nivel: nivelacesso;
 };
+
+type SeedUserPasswords = Record<nivelacesso, string>;
 
 type SeedTankInput = {
   nome: string;
@@ -102,21 +105,18 @@ const userInputs: SeedUserInput[] = [
     nome: 'Wesley Alves de Carvalho',
     login: 'Wesley',
     email: 'wesley.admin@tsea.local',
-    senha: 'Admin@123',
     nivel: nivelacesso.ADMINISTRADOR,
   },
   {
     nome: 'Julio Cossilo',
     login: 'julio',
     email: 'julio.tecnico@tsea.local',
-    senha: 'Tecnico@123',
     nivel: nivelacesso.TECNICO,
   },
   {
     nome: 'Pedro Augusto',
     login: 'pedro',
     email: 'pedro.operador@tsea.local',
-    senha: 'Operador@123',
     nivel: nivelacesso.OPERADOR,
   },
 ];
@@ -271,8 +271,10 @@ const permissionsByModule: Record<modulosistema, string[]> = {
 };
 
 async function main(): Promise<void> {
+  assertSeedExecutionAllowed();
+  const seedUserPasswords = resolveSeedUserPasswords();
   const levels = await seedAccessLevels();
-  const users = await seedUsers(levels);
+  const users = await seedUsers(levels, seedUserPasswords);
   const admin = users.get(nivelacesso.ADMINISTRADOR);
 
   if (!admin) {
@@ -350,7 +352,10 @@ async function seedAccessLevels() {
   return new Map(entries.map((level) => [level.nome, level]));
 }
 
-async function seedUsers(levels: Awaited<ReturnType<typeof seedAccessLevels>>) {
+async function seedUsers(
+  levels: Awaited<ReturnType<typeof seedAccessLevels>>,
+  passwords: SeedUserPasswords,
+) {
   const entries = await Promise.all(
     userInputs.map(async (user) => {
       const level = levels.get(user.nivel);
@@ -358,7 +363,7 @@ async function seedUsers(levels: Awaited<ReturnType<typeof seedAccessLevels>>) {
         throw new Error(`Nivel de acesso ausente: ${user.nivel}`);
       }
 
-      const senha_hash = await bcrypt.hash(user.senha, 10);
+      const senha_hash = await bcrypt.hash(passwords[user.nivel], 10);
 
       return prisma.usuarios.upsert({
         where: { login: user.login },
@@ -391,6 +396,69 @@ async function seedUsers(levels: Awaited<ReturnType<typeof seedAccessLevels>>) {
       return [input.nivel, user];
     }),
   );
+}
+
+function assertSeedExecutionAllowed(): void {
+  const nodeEnv = process.env.NODE_ENV?.trim().toLowerCase() ?? 'development';
+
+  if (nodeEnv === 'production') {
+    throw new Error(
+      'Seed bloqueado em producao. Cadastre dados e usuarios por um fluxo administrativo auditavel.',
+    );
+  }
+
+  if (!['development', 'test'].includes(nodeEnv)) {
+    throw new Error(
+      'Seed permitido somente com NODE_ENV=development ou NODE_ENV=test.',
+    );
+  }
+}
+
+function resolveSeedUserPasswords(): SeedUserPasswords {
+  const allowPredictableDefaults =
+    process.env.ALLOW_INSECURE_SEED?.trim().toLowerCase() === 'true';
+  const configured = {
+    [nivelacesso.ADMINISTRADOR]: process.env.DEV_ADMIN_PASSWORD?.trim(),
+    [nivelacesso.TECNICO]: process.env.DEV_TECNICO_PASSWORD?.trim(),
+    [nivelacesso.OPERADOR]: process.env.DEV_OPERADOR_PASSWORD?.trim(),
+  };
+  const predictableDevelopmentDefaults: SeedUserPasswords = {
+    [nivelacesso.ADMINISTRADOR]: 'AdminLocalTSEA@2026',
+    [nivelacesso.TECNICO]: 'TecnicoLocalTSEA@2026',
+    [nivelacesso.OPERADOR]: 'OperadorLocalTSEA@2026',
+  };
+  const variablesByLevel: Record<nivelacesso, string> = {
+    [nivelacesso.ADMINISTRADOR]: 'DEV_ADMIN_PASSWORD',
+    [nivelacesso.TECNICO]: 'DEV_TECNICO_PASSWORD',
+    [nivelacesso.OPERADOR]: 'DEV_OPERADOR_PASSWORD',
+  };
+  const resolved = {} as SeedUserPasswords;
+
+  for (const level of Object.values(nivelacesso)) {
+    const password =
+      configured[level] ??
+      (allowPredictableDefaults
+        ? predictableDevelopmentDefaults[level]
+        : undefined);
+
+    if (!password) {
+      throw new Error(
+        `${variablesByLevel[level]} e obrigatoria para o seed. ` +
+          'Use credenciais locais proprias ou habilite conscientemente ' +
+          'ALLOW_INSECURE_SEED=true apenas em desenvolvimento/teste.',
+      );
+    }
+
+    if (password.length < 15 || password.length > 128) {
+      throw new Error(
+        `${variablesByLevel[level]} deve possuir entre 15 e 128 caracteres.`,
+      );
+    }
+
+    resolved[level] = password;
+  }
+
+  return resolved;
 }
 
 async function seedPermissions(
@@ -498,12 +566,28 @@ async function seedSystemConfig(id_usuario_alteracao: number) {
     id_usuario_alteracao,
     tempo_maximo_padrao: 1800,
     encerramento_automatico: true,
+    tempo_estabilizacao_vacuo_segundos: 30,
+    estabilizacao_cobertura_minima_percentual: decimal('80.00'),
+    intervalo_leitura_esperado_ms: 1000,
+    timeout_leitura_sensor_ms: 2500,
+    tempo_retencao_vacuo_segundos: 30,
+    perda_vacuo_maxima_retencao: decimal('2.000'),
     limite_seguranca_vacuo: decimal('-95.000'),
     vacuo_padrao: decimal('-80.000'),
     quantidade_maxima_tanques: 3,
     status_geral_sistema: statusgeralsistema.OPERACIONAL,
     versao_sistema: '1.0.0',
     tolerancia_vacuo_percentual: decimal('10.00'),
+    estagnacao_janela_segundos: 60,
+    estagnacao_variacao_minima: decimal('2.000'),
+    estagnacao_leituras_minimas: 5,
+    estagnacao_janelas_consecutivas: 2,
+    estagnacao_tempo_minimo_bomba_principal_segundos: 30,
+    estagnacao_tempo_maximo_sem_progresso_segundos: 180,
+    estagnacao_fator_minimo_proximidade_alvo: decimal('0.350'),
+    auxilio_janela_avaliacao_segundos: 30,
+    auxilio_melhoria_minima: decimal('1.000'),
+    auxilio_timeout_segundos: 180,
     limite_nivel_maximo_percentual: decimal('95.00'),
     tolerancia_volume_percentual: decimal('5.00'),
     vazao_minima_l_min: decimal('0.100'),
@@ -528,8 +612,10 @@ async function seedMqttConfig(id_usuario_alteracao: number) {
       id_usuario_alteracao,
       broker_url: 'mqtt://localhost',
       porta: 1883,
-      usuario_mqtt: 'tsea_backend',
-      senha_mqtt_hash: null,
+      usuario_mqtt_configurado: false,
+      senha_mqtt_configurada: false,
+      credenciais_verificadas_em: null,
+      ultima_falha_credenciais: null,
       topico_leituras: 'tsea/leituras',
       topico_comandos: 'tsea/comandos',
       topico_status: 'tsea/status',
@@ -549,8 +635,10 @@ async function seedMqttConfig(id_usuario_alteracao: number) {
       id_usuario_alteracao,
       broker_url: 'mqtt://localhost',
       porta: 1883,
-      usuario_mqtt: 'tsea_backend',
-      senha_mqtt_hash: null,
+      usuario_mqtt_configurado: false,
+      senha_mqtt_configurada: false,
+      credenciais_verificadas_em: null,
+      ultima_falha_credenciais: null,
       topico_leituras: 'tsea/leituras',
       topico_comandos: 'tsea/comandos',
       topico_status: 'tsea/status',
@@ -607,9 +695,22 @@ async function seedSensors(inputs: SeedSensorInput[]) {
           protocolo: sensor.protocolo,
           unidade_medida: sensor.unidade_medida,
           precisao: sensor.precisao ? decimal(sensor.precisao) : null,
-          status_sensor: statussensor.ATIVO,
+          status_sensor:
+            sensor.tipo_sensor === tiposensor.VACUO
+              ? statussensor.INATIVO
+              : statussensor.ATIVO,
+          status_integridade:
+            sensor.tipo_sensor === tiposensor.VACUO
+              ? statusintegridadesensor.PENDENTE_CALIBRACAO
+              : statusintegridadesensor.VALIDO,
+          fator_calibracao: decimal('1.0000'),
+          offset_calibracao: decimal('0.0000'),
           tipo_sensor: sensor.tipo_sensor,
-          ultimo_valor_lido: sensor.ultimo_valor_lido
+          ultimo_valor_lido:
+            sensor.tipo_sensor !== tiposensor.VACUO && sensor.ultimo_valor_lido
+              ? decimal(sensor.ultimo_valor_lido)
+              : null,
+          ultimo_valor_bruto: sensor.ultimo_valor_lido
             ? decimal(sensor.ultimo_valor_lido)
             : null,
           ultima_leitura: now(),
@@ -622,9 +723,22 @@ async function seedSensors(inputs: SeedSensorInput[]) {
           protocolo: sensor.protocolo,
           unidade_medida: sensor.unidade_medida,
           precisao: sensor.precisao ? decimal(sensor.precisao) : null,
-          status_sensor: statussensor.ATIVO,
+          status_sensor:
+            sensor.tipo_sensor === tiposensor.VACUO
+              ? statussensor.INATIVO
+              : statussensor.ATIVO,
+          status_integridade:
+            sensor.tipo_sensor === tiposensor.VACUO
+              ? statusintegridadesensor.PENDENTE_CALIBRACAO
+              : statusintegridadesensor.VALIDO,
+          fator_calibracao: decimal('1.0000'),
+          offset_calibracao: decimal('0.0000'),
           tipo_sensor: sensor.tipo_sensor,
-          ultimo_valor_lido: sensor.ultimo_valor_lido
+          ultimo_valor_lido:
+            sensor.tipo_sensor !== tiposensor.VACUO && sensor.ultimo_valor_lido
+              ? decimal(sensor.ultimo_valor_lido)
+              : null,
+          ultimo_valor_bruto: sensor.ultimo_valor_lido
             ? decimal(sensor.ultimo_valor_lido)
             : null,
           ultima_leitura: now(),
@@ -795,16 +909,32 @@ async function seedInitialProcess(id_usuario: number) {
     vacuo_alvo: decimal('-80.000'),
     tempo_maximo: 1800,
     parada_emergencia: false,
+    modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+    encerramento_automatico: true,
+    encerramento_tolerancia_vacuo_percentual: decimal('10.00'),
+    encerramento_limite_seguranca_vacuo: decimal('-95.000'),
+    encerramento_tempo_estabilizacao_segundos: 30,
+    encerramento_estabilizacao_cobertura_minima_percentual: decimal('80.00'),
+    encerramento_intervalo_leitura_esperado_ms: 1000,
+    encerramento_timeout_leitura_sensor_ms: 2500,
+    encerramento_tempo_retencao_segundos: 30,
+    encerramento_perda_vacuo_maxima_retencao: decimal('2.000'),
   };
 
-  if (existing) {
-    return prisma.processos.update({
-      where: { id_processo: existing.id_processo },
-      data,
-    });
-  }
+  const processo = existing
+    ? await prisma.processos.update({
+        where: { id_processo: existing.id_processo },
+        data,
+      })
+    : await prisma.processos.create({ data });
 
-  return prisma.processos.create({ data });
+  await prisma.processosauxiliares.upsert({
+    where: { id_processo: processo.id_processo },
+    update: {},
+    create: { id_processo: processo.id_processo },
+  });
+
+  return processo;
 }
 
 async function seedProcessTanks(
@@ -814,38 +944,44 @@ async function seedProcessTanks(
   const entries: ProcessTankRecord[] = [];
 
   for (const tank of tanks.values()) {
-    entries.push(
-      await prisma.processostanques.upsert({
-        where: {
-          id_processo_id_tanque: {
-            id_processo,
-            id_tanque: tank.id_tanque,
-          },
-        },
-        update: {
-          vacuo_alvo: decimal('-80.000'),
-          status_tanque_processo: statustanqueprocesso.CONFIGURADO,
-          volume_alvo_ml: null,
-          volume_enviado_ml: decimal('0.000'),
-          vazao_atual_l_min: null,
-          nivel_atual_percentual: null,
-          vacuo_atingido: false,
-          vacuo_estabilizado: false,
-        },
-        create: {
+    const processTank = await prisma.processostanques.upsert({
+      where: {
+        id_processo_id_tanque: {
           id_processo,
           id_tanque: tank.id_tanque,
-          vacuo_alvo: decimal('-80.000'),
-          status_tanque_processo: statustanqueprocesso.CONFIGURADO,
-          volume_alvo_ml: null,
-          volume_enviado_ml: decimal('0.000'),
-          vazao_atual_l_min: null,
-          nivel_atual_percentual: null,
-          vacuo_atingido: false,
-          vacuo_estabilizado: false,
         },
-      }),
-    );
+      },
+      update: {
+        vacuo_alvo: decimal('-80.000'),
+        status_tanque_processo: statustanqueprocesso.CONFIGURADO,
+        volume_alvo_ml: null,
+        volume_enviado_ml: decimal('0.000'),
+        vazao_atual_l_min: null,
+        nivel_atual_percentual: null,
+        vacuo_atingido: false,
+        vacuo_estabilizado: false,
+      },
+      create: {
+        id_processo,
+        id_tanque: tank.id_tanque,
+        vacuo_alvo: decimal('-80.000'),
+        status_tanque_processo: statustanqueprocesso.CONFIGURADO,
+        volume_alvo_ml: null,
+        volume_enviado_ml: decimal('0.000'),
+        vazao_atual_l_min: null,
+        nivel_atual_percentual: null,
+        vacuo_atingido: false,
+        vacuo_estabilizado: false,
+      },
+    });
+
+    await prisma.processostanquesauxiliares.upsert({
+      where: { id_processo_tanque: processTank.id_processo_tanque },
+      update: {},
+      create: { id_processo_tanque: processTank.id_processo_tanque },
+    });
+
+    entries.push(processTank);
   }
 
   return new Map(

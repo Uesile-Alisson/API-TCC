@@ -1,11 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsOptional,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class RestoreBackupDto {
   @ApiProperty({
@@ -23,16 +17,4 @@ export class RestoreBackupDto {
   @IsString()
   @MaxLength(500)
   motivo?: string;
-
-  @ApiPropertyOptional({
-    example: 'nova-senha-segura',
-    minLength: 6,
-    description:
-      'Obrigatoria para restaurar backups MQTT ou COMPLETO. Nunca e retornada no snapshot.',
-  })
-  @IsOptional()
-  @IsString()
-  @MinLength(6)
-  @MaxLength(120)
-  nova_senha_mqtt?: string;
 }

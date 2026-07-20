@@ -1,10 +1,11 @@
 # Scripts MQTT de simulacao do ESP32
 
-Estes scripts simulam o ESP32 usando o contrato MQTT ativo da API TSEA. Eles nao publicam payloads com campos extras e nao enviam ACK de comandos, porque o contrato atual analisado nao implementa ACK.
+Estes scripts publicam cenarios de preparo, sucesso e falha usando o contrato MQTT da API TSEA. A API agora exige ACK final `EXECUTADO` para cada comando. Para simular tambem o firmware e responder configuracoes/comandos, mantenha `npm run simulate:esp32` em outro terminal durante os cenarios abaixo.
 
 ## Comandos
 
 ```powershell
+npm run simulate:esp32
 npm run sim:mqtt:preparo
 npm run sim:mqtt:sucesso
 npm run sim:mqtt:falha
@@ -81,8 +82,8 @@ Nao foi possivel resolver PTS/acoplamentos. Configure TSEA_SIM_PTS_IDS e TSEA_SI
 - `tsea/status` fica desativado por padrao para evitar publicacao automatica de status durante preparo. Ative `TSEA_SIM_PUBLISH_STATUS=true` para publicar ACK fisico das valvulas.
 - Sem ACK recente de valvula em `tsea/status`, a pre-checagem deve manter a valvula como `NAO_CONFIRMADO`.
 - Com `TSEA_SIM_PUBLISH_STATUS=true`, o script falha se nao conseguir resolver valvulas reais do processo. Ele nao publica `valvulas: {}` silenciosamente.
-- A API publica comandos em `tsea/comandos`; os scripts apenas assinam e logam esses comandos.
-- O ACK fisico de valvulas usa `tsea/status`; nao ha ACK de comandos separado em `tsea/comandos`.
+- Os scripts de cenario apenas assinam e registram os comandos. O processo `simulate:esp32` responde ACKs de aplicacao em `tsea/acks`.
+- O status eletrico de valvulas continua em `tsea/status`; ele nao substitui o ACK de aplicacao correlacionado em `tsea/acks`.
 - Os scripts de sucesso/falha usam endpoints HTTP reais: `/processos/:id/iniciar`, `/processos/:id/finalizar` e `/processos/:id/interromper`.
 
 ## ACK fisico das valvulas

@@ -61,6 +61,12 @@ export interface DeleteReportFileResult {
   bucket_name: string;
 }
 
+export interface StoredReportFileCandidate {
+  gridfs_file_id: string;
+  bucket_name: string;
+  upload_date: Date | null;
+}
+
 export interface BuildReportFilenameParams {
   tipo_relatorio: tiporelatorio;
   formato_relatorio: formatorelatorio;

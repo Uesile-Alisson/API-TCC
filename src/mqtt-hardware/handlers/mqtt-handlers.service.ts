@@ -4,8 +4,16 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { severidadealarme, statusconexaomqtt } from '@prisma/client';
+import {
+  severidadealarme,
+  statusbomba,
+  statusconexaomqtt,
+  tipobomba,
+} from '@prisma/client';
+import { ProcessoTanqueMonitorService } from '../../processos/lifecycle';
+import { ProcessosSocketGateway } from '../../processos/socket';
 import { MqttClientService } from '../connection/mqtt-client.service';
+import { ReadingContextCacheService } from '../events/cache';
 import { MqttMessage } from '../interfaces/mqtt-message.interface';
 import {
   AlarmCreatedSocketPayload,
@@ -34,9 +42,8 @@ import { StatusHandler } from './status.handler';
 export class HandlersService implements OnModuleDestroy, OnModuleInit {
   private readonly logger = new Logger(HandlersService.name);
 
-  private readonly messageListener = (message: MqttMessage): void => {
-    void this.handleMqttMessage(message);
-  };
+  private readonly messageListener = (message: MqttMessage): Promise<void> =>
+    this.handleMqttMessage(message);
   private readonly connectionStatusListener = (
     status: statusconexaomqtt,
     error?: string,
@@ -53,6 +60,9 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
     private readonly alarmsHandler: AlarmsHandler,
     private readonly acoplamentoHandler: AcoplamentoMangueiraHandler,
     private readonly commandAckHandler: CommandAckHandler,
+    private readonly processoTanqueMonitorService: ProcessoTanqueMonitorService,
+    private readonly readingContextCacheService: ReadingContextCacheService,
+    private readonly processosSocketGateway: ProcessosSocketGateway,
   ) {}
 
   onModuleInit(): void {
@@ -84,7 +94,7 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
       }
 
       if (TopicMatcher.isAck(message.topic)) {
-        this.handleCommandAckMessage(message);
+        await this.handleCommandAckMessage(message);
         return;
       }
 
@@ -132,6 +142,63 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
     this.mqttSocketService.publishedSensorReadingCreated(
       this.toSensorReadingSocketPayload(result),
     );
+
+    await this.monitorProcessTankReading(result);
+  }
+
+  private async monitorProcessTankReading(
+    result: MqttReadingHandlerResult,
+  ): Promise<void> {
+    try {
+      const monitorResult =
+        await this.processoTanqueMonitorService.monitorReading({
+          id_leitura_sensor: result.id_leitura_sensor,
+          id_processo: result.id_processo,
+          id_processo_tanque: result.id_processo_tanque,
+          id_processo_tanque_sensor: result.id_processo_tanque_sensor,
+        });
+
+      if (monitorResult.processed && monitorResult.status_mudou) {
+        this.readingContextCacheService.invalidate(
+          result.id_processo_tanque_sensor,
+        );
+      }
+
+      if (
+        monitorResult.processed &&
+        monitorResult.status_anterior &&
+        monitorResult.tank_state &&
+        monitorResult.latest_reading
+      ) {
+        this.processosSocketGateway.emitTankUpdated({
+          id_processo: monitorResult.id_processo,
+          id_processo_tanque: monitorResult.id_processo_tanque,
+          id_tanque: monitorResult.tank_state.id_tanque,
+          lifecycle_changed: monitorResult.status_mudou ?? false,
+          previous_status: monitorResult.status_anterior,
+          closure_changed: monitorResult.encerramento_mudou ?? false,
+          previous_closure_status:
+            monitorResult.encerramento_status_anterior ??
+            monitorResult.tank_state.encerramento.status,
+          stagnation_changed: monitorResult.estagnacao_mudou ?? false,
+          previous_stagnation_status:
+            monitorResult.estagnacao_status_anterior ??
+            monitorResult.tank_state.estagnacao.status,
+          tank: monitorResult.tank_state,
+          reading: monitorResult.latest_reading,
+          emitted_at: new Date(),
+        });
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Erro desconhecido.';
+
+      this.logger.error(
+        `Leitura ${result.id_leitura_sensor} foi persistida, mas o monitor ` +
+          `do processo/tanque ${result.id_processo_tanque} falhou: ${message}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
   }
 
   private async handleStatusMessage(message: MqttMessage): Promise<void> {
@@ -170,8 +237,8 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
     );
   }
 
-  private handleCommandAckMessage(message: MqttMessage): void {
-    this.commandAckHandler.handle(message);
+  private async handleCommandAckMessage(message: MqttMessage): Promise<void> {
+    await this.commandAckHandler.handleAndPersist(message);
   }
 
   private toHeartbeatSocketPayload(
@@ -204,11 +271,33 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
   private toHardwareStatusSocketPayload(
     result: MqttStatusHandlerResult,
   ): HardwareStatusSocketPayload {
+    const bombaPrincipal = result.bombas.find(
+      (bomba) => bomba.tipo_bomba === tipobomba.PRINCIPAL,
+    );
+    const bombaAuxiliar = result.bombas.find(
+      (bomba) => bomba.tipo_bomba === tipobomba.AUXILIAR,
+    );
+
     return {
       id_mqtt_mensagem: null,
       esp32_online: result.esp32_online,
-      status_bomba_principal: null,
-      status_bomba_auxiliar: null,
+      status_bomba_principal: this.toLegacyPumpStatus(bombaPrincipal),
+      status_bomba_auxiliar: this.toLegacyPumpStatus(bombaAuxiliar),
+      status_bombas: result.bombas.map((bomba) => ({
+        id_bomba: bomba.id_bomba,
+        codigo_hardware: bomba.codigo_hardware,
+        tipo_bomba: bomba.tipo_bomba,
+        ligada: bomba.ligada,
+        disponivel: bomba.disponivel,
+        falha: bomba.falha,
+        status_em: bomba.status_em,
+      })),
+      status_valvulas: result.valvulas
+        .filter((valvula) => valvula.id_valvula > 0)
+        .map((valvula) => ({
+          id_valvula: valvula.id_valvula,
+          status_valvula: valvula.status_valvula,
+        })),
       status_geral_sistema: result.status_geral_sistema,
       processo_em_execucao: false,
       id_processo: null,
@@ -220,6 +309,20 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
       mensagem: result.mensagem,
       device_id: result.device_id,
     };
+  }
+
+  private toLegacyPumpStatus(
+    bomba: MqttStatusHandlerResult['bombas'][number] | undefined,
+  ): statusbomba | null {
+    if (!bomba) {
+      return null;
+    }
+
+    if (bomba.falha) {
+      return statusbomba.FALHA;
+    }
+
+    return bomba.disponivel ? statusbomba.ATIVA : statusbomba.INATIVA;
   }
 
   private toAlarmSocketPayload(
@@ -273,6 +376,13 @@ export class HandlersService implements OnModuleDestroy, OnModuleInit {
     error?: string,
   ): void {
     this.mqttSocketService.publishedConnectionStatus(status, error);
+
+    if (status !== statusconexaomqtt.CONECTADO) {
+      this.commandAckHandler.rejectAllPending(
+        error ??
+          `Conexao MQTT alterada para ${String(status)} enquanto a API aguardava ACK do ESP32.`,
+      );
+    }
 
     if (error) {
       this.logger.warn(

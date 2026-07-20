@@ -6,4 +6,5 @@ export interface CommandOptions {
   solicitado_por?: number | null;
   motivo?: string | null;
   correlation_id?: string;
+  id_processo?: number;
 }

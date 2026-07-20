@@ -69,7 +69,10 @@ export class ConfiguracoesTanquesController {
   @ApiBadRequestResponse({ description: 'Payload invalido.' })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
-  @ApiConflictResponse({ description: 'Tanque duplicado.' })
+  @ApiConflictResponse({
+    description:
+      'Tanque duplicado ou alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   create(@Body() dto: CreateTanqueConfiguracaoDto) {
     return this.configuracoesTanquesService.create(dto);
   }
@@ -82,7 +85,10 @@ export class ConfiguracoesTanquesController {
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Tanque nao encontrado.' })
-  @ApiConflictResponse({ description: 'Tanque duplicado.' })
+  @ApiConflictResponse({
+    description:
+      'Tanque duplicado ou alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   update(
     @Param('id_tanque', ParseIntPipe) id_tanque: number,
     @Body() dto: UpdateTanqueConfiguracaoDto,
@@ -98,6 +104,10 @@ export class ConfiguracoesTanquesController {
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Tanque nao encontrado.' })
+  @ApiConflictResponse({
+    description:
+      'Alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   ativar(@Param('id_tanque', ParseIntPipe) id_tanque: number) {
     return this.configuracoesTanquesService.ativar(id_tanque);
   }
@@ -110,6 +120,10 @@ export class ConfiguracoesTanquesController {
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Tanque nao encontrado.' })
+  @ApiConflictResponse({
+    description:
+      'Alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   desativar(@Param('id_tanque', ParseIntPipe) id_tanque: number) {
     return this.configuracoesTanquesService.desativar(id_tanque);
   }

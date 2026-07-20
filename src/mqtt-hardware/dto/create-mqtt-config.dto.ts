@@ -20,14 +20,6 @@ export class CreateMqttConfigDTO {
   porta!: number;
 
   @IsString()
-  @IsOptional()
-  usuario_mqtt?: string;
-
-  @IsOptional()
-  @IsString()
-  senha_mqtt?: string;
-
-  @IsString()
   @IsNotEmpty()
   topico_leituras!: string;
 
@@ -69,6 +61,7 @@ export class CreateMqttConfigDTO {
   @IsInt()
   @IsNotEmpty()
   @Min(1000)
+  @Max(120000)
   timeout_comunicacao!: number;
 
   @IsOptional()

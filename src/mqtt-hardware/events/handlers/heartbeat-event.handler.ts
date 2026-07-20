@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CommandService } from '../../commands/command.service';
+import { ProcessoGeneralClosureService } from '../../../processos/lifecycle';
 import { MqttSocketGateway } from '@/mqtt-hardware/socket/mqtt-socket.gateway';
 import { HeartbeatAlarmClassifier } from '../classifiers/heartbeat-alarm.classifier';
 import { EventProcessingStatus } from '../enums';
@@ -18,7 +18,7 @@ export class HeartbeatEventHandler {
   constructor(
     private readonly heatbeatAlarmClassifier: HeartbeatAlarmClassifier,
     private readonly alarmEventHandler: AlarmEventHandler,
-    private readonly commandService: CommandService,
+    private readonly processoGeneralClosureService: ProcessoGeneralClosureService,
     private readonly mqttSocketGateway: MqttSocketGateway,
   ) {}
 
@@ -29,13 +29,13 @@ export class HeartbeatEventHandler {
       const socketEmitted = this.emitHeartbeatReceived(input);
       const classification =
         this.heatbeatAlarmClassifier.classifyHeartbeatReceived(input);
-      const alarmResult =
-        await this.alarmEventHandler.handleClassification(classification);
       const emergencyStopSent = await this.requestEmergencyStopIfNeeded({
         classification,
         processoExecucao: false,
         idProcesso: null,
       });
+      const alarmResult =
+        await this.alarmEventHandler.handleClassification(classification);
 
       return {
         status: EventProcessingStatus.PROCESSED,
@@ -78,13 +78,13 @@ export class HeartbeatEventHandler {
       const socketEmitted = this.emitHeartbeatTimeout(input);
       const classification =
         this.heatbeatAlarmClassifier.classifyHeartbeatTimeout(input);
-      const alarmResult =
-        await this.alarmEventHandler.handleClassification(classification);
       const emergencyStopSent = await this.requestEmergencyStopIfNeeded({
         classification,
         processoExecucao: input.processo_em_execucao,
         idProcesso: input.processo_em_execucao ? input.id_processo : null,
       });
+      const alarmResult =
+        await this.alarmEventHandler.handleClassification(classification);
 
       return {
         status: EventProcessingStatus.PROCESSED,
@@ -206,7 +206,9 @@ export class HeartbeatEventHandler {
       return false;
     }
 
-    await this.commandService.paradaEmergencia({
+    await this.processoGeneralClosureService.requestEmergencyStopForCurrent({
+      ...(idProcesso ? { id_processo: idProcesso } : {}),
+      id_usuario: null,
       motivo:
         'Parada de emergência acionada por falha de heartbeat.' +
         `Motivo: ${classification.titulo}.` +

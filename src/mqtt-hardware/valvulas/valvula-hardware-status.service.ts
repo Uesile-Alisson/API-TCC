@@ -1,15 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StatusValvula } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Esp32StatusValveDTO } from '../dto/esp32-status.dto';
 
 export interface ValvulaHardwareStatusInput {
-  id_valvula: number;
+  id_valvula?: number;
+  codigo_hardware?: string;
   status_valvula: StatusValvula;
   ack: boolean;
   falha: boolean;
 }
 
-interface ValvulaStatusResult {
+export interface ValvulaHardwareStatusResult {
   id_valvula: number;
   status_valvula: StatusValvula;
   ack: boolean;
@@ -25,21 +27,24 @@ export class ValvulaHardwareStatusService {
   constructor(private readonly prisma: PrismaService) {}
 
   async processStatusPayload(
-    valvulas: Record<string, unknown> | undefined,
+    valvulas: Esp32StatusValveDTO[] | Record<string, unknown> | undefined,
     statusAt: Date,
-  ): Promise<ValvulaStatusResult[]> {
+  ): Promise<ValvulaHardwareStatusResult[]> {
     if (!valvulas || Object.keys(valvulas).length === 0) {
       return [];
     }
 
-    const results: ValvulaStatusResult[] = [];
+    const results: ValvulaHardwareStatusResult[] = [];
+    const entries: [string, unknown][] = Array.isArray(valvulas)
+      ? valvulas.map((value) => ['', value])
+      : Object.entries(valvulas);
 
-    for (const [key, value] of Object.entries(valvulas)) {
+    for (const [key, value] of entries) {
       const parsed = this.parseValveStatus(key, value);
 
       if (!parsed) {
         results.push({
-          id_valvula: Number(key),
+          id_valvula: Number.isInteger(Number(key)) ? Number(key) : 0,
           status_valvula: StatusValvula.DESCONHECIDA,
           ack: false,
           falha: true,
@@ -65,9 +70,16 @@ export class ValvulaHardwareStatusService {
     }
 
     const idValvula = Number(value.id_valvula ?? key);
+    const codigoHardware =
+      typeof value.codigo_hardware === 'string' &&
+      value.codigo_hardware.trim().length > 0
+        ? value.codigo_hardware.trim()
+        : undefined;
 
-    if (!Number.isInteger(idValvula) || idValvula <= 0) {
-      this.logger.warn(`Status de valvula ignorado. id_valvula invalido.`);
+    if ((!Number.isInteger(idValvula) || idValvula <= 0) && !codigoHardware) {
+      this.logger.warn(
+        `Status de valvula ignorado. id_valvula e codigo_hardware ausentes.`,
+      );
       return null;
     }
 
@@ -93,7 +105,10 @@ export class ValvulaHardwareStatusService {
     }
 
     return {
-      id_valvula: idValvula,
+      ...(Number.isInteger(idValvula) && idValvula > 0
+        ? { id_valvula: idValvula }
+        : {}),
+      ...(codigoHardware ? { codigo_hardware: codigoHardware } : {}),
       status_valvula: value.status_valvula,
       ack: value.ack,
       falha: value.falha ?? false,
@@ -103,9 +118,11 @@ export class ValvulaHardwareStatusService {
   private async updateValveStatus(
     input: ValvulaHardwareStatusInput,
     statusAt: Date,
-  ): Promise<ValvulaStatusResult> {
+  ): Promise<ValvulaHardwareStatusResult> {
     const valvula = await this.prisma.valvulas.findUnique({
-      where: { id_valvula: input.id_valvula },
+      where: input.id_valvula
+        ? { id_valvula: input.id_valvula }
+        : { codigo_hardware: input.codigo_hardware },
       select: {
         id_valvula: true,
         ativo: true,
@@ -114,10 +131,11 @@ export class ValvulaHardwareStatusService {
 
     if (!valvula) {
       this.logger.warn(
-        `ACK de valvula ignorado. Valvula ${input.id_valvula} nao encontrada.`,
+        `ACK de valvula ignorado. Valvula ${input.id_valvula ?? input.codigo_hardware} nao encontrada.`,
       );
       return {
         ...input,
+        id_valvula: input.id_valvula ?? 0,
         atualizado: false,
         motivo: 'Valvula nao encontrada.',
       };
@@ -125,10 +143,11 @@ export class ValvulaHardwareStatusService {
 
     if (!valvula.ativo) {
       this.logger.warn(
-        `ACK de valvula ignorado. Valvula ${input.id_valvula} esta inativa.`,
+        `ACK de valvula ignorado. Valvula ${valvula.id_valvula} esta inativa.`,
       );
       return {
         ...input,
+        id_valvula: valvula.id_valvula,
         atualizado: false,
         motivo: 'Valvula inativa.',
       };
@@ -137,7 +156,7 @@ export class ValvulaHardwareStatusService {
     const status_valvula = this.resolvePersistedStatus(input);
 
     await this.prisma.valvulas.update({
-      where: { id_valvula: input.id_valvula },
+      where: { id_valvula: valvula.id_valvula },
       data: {
         status_valvula,
         ultimo_acionamento: statusAt,
@@ -147,6 +166,7 @@ export class ValvulaHardwareStatusService {
 
     return {
       ...input,
+      id_valvula: valvula.id_valvula,
       status_valvula,
       atualizado: true,
     };

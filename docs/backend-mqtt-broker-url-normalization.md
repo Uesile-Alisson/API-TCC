@@ -15,11 +15,11 @@ A API normaliza o valor de `broker_url` antes de conectar no MQTT:
 - string vazia gera erro claro;
 - protocolos diferentes de `mqtt://` e `mqtts://` sao rejeitados.
 
-Quando `broker_url` nao informa porta, a API usa o campo `porta` da configuracao. O seed de validacao Fase 1 grava `mqtt://localhost:1883` para evitar reintroduzir a falha.
+Quando `broker_url` nao informa porta, a API usa o campo `porta` da configuracao. Durante criacao, atualizacao e conexao, o campo `porta` e autoritativo e substitui uma porta divergente que esteja embutida em `broker_url`. O seed de validacao Fase 1 grava `mqtt://localhost:1883` para evitar reintroduzir a falha.
 
 ## Segurança
 
-Logs de conexao MQTT usam a URL sanitizada e nao devem expor usuario ou senha embutidos na URI.
+Credenciais embutidas em `broker_url` sao rejeitadas. Usuario e senha pertencem exclusivamente ao arquivo externo seguro apontado por `MQTT_CREDENTIALS_FILE_PATH`. Logs de conexao MQTT tambem usam a URL sanitizada.
 
 ## Arquivos relacionados
 

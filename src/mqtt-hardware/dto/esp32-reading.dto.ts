@@ -1,5 +1,7 @@
 import {
+  Equals,
   IsDateString,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -7,15 +9,23 @@ import {
   IsString,
   ValidateIf,
 } from 'class-validator';
+import { ESP32_MQTT_SUPPORTED_SCHEMA_VERSIONS } from '../interfaces/esp32-contracts.interface';
+import type { Esp32MqttSchemaVersion } from '../interfaces/esp32-contracts.interface';
 
 export class Esp32ReadingDTO {
   @IsOptional()
   @IsString()
-  tipo?: string;
+  @Equals('SENSOR_READING')
+  tipo?: 'SENSOR_READING';
 
   @IsOptional()
   @IsInt()
-  schema_version?: number;
+  @IsIn(ESP32_MQTT_SUPPORTED_SCHEMA_VERSIONS)
+  schema_version?: Esp32MqttSchemaVersion;
+
+  @IsOptional()
+  @IsString()
+  device_id?: string;
 
   @IsOptional()
   @IsString()
@@ -24,6 +34,18 @@ export class Esp32ReadingDTO {
   @IsOptional()
   @IsInt()
   id_sensor?: number;
+
+  @IsOptional()
+  @IsInt()
+  id_processo?: number;
+
+  @IsOptional()
+  @IsInt()
+  id_processo_tanque?: number;
+
+  @IsOptional()
+  @IsInt()
+  id_tanque?: number;
 
   @ValidateIf((dto: Esp32ReadingDTO) => dto.modo !== 'DIAGNOSTICO')
   @IsInt()
@@ -52,9 +74,9 @@ export class Esp32ReadingDTO {
 
   @IsOptional()
   @IsDateString()
-  leitura_em?: Date;
+  leitura_em?: Date | string;
 
   @IsOptional()
   @IsDateString()
-  timestamp?: Date;
+  timestamp?: Date | string;
 }

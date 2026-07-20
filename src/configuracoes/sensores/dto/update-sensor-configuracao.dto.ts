@@ -6,6 +6,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsInt,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -65,4 +67,38 @@ export class UpdateSensorConfiguracaoDto {
   )
   @Min(0, { message: 'fator_calibracao deve ser maior ou igual a 0.' })
   fator_calibracao?: number;
+
+  @ApiPropertyOptional({ example: -101.325 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 })
+  limite_minimo_operacional?: number;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 })
+  limite_maximo_operacional?: number;
+
+  @ApiPropertyOptional({ example: 30, minimum: 0.001 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 })
+  @Min(0.001)
+  variacao_maxima_por_segundo?: number;
+
+  @ApiPropertyOptional({ example: 8, minimum: 0.001 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false, maxDecimalPlaces: 3 })
+  @Min(0.001)
+  oscilacao_maxima?: number;
+
+  @ApiPropertyOptional({ example: 60, minimum: 5, maximum: 86400 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(86400)
+  tempo_travado_segundos?: number;
 }

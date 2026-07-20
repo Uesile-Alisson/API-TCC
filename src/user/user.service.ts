@@ -1,22 +1,30 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'node:crypto';
 import { nivelacesso } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import type { AuthenticatedUser } from '@/auth/types/authenticated-user.type';
+import { PasswordHasherService } from '@/auth/password-hasher.service';
+import { SocketAuthService } from '@/auth/socket-auth.service';
 import { CreateUserDTO } from './dto/create-user.dto';
 import { UpdateUserDTO } from './dto/update-user.dto';
 import { UpdateUserRolesDTO } from './dto/update-user.roles';
 
 type UserWithAccessLevel = Awaited<ReturnType<UserService['findUser']>>;
+type UserMutation = 'PROFILE' | 'ROLE' | 'DELETE';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly passwordHasher: PasswordHasherService,
+    private readonly socketAuth: SocketAuthService,
+  ) {}
 
   async create(dto: CreateUserDTO) {
     await this.validateLoginAlreadyExists(dto.login);
@@ -24,7 +32,7 @@ export class UserService {
     await this.validateAccessLevelExists(dto.id_nivel_acesso);
 
     const temporaryPassword = this.generateTemporaryPassword();
-    const senhaHash = await bcrypt.hash(temporaryPassword, 10);
+    const senhaHash = await this.passwordHasher.hash(temporaryPassword);
 
     const user = await this.prisma.usuarios.create({
       data: {
@@ -51,7 +59,8 @@ export class UserService {
     currentUser: AuthenticatedUser,
   ) {
     const targetUser = await this.findUser(id_usuario);
-    this.ensureCanModifyTargetUser(currentUser, targetUser);
+    this.ensureCanModifyTargetUser(currentUser, targetUser, 'PROFILE');
+    this.assertProfileUpdateHasChanges(dto);
 
     if (dto.login) {
       await this.validateLoginAlreadyExists(dto.login, id_usuario);
@@ -61,11 +70,18 @@ export class UserService {
       await this.validateEmailAlreadyExists(dto.email, id_usuario);
     }
 
-    return this.prisma.usuarios.update({
+    const updatedUser = await this.prisma.usuarios.update({
       where: { id_usuario },
-      data: dto,
+      data: {
+        ...dto,
+        versao_token_autenticacao: { increment: 1 },
+        atualizado_em: new Date(),
+      },
       select: this.defaultUserSelect(),
     });
+
+    this.socketAuth.disconnectUser(id_usuario);
+    return updatedUser;
   }
 
   async updateUserRole(
@@ -74,26 +90,36 @@ export class UserService {
     currentUser: AuthenticatedUser,
   ) {
     const targetUser = await this.findUser(id_usuario);
-    this.ensureCanModifyTargetUser(currentUser, targetUser);
+    this.ensureCanModifyTargetUser(currentUser, targetUser, 'ROLE');
+
+    if (targetUser.niveisacessos.id_nivel_acesso === dto.id_nivel_acesso) {
+      return targetUser;
+    }
 
     await this.validateAccessLevelExists(dto.id_nivel_acesso);
 
-    return this.prisma.usuarios.update({
+    const updatedUser = await this.prisma.usuarios.update({
       where: { id_usuario },
       data: {
         id_nivel_acesso: dto.id_nivel_acesso,
+        versao_token_autenticacao: { increment: 1 },
+        atualizado_em: new Date(),
       },
       select: this.defaultUserSelect(),
     });
+
+    this.socketAuth.disconnectUser(id_usuario);
+    return updatedUser;
   }
 
   async removeUser(id_usuario: number, currentUser: AuthenticatedUser) {
     const targetUser = await this.findUser(id_usuario);
-    this.ensureCanModifyTargetUser(currentUser, targetUser);
+    this.ensureCanModifyTargetUser(currentUser, targetUser, 'DELETE');
 
     await this.prisma.usuarios.delete({
       where: { id_usuario },
     });
+    this.socketAuth.disconnectUser(id_usuario);
 
     return {
       message: 'Usuário excluído com sucesso.',
@@ -165,17 +191,29 @@ export class UserService {
   }
 
   private generateTemporaryPassword(): string {
-    const random = Math.random().toString(36).slice(-6);
-    return `TSEA@${random}1`;
+    return randomBytes(18).toString('base64url');
   }
 
   private ensureCanModifyTargetUser(
     currentUser: AuthenticatedUser,
     targetUser: UserWithAccessLevel,
+    mutation: UserMutation,
   ): void {
     const currentUserRole = currentUser.nivel_acesso.nome;
     const targetUserRole = targetUser.niveisacessos.nome;
     const isAnotherUser = currentUser.id_usuario !== targetUser.id_usuario;
+
+    if (!isAnotherUser && mutation === 'ROLE') {
+      throw new ForbiddenException(
+        'Nao e permitido alterar o proprio nivel de acesso.',
+      );
+    }
+
+    if (!isAnotherUser && mutation === 'DELETE') {
+      throw new ForbiddenException(
+        'Nao e permitido excluir o proprio usuario administrador.',
+      );
+    }
 
     if (
       currentUserRole === nivelacesso.ADMINISTRADOR &&
@@ -184,6 +222,18 @@ export class UserService {
     ) {
       throw new ForbiddenException(
         'Não é permitido modificar outro usuário administrador.',
+      );
+    }
+  }
+
+  private assertProfileUpdateHasChanges(dto: UpdateUserDTO): void {
+    if (
+      dto.nome === undefined &&
+      dto.login === undefined &&
+      dto.email === undefined
+    ) {
+      throw new BadRequestException(
+        'Informe ao menos um campo para atualizar o usuario.',
       );
     }
   }

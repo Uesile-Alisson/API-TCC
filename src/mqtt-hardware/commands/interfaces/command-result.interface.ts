@@ -8,4 +8,9 @@ export interface CommandResult {
   retain: boolean;
   correlation_id: string;
   published_at: Date;
+  acknowledged?: boolean;
+  ack_status?: 'EXECUTADO';
+  ack_received_at?: Date;
+  ack_message?: string | null;
+  reused_ack?: boolean;
 }

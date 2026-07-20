@@ -186,6 +186,15 @@ export class RelatoriosRepository {
     return relatorio !== null;
   }
 
+  async existsByGridFsFileId(gridfs_file_id: string): Promise<boolean> {
+    const relatorio = await this.prisma.relatorios.findFirst({
+      where: { gridfs_file_id },
+      select: { id_relatorio: true },
+    });
+
+    return relatorio !== null;
+  }
+
   async create(
     data: CreateRelatorioMetadataInput,
   ): Promise<RelatorioWithRelations> {

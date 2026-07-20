@@ -11,6 +11,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -19,6 +20,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -33,11 +35,21 @@ import { RestoreBackupDto } from './dto/restore-backup.dto';
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMINISTRADOR')
+@Throttle({
+  default: { limit: 30, ttl: 60_000, blockDuration: 60_000 },
+})
 @Controller('configuracoes/backup')
 export class BackupController {
   constructor(private readonly backupService: BackupService) {}
 
   @Post()
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 10 * 60_000,
+      blockDuration: 10 * 60_000,
+    },
+  })
   @ApiOperation({ summary: 'Gera um backup logico em PostgreSQL JSON.' })
   @ApiCreatedResponse({ description: 'Backup gerado com sucesso.' })
   @ApiBadRequestResponse({ description: 'Payload invalido.' })
@@ -72,12 +84,25 @@ export class BackupController {
   }
 
   @Post(':id/restaurar')
+  @Throttle({
+    default: {
+      limit: 2,
+      ttl: 10 * 60_000,
+      blockDuration: 10 * 60_000,
+    },
+  })
   @ApiOperation({ summary: 'Restaura um backup logico.' })
   @ApiOkResponse({ description: 'Backup restaurado com sucesso.' })
-  @ApiBadRequestResponse({ description: 'Confirmacao ou senha MQTT invalida.' })
+  @ApiBadRequestResponse({
+    description: 'Confirmacao de restauracao invalida.',
+  })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Backup nao encontrado.' })
+  @ApiConflictResponse({
+    description:
+      'Restauracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   restore(
     @Param('id', ParseIntPipe) id_backup: number,
     @Body() dto: RestoreBackupDto,

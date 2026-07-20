@@ -4,44 +4,63 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import type { Server, Socket } from 'socket.io';
+import type { Namespace, Socket } from 'socket.io';
+import { SocketAuthService } from '../../auth/socket-auth.service';
 import {
   PROCESSOS_SOCKET_EVENTS,
   ProcessosSocketEventName,
 } from './processos-socket.events';
 import type {
+  ProcessoAuxiliaryStateUpdatedSocketPayload,
   ProcessoConfigUpdatedSocketPayload,
   ProcessoDashboardUpdatedSocketPayload,
   ProcessoEmergencyStopSocketPayload,
   ProcessoFailureSocketPayload,
+  ProcessoGeneralClosureUpdatedSocketPayload,
   ProcessoJoinRoomPayload,
   ProcessoLifecycleSocketPayload,
   ProcessoMetricsUpdatedSocketPayload,
   ProcessoRoomResponsePayload,
   ProcessoStatusChangedPayload,
+  ProcessoTankUpdatedSocketPayload,
+  ProcessoTankClosureUpdatedSocketPayload,
 } from './processos-socket.types';
 import type { ProcessoPrecheckResultado } from '../precheck';
 
-@WebSocketGateway({
-  namespace: 'processos',
-  cors: {
-    origin: '*',
-  },
-})
+@WebSocketGateway({ namespace: 'processos' })
 export class ProcessosSocketGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   private readonly logger = new Logger(ProcessosSocketGateway.name);
 
+  constructor(private readonly socketAuthService: SocketAuthService) {}
+
   @WebSocketServer()
-  private server!: Server;
+  private server!: Namespace;
+
+  afterInit(namespace: Namespace): void {
+    this.socketAuthService.registerAuthenticationMiddleware(namespace);
+  }
 
   handleConnection(@ConnectedSocket() client: Socket): void {
-    this.logger.log(`Cliente conectado ao socket de processos: ${client.id}`);
+    const user = this.socketAuthService.getAuthenticatedUser(client);
+    if (!user) {
+      this.logger.warn(
+        `Conexao sem contexto autenticado recusada no socket de processos: ${client.id}`,
+      );
+      client.disconnect(true);
+      return;
+    }
+
+    this.logger.log(
+      `Cliente autenticado no socket de processos: ${client.id}. ` +
+        `Usuario: ${user.id_usuario}.`,
+    );
 
     client.emit(PROCESSOS_SOCKET_EVENTS.CONNECTED, {
       message: 'Conectado ao canal de processos.',
@@ -154,6 +173,44 @@ export class ProcessosSocketGateway
     this.emitToProcessRoom(
       payload.id_processo,
       PROCESSOS_SOCKET_EVENTS.DASHBOARD_UPDATED,
+      payload,
+    );
+  }
+
+  emitAuxiliaryStateUpdated(
+    payload: ProcessoAuxiliaryStateUpdatedSocketPayload,
+  ): void {
+    this.emitToProcessRoom(
+      payload.id_processo,
+      PROCESSOS_SOCKET_EVENTS.AUXILIARY_STATE_UPDATED,
+      payload,
+    );
+  }
+
+  emitTankUpdated(payload: ProcessoTankUpdatedSocketPayload): void {
+    this.emitToProcessRoom(
+      payload.id_processo,
+      PROCESSOS_SOCKET_EVENTS.TANK_UPDATED,
+      payload,
+    );
+  }
+
+  emitTankClosureUpdated(
+    payload: ProcessoTankClosureUpdatedSocketPayload,
+  ): void {
+    this.emitToProcessRoom(
+      payload.id_processo,
+      PROCESSOS_SOCKET_EVENTS.TANK_CLOSURE_UPDATED,
+      payload,
+    );
+  }
+
+  emitGeneralClosureUpdated(
+    payload: ProcessoGeneralClosureUpdatedSocketPayload,
+  ): void {
+    this.emitToProcessRoom(
+      payload.id_processo,
+      PROCESSOS_SOCKET_EVENTS.GENERAL_CLOSURE_UPDATED,
       payload,
     );
   }

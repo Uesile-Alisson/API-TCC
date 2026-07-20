@@ -1,9 +1,17 @@
 import {
+  ConflictException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { formatorelatorio, nivelacesso, tiporelatorio } from '@prisma/client';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import {
+  formatorelatorio,
+  nivelacesso,
+  Prisma,
+  tiporelatorio,
+} from '@prisma/client';
 import {
   RELATORIO_DEFAULT_LIMIT,
   RELATORIO_DEFAULT_PAGE,
@@ -56,6 +64,7 @@ import {
 const SYSTEM_GENERATOR_NAME = 'Sistema TSEA';
 const REPORT_PERSISTENCE_ERROR_MESSAGE = 'Falha ao persistir relatorio gerado.';
 const REPORT_GENERATION_ERROR_MESSAGE = 'Falha ao gerar relatorio.';
+const REPORT_ORPHAN_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
 
 export interface AuthenticatedRelatoriosUser {
   id_usuario: number;
@@ -83,6 +92,8 @@ interface PersistGeneratedReportParams {
 
 @Injectable()
 export class RelatoriosService {
+  private readonly logger = new Logger(RelatoriosService.name);
+
   constructor(
     private readonly relatoriosRepository: RelatoriosRepository,
     private readonly relatorioProcessoDataRepository: RelatorioProcessoDataRepository,
@@ -99,6 +110,67 @@ export class RelatoriosService {
     private readonly processXlsxReportGenerator: ProcessXlsxReportGenerator,
     private readonly gridFsReportStorageService: GridFsReportStorageService,
   ) {}
+
+  @Cron(CronExpression.EVERY_HOUR, {
+    name: 'relatorios-gridfs-orphan-reconciliation',
+    waitForCompletion: true,
+    disabled: process.env.NODE_ENV === 'test',
+  })
+  async reconcileOrphanedReportFiles(
+    now: Date = new Date(),
+  ): Promise<{
+    scanned: number;
+    preserved: number;
+    deleted: number;
+    failed: number;
+  }> {
+    const uploadedBefore = new Date(
+      now.getTime() - REPORT_ORPHAN_GRACE_PERIOD_MS,
+    );
+    const candidates =
+      await this.gridFsReportStorageService.findManagedFilesUploadedBefore(
+        uploadedBefore,
+      );
+    const result = {
+      scanned: candidates.length,
+      preserved: 0,
+      deleted: 0,
+      failed: 0,
+    };
+
+    for (const candidate of candidates) {
+      try {
+        const isReferenced =
+          await this.relatoriosRepository.existsByGridFsFileId(
+            candidate.gridfs_file_id,
+          );
+
+        if (isReferenced) {
+          result.preserved += 1;
+          continue;
+        }
+
+        const deletion = await this.gridFsReportStorageService.deleteReportFile(
+          {
+            gridfs_file_id: candidate.gridfs_file_id,
+            bucket_name: candidate.bucket_name,
+          },
+        );
+
+        if (deletion.deleted) {
+          result.deleted += 1;
+        }
+      } catch (error) {
+        result.failed += 1;
+        this.logger.error(
+          `Falha ao reconciliar arquivo de relatório ${candidate.gridfs_file_id}.`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
+
+    return result;
+  }
 
   async listRelatorios(
     query: ListRelatoriosQueryDto,
@@ -410,11 +482,17 @@ export class RelatoriosService {
       });
 
       return this.relatorioMapper.toResponse(createdRecord);
-    } catch {
+    } catch (error) {
       await this.rollbackStoredReportFile(
         storageResult.gridfs_file_id,
         storageResult.bucket_name,
       );
+
+      if (this.isUniqueConstraintViolation(error)) {
+        throw new ConflictException(
+          RELATORIO_MESSAGES.GENERATION.DUPLICATED_REPORT,
+        );
+      }
 
       throw new InternalServerErrorException(REPORT_PERSISTENCE_ERROR_MESSAGE);
     }
@@ -423,15 +501,38 @@ export class RelatoriosService {
   private async rollbackStoredReportFile(
     gridfsFileId: string,
     bucketName: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
-      await this.gridFsReportStorageService.deleteReportFile({
+      const result = await this.gridFsReportStorageService.deleteReportFile({
         gridfs_file_id: gridfsFileId,
         bucket_name: bucketName,
       });
-    } catch {
-      throw new InternalServerErrorException(REPORT_PERSISTENCE_ERROR_MESSAGE);
+
+      return result.deleted;
+    } catch (error) {
+      this.logger.error(
+        `Falha ao compensar arquivo de relatório ${gridfsFileId}; a reconciliação periódica tentará novamente.`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      return false;
     }
+  }
+
+  private isUniqueConstraintViolation(error: unknown): boolean {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      return true;
+    }
+
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'P2002'
+    );
   }
 
   private async generateProcessReportFile(

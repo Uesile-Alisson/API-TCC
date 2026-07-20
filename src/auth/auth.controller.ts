@@ -9,21 +9,37 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import {
+  AuthMessageResponseDTO,
+  MeResponseDTO,
+  SignInResponseDTO,
+} from './dto/auth-response.dto';
 import type { AuthenticatedUser } from './types/authenticated-user.type';
 import type { MeResponse } from './types/me-response.type';
+import { Throttle } from '@nestjs/throttler';
+import { ApiTooManyRequestsResponse } from '@nestjs/swagger';
 
 @ApiTags('Auth')
-@ApiBearerAuth('access-token')
+@ApiTooManyRequestsResponse({
+  description: 'Limite temporário de requisições excedido.',
+})
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('signin')
+  @Throttle({
+    default: { limit: 10, ttl: 60_000, blockDuration: 5 * 60_000 },
+  })
+  @ApiOperation({ summary: 'Autentica um usuario e emite um token JWT.' })
+  @ApiCreatedResponse({ type: SignInResponseDTO })
+  @ApiUnauthorizedResponse({ description: 'Credenciais invalidas.' })
   signin(@Body() dto: SignInDTO) {
     return this.authService.signin(dto);
   }
@@ -35,44 +51,8 @@ export class AuthController {
     summary: 'Retorna o usuÃ¡rio autenticado pelo token JWT.',
   })
   @ApiOkResponse({
-    description: 'UsuÃ¡rio autenticado retornado com sucesso.',
-    schema: {
-      example: {
-        id_usuario: 1,
-        nome: 'UsuÃ¡rio Teste',
-        login: 'usuario.teste',
-        email: 'usuario@teste.com',
-        id_nivel_acesso: 2,
-        nivel_acesso: 'TECNICO',
-        primeiro_acesso: false,
-      },
-      required: [
-        'id_usuario',
-        'nome',
-        'login',
-        'email',
-        'id_nivel_acesso',
-        'nivel_acesso',
-        'primeiro_acesso',
-      ],
-      properties: {
-        id_usuario: { type: 'number', example: 1 },
-        nome: { type: 'string', example: 'UsuÃ¡rio Teste' },
-        login: { type: 'string', example: 'usuario.teste' },
-        email: {
-          type: 'string',
-          nullable: true,
-          example: 'usuario@teste.com',
-        },
-        id_nivel_acesso: { type: 'number', example: 2 },
-        nivel_acesso: {
-          type: 'string',
-          enum: ['OPERADOR', 'TECNICO', 'ADMINISTRADOR'],
-          example: 'TECNICO',
-        },
-        primeiro_acesso: { type: 'boolean', example: false },
-      },
-    },
+    type: MeResponseDTO,
+    description: 'Usuário autenticado retornado com sucesso.',
   })
   @ApiUnauthorizedResponse({
     description: 'Token ausente, invÃ¡lido ou usuÃ¡rio nÃ£o encontrado.',
@@ -82,7 +62,18 @@ export class AuthController {
   }
 
   @Post('first-access')
+  @Throttle({
+    default: { limit: 5, ttl: 15 * 60_000, blockDuration: 15 * 60_000 },
+  })
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Define a senha definitiva do usuario no primeiro acesso.',
+  })
+  @ApiCreatedResponse({ type: AuthMessageResponseDTO })
+  @ApiUnauthorizedResponse({
+    description: 'Token ausente/invalido ou primeiro acesso ja concluido.',
+  })
   firstAccess(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: FirstAcessDTO,
@@ -91,11 +82,24 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @Throttle({
+    default: { limit: 3, ttl: 15 * 60_000, blockDuration: 15 * 60_000 },
+  })
+  @ApiOperation({ summary: 'Solicita recuperacao de senha sem enumerar contas.' })
+  @ApiCreatedResponse({ type: AuthMessageResponseDTO })
   forgotPassword(@Body() dto: ForgotPasswordDTO) {
     return this.authService.forgotPassword(dto);
   }
 
   @Post('reset-password')
+  @Throttle({
+    default: { limit: 5, ttl: 15 * 60_000, blockDuration: 15 * 60_000 },
+  })
+  @ApiOperation({ summary: 'Redefine a senha usando um token de uso unico.' })
+  @ApiCreatedResponse({ type: AuthMessageResponseDTO })
+  @ApiUnauthorizedResponse({
+    description: 'Token invalido, expirado ou ja utilizado.',
+  })
   resetPassword(@Body() dto: ResetPasswordDTO) {
     return this.authService.resetPassword(dto);
   }

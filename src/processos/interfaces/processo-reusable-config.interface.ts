@@ -16,5 +16,7 @@ export interface ProcessoReusableConfig {
   nome_processo_origem: string | null;
   tempo_maximo: number;
   vacuo_alvo: number;
+  modo_operacao_auxiliar: modooperacaoauxiliar;
   tanques: ProcessoReusableTanqueConfig[];
 }
+import { modooperacaoauxiliar } from '@prisma/client';

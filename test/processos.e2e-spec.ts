@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import {
   afterEach,
@@ -9,12 +9,20 @@ import {
   it,
   jest,
 } from '@jest/globals';
-import { nivelacesso, statusprocesso } from '@prisma/client';
+import {
+  modooperacaoauxiliar,
+  nivelacesso,
+  statusprocesso,
+} from '@prisma/client';
 import type { NextFunction, Request, Response } from 'express';
 import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../src/auth/guards/roles.guard';
 import { ProcessosController } from '../src/processos/processos.controller';
 import { ProcessosService } from '../src/processos/processos.service';
+import {
+  ProcessoGeneralClosureService,
+  ProcessoTanqueClosureService,
+} from '../src/processos/lifecycle';
 import type { Server } from 'node:http';
 
 type ProcessCommandResponse = {
@@ -65,6 +73,12 @@ describe('ProcessosController (e2e)', () => {
   let app: INestApplication;
   let processosService: MockProcessosService;
   let httpServer: Server;
+  let closureService: { startManual: jest.Mock };
+  let generalClosureService: {
+    getState: jest.Mock;
+    getEmergencyState: jest.Mock;
+    startManual: jest.Mock;
+  };
 
   const processoConfiguradoResponse: ProcessCommandResponse = {
     success: true,
@@ -150,6 +164,26 @@ describe('ProcessosController (e2e)', () => {
     processosService.finish.mockResolvedValue(processoFinalizadoResponse);
     processosService.interrupt.mockResolvedValue(processoCanceladoResponse);
     processosService.emergencyStop.mockResolvedValue(paradaEmergenciaResponse);
+    closureService = {
+      startManual: jest.fn().mockResolvedValue({
+        success: true,
+        message: 'Encerramento individual aceito.',
+        id_processo: 1,
+        id_processo_tanque: 20,
+      }),
+    };
+    generalClosureService = {
+      getState: jest.fn().mockResolvedValue({
+        status: 'AGUARDANDO_ACAO_MANUAL',
+        versao: 4,
+      }),
+      getEmergencyState: jest.fn().mockResolvedValue({
+        ativa: true,
+        status: 'AGUARDANDO_CONFIRMACAO',
+        hardware_confirmado: false,
+      }),
+      startManual: jest.fn().mockResolvedValue(processoFinalizadoResponse),
+    };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [ProcessosController],
@@ -157,6 +191,14 @@ describe('ProcessosController (e2e)', () => {
         {
           provide: ProcessosService,
           useValue: processosService,
+        },
+        {
+          provide: ProcessoTanqueClosureService,
+          useValue: closureService,
+        },
+        {
+          provide: ProcessoGeneralClosureService,
+          useValue: generalClosureService,
         },
       ],
     })
@@ -172,6 +214,13 @@ describe('ProcessosController (e2e)', () => {
         req.user = tecnicoUser;
         next();
       },
+    );
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
     );
     await app.init();
 
@@ -191,11 +240,13 @@ describe('ProcessosController (e2e)', () => {
       nome_processo: 'Processo de teste',
       vacuo_alvo: -80,
       tempo_maximo: 300,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
       tanques: [
         {
           id_tanque: 1,
-          id_sensor: 1,
           vacuo_alvo: -80,
+          sensores: [{ id_sensor: 1 }],
         },
       ],
     };
@@ -207,6 +258,49 @@ describe('ProcessosController (e2e)', () => {
 
     expect(response.body).toEqual(processoConfiguradoResponse);
     expect(processosService.create).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, 80])(
+    '/processos (POST) rejeita alvo manometrico nao negativo: %s',
+    async (vacuo_alvo) => {
+      const body = {
+        vacuo_alvo,
+        tempo_maximo: 300,
+        modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+        encerramento_automatico: true,
+        tanques: [
+          {
+            id_tanque: 1,
+            vacuo_alvo: -80,
+            sensores: [{ id_sensor: 1 }],
+          },
+        ],
+      };
+
+      await request(httpServer).post('/processos').send(body).expect(400);
+
+      expect(processosService.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('/processos (POST) rejeita alvo positivo de tanque', async () => {
+    const body = {
+      vacuo_alvo: -80,
+      tempo_maximo: 300,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
+      tanques: [
+        {
+          id_tanque: 1,
+          vacuo_alvo: 80,
+          sensores: [{ id_sensor: 1 }],
+        },
+      ],
+    };
+
+    await request(httpServer).post('/processos').send(body).expect(400);
+
+    expect(processosService.create).not.toHaveBeenCalled();
   });
 
   it('/processos (GET) deve listar processos paginados', async () => {
@@ -246,6 +340,30 @@ describe('ProcessosController (e2e)', () => {
     expect(processosService.start).toHaveBeenCalledTimes(1);
   });
 
+  it('/processos/:id/tanques/:id/encerramento/iniciar aceita comando versionado', async () => {
+    const body = {
+      expected_version: 4,
+      motivo: 'Tanque estabilizado e validado pelo tecnico.',
+    };
+
+    const response = await request(httpServer)
+      .post('/processos/1/tanques/20/encerramento/iniciar')
+      .send(body)
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      success: true,
+      id_processo: 1,
+      id_processo_tanque: 20,
+    });
+    expect(closureService.startManual).toHaveBeenCalledWith({
+      id_processo: 1,
+      id_processo_tanque: 20,
+      dto: body,
+      user: expect.objectContaining({ sub: 1 }),
+    });
+  });
+
   it('/processos/:id/pausar (POST) deve pausar processo', async () => {
     const response = await request(httpServer)
       .post('/processos/1/pausar')
@@ -270,12 +388,41 @@ describe('ProcessosController (e2e)', () => {
       .expect(201);
 
     expect(response.body).toEqual(processoFinalizadoResponse);
-    expect(processosService.finish).toHaveBeenCalledTimes(1);
+    expect(generalClosureService.getState).toHaveBeenCalledWith(1);
+    expect(generalClosureService.startManual).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos/:id/encerramento (GET) recupera o estado geral', async () => {
+    const response = await request(httpServer)
+      .get('/processos/1/encerramento')
+      .expect(200);
+
+    expect(response.body).toEqual({
+      status: 'AGUARDANDO_ACAO_MANUAL',
+      versao: 4,
+    });
+    expect(generalClosureService.getState).toHaveBeenCalledWith(1);
+  });
+
+  it('/processos/:id/encerramento/finalizar inicia comando versionado', async () => {
+    const body = { expected_version: 4, motivo: 'Finalizar com seguranca.' };
+    const response = await request(httpServer)
+      .post('/processos/1/encerramento/finalizar')
+      .send(body)
+      .expect(201);
+
+    expect(response.body).toEqual(processoFinalizadoResponse);
+    expect(generalClosureService.startManual).toHaveBeenCalledWith({
+      id_processo: 1,
+      dto: body,
+      user: expect.objectContaining({ sub: 1 }),
+    });
   });
 
   it('/processos/:id/interromper (POST) deve interromper processo', async () => {
     const response = await request(httpServer)
       .post('/processos/1/interromper')
+      .send({ motivo: 'Interrupcao controlada para teste.' })
       .expect(201);
 
     expect(response.body).toEqual(processoCanceladoResponse);
@@ -285,9 +432,22 @@ describe('ProcessosController (e2e)', () => {
   it('/processos/:id/parada-emergencia (POST) deve executar parada de emergência', async () => {
     const response = await request(httpServer)
       .post('/processos/1/parada-emergencia')
-      .expect(201);
+      .send({ motivo: 'Parada de emergencia para teste.' })
+      .expect(202);
 
     expect(response.body).toEqual(paradaEmergenciaResponse);
     expect(processosService.emergencyStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos/:id/parada-emergencia (GET) recupera confirmacao fisica', async () => {
+    const response = await request(httpServer)
+      .get('/processos/1/parada-emergencia')
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      status: 'AGUARDANDO_CONFIRMACAO',
+      hardware_confirmado: false,
+    });
+    expect(generalClosureService.getEmergencyState).toHaveBeenCalledWith(1);
   });
 });

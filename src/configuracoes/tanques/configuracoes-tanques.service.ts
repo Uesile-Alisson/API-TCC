@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, statustanque } from '@prisma/client';
+import { MqttConfigService } from '../../mqtt-hardware/config/mqtt-config.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaginatedConfiguracoesResponse } from '../common/paginated-configuracoes-response.interface';
 import { buildPagination } from '../common/query.helpers';
@@ -24,7 +25,10 @@ import {
 
 @Injectable()
 export class ConfiguracoesTanquesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mqttConfigService: MqttConfigService,
+  ) {}
 
   async findAll(
     query: QueryTanquesConfiguracaoDto,
@@ -70,63 +74,86 @@ export class ConfiguracoesTanquesService {
   async create(
     dto: CreateTanqueConfiguracaoDto,
   ): Promise<TanqueConfiguracaoResponseDto> {
-    await this.validateNomeAvailable(dto.nome);
+    return this.mqttConfigService.executeProtectedEquipmentMutation(
+      'CREATE_TANK',
+      async (tx) => {
+        await this.validateNomeAvailable(dto.nome, undefined, tx);
 
-    const created = await this.prisma.tanques.create({
-      data: buildTanqueCreateData(dto),
-      select: tanqueConfiguracaoSelect,
-    });
+        const created = await tx.tanques.create({
+          data: buildTanqueCreateData(dto),
+          select: tanqueConfiguracaoSelect,
+        });
 
-    return ConfiguracoesTanquesMapper.toResponse(created);
+        return ConfiguracoesTanquesMapper.toResponse(created);
+      },
+    );
   }
 
   async update(
     id_tanque: number,
     dto: UpdateTanqueConfiguracaoDto,
   ): Promise<TanqueConfiguracaoResponseDto> {
-    await this.findRecordById(id_tanque);
+    return this.mqttConfigService.executeProtectedEquipmentMutation(
+      'UPDATE_TANK',
+      async (tx) => {
+        await this.findRecordById(id_tanque, tx);
 
-    if (dto.nome !== undefined) {
-      await this.validateNomeAvailable(dto.nome, id_tanque);
-    }
+        if (dto.nome !== undefined) {
+          await this.validateNomeAvailable(dto.nome, id_tanque, tx);
+        }
 
-    const updated = await this.prisma.tanques.update({
-      where: { id_tanque },
-      data: buildTanqueUpdateData(dto),
-      select: tanqueConfiguracaoSelect,
-    });
+        const updated = await tx.tanques.update({
+          where: { id_tanque },
+          data: buildTanqueUpdateData(dto),
+          select: tanqueConfiguracaoSelect,
+        });
 
-    return ConfiguracoesTanquesMapper.toResponse(updated);
+        return ConfiguracoesTanquesMapper.toResponse(updated);
+      },
+    );
   }
 
   async ativar(id_tanque: number): Promise<TanqueConfiguracaoResponseDto> {
-    return this.updateStatus(id_tanque, statustanque.ATIVO);
+    return this.updateStatus(id_tanque, statustanque.ATIVO, 'ACTIVATE_TANK');
   }
 
   async desativar(id_tanque: number): Promise<TanqueConfiguracaoResponseDto> {
-    return this.updateStatus(id_tanque, statustanque.INATIVO);
+    return this.updateStatus(
+      id_tanque,
+      statustanque.INATIVO,
+      'DEACTIVATE_TANK',
+    );
   }
 
   private async updateStatus(
     id_tanque: number,
     status_tanque: statustanque,
+    action: 'ACTIVATE_TANK' | 'DEACTIVATE_TANK',
   ): Promise<TanqueConfiguracaoResponseDto> {
-    await this.findRecordById(id_tanque);
+    return this.mqttConfigService.executeProtectedEquipmentMutation(
+      action,
+      async (tx) => {
+        await this.findRecordById(id_tanque, tx);
 
-    const updated = await this.prisma.tanques.update({
-      where: { id_tanque },
-      data: {
-        status_tanque,
-        atualizado_em: new Date(),
+        const updated = await tx.tanques.update({
+          where: { id_tanque },
+          data: {
+            status_tanque,
+            atualizado_em: new Date(),
+          },
+          select: tanqueConfiguracaoSelect,
+        });
+
+        return ConfiguracoesTanquesMapper.toResponse(updated);
       },
-      select: tanqueConfiguracaoSelect,
-    });
-
-    return ConfiguracoesTanquesMapper.toResponse(updated);
+    );
   }
 
-  private async findRecordById(id_tanque: number) {
-    const tanque = await this.prisma.tanques.findUnique({
+  private async findRecordById(
+    id_tanque: number,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const tanque = await client.tanques.findUnique({
       where: { id_tanque },
       select: tanqueConfiguracaoSelect,
     });
@@ -141,8 +168,9 @@ export class ConfiguracoesTanquesService {
   private async validateNomeAvailable(
     nome: string,
     currentId?: number,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<void> {
-    const existing = await this.prisma.tanques.findUnique({
+    const existing = await client.tanques.findUnique({
       where: { nome: nome.trim() },
       select: { id_tanque: true },
     });

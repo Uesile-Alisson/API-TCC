@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Socket } from 'socket.io';
+import { nivelacesso } from '@prisma/client';
+import { SocketAuthService } from '../../auth/socket-auth.service';
 import type {
   AlarmeDashboard,
   AlarmeNotificationPayload,
@@ -14,21 +16,37 @@ type ServerMock = {
 type SocketMock = {
   id: string;
   emit: jest.Mock;
+  disconnect: jest.Mock;
 };
 
 describe('AlarmesSocketGateway', () => {
   let gateway: AlarmesSocketGateway;
   let server: ServerMock;
   let client: SocketMock;
+  let socketAuthService: {
+    registerAuthenticationMiddleware: jest.Mock;
+    getAuthenticatedUser: jest.Mock;
+  };
 
   beforeEach(() => {
-    gateway = new AlarmesSocketGateway();
+    socketAuthService = {
+      registerAuthenticationMiddleware: jest.fn(),
+      getAuthenticatedUser: jest.fn().mockReturnValue({
+        id_usuario: 7,
+        login: 'operador',
+        nivel_acesso: nivelacesso.OPERADOR,
+      }),
+    };
+    gateway = new AlarmesSocketGateway(
+      socketAuthService as unknown as SocketAuthService,
+    );
     server = {
       emit: jest.fn(),
     };
     client = {
       id: 'socket-1',
       emit: jest.fn(),
+      disconnect: jest.fn(),
     };
 
     Object.defineProperty(gateway, 'server', {
@@ -39,6 +57,16 @@ describe('AlarmesSocketGateway', () => {
 
   it('deve estar definido', () => {
     expect(gateway).toBeDefined();
+  });
+
+  it('afterInit registra autenticacao no namespace de alarmes', () => {
+    const namespace = { name: '/alarmes' };
+
+    gateway.afterInit(namespace as never);
+
+    expect(
+      socketAuthService.registerAuthenticationMiddleware,
+    ).toHaveBeenCalledWith(namespace);
   });
 
   it('handleConnection emite evento CONNECTED para o cliente', () => {
@@ -58,6 +86,15 @@ describe('AlarmesSocketGateway', () => {
     expect(() =>
       gateway.handleDisconnect(client as unknown as Socket),
     ).not.toThrow();
+  });
+
+  it('desconecta por defesa em profundidade sem contexto autenticado', () => {
+    socketAuthService.getAuthenticatedUser.mockReturnValueOnce(null);
+
+    gateway.handleConnection(client as unknown as Socket);
+
+    expect(client.emit).not.toHaveBeenCalled();
+    expect(client.disconnect).toHaveBeenCalledWith(true);
   });
 
   it('emitAlarmResolved emite alarm:resolved com payload recebido', () => {

@@ -5,6 +5,10 @@
 
 # Logs
 logs
+!src/alarmes/logs/
+!src/alarmes/logs/**
+!src/processos/logs/
+!src/processos/logs/**
 *.log
 npm-debug.log*
 pnpm-debug.log*
@@ -42,6 +46,9 @@ lerna-debug.log*
 .env.production.local
 .env.local
 .env.mqtt-sim
+
+# Credenciais MQTT externas (defesa adicional caso sejam criadas por engano no projeto)
+mqtt-credentials*.json
 
 # temp directory
 .temp

@@ -6,6 +6,46 @@ const mqtt = require('mqtt');
 const DEVICE_ID = process.env.TSEA_SIM_DEVICE_ID ?? 'ESP32_SIMULADOR';
 const FIRMWARE_VERSION = 'tsea-esp32-sim-1.0.0';
 const STARTED_AT = Date.now();
+const SCHEMA_VERSION = 2;
+
+const DEFAULT_VALVES = [
+  {
+    codigo_hardware: 'VP_T1',
+    id_tanque: 1,
+    numero_saida_manifold: 1,
+    tipo: 'PRINCIPAL',
+  },
+  {
+    codigo_hardware: 'VA_T1',
+    id_tanque: 1,
+    numero_saida_manifold: 1,
+    tipo: 'AUXILIAR',
+  },
+  {
+    codigo_hardware: 'VP_T2',
+    id_tanque: 2,
+    numero_saida_manifold: 2,
+    tipo: 'PRINCIPAL',
+  },
+  {
+    codigo_hardware: 'VA_T2',
+    id_tanque: 2,
+    numero_saida_manifold: 2,
+    tipo: 'AUXILIAR',
+  },
+  {
+    codigo_hardware: 'VP_T3',
+    id_tanque: 3,
+    numero_saida_manifold: 3,
+    tipo: 'PRINCIPAL',
+  },
+  {
+    codigo_hardware: 'VA_T3',
+    id_tanque: 3,
+    numero_saida_manifold: 3,
+    tipo: 'AUXILIAR',
+  },
+];
 
 const TOPICS = {
   config: 'tsea/config',
@@ -103,7 +143,10 @@ async function main() {
 
 function loadConfig() {
   return {
-    url: process.env.TSEA_MQTT_URL ?? process.env.MQTT_URL ?? 'mqtt://localhost:1883',
+    url:
+      process.env.TSEA_MQTT_URL ??
+      process.env.MQTT_URL ??
+      'mqtt://localhost:1883',
     username: process.env.TSEA_MQTT_USERNAME ?? process.env.MQTT_USERNAME,
     password: process.env.TSEA_MQTT_PASSWORD ?? process.env.MQTT_PASSWORD,
   };
@@ -177,8 +220,6 @@ async function handleSyncConfig(payload) {
     'mqtt',
   ]);
 
-  ingestSyncConfig(payload);
-
   if (missing.length > 0) {
     await publishAck({
       correlationId: payload.correlation_id,
@@ -189,6 +230,15 @@ async function handleSyncConfig(payload) {
     });
     return;
   }
+
+  await publishAck({
+    correlationId: payload.correlation_id,
+    comando: 'SINCRONIZAR_HARDWARE',
+    status: 'RECEBIDO',
+    mensagem: 'SYNC_CONFIG recebido pelo simulador ESP32.',
+  });
+
+  ingestSyncConfig(payload);
 
   await publishAck({
     correlationId: payload.correlation_id,
@@ -217,6 +267,14 @@ async function handleCommand(payload) {
     return;
   }
 
+  await publishAck({
+    correlationId,
+    comando,
+    status: 'RECEBIDO',
+    idProcesso: payload.id_processo,
+    mensagem: `Comando ${comando} recebido pelo simulador ESP32.`,
+  });
+
   if (comando === 'INICIAR_PROCESSO_VACUO') {
     await handleStartVacuumProcess(payload, correlationId);
     return;
@@ -244,6 +302,7 @@ async function handleCommand(payload) {
     correlationId,
     comando,
     status: 'EXECUTADO',
+    idProcesso: payload.id_processo,
     mensagem: `Comando ${comando} executado pelo simulador ESP32.`,
   });
 }
@@ -267,6 +326,7 @@ async function handleStartVacuumProcess(payload, correlationId) {
     codigo_hardware: tank.codigo_hardware,
     id_processo_tanque: tank.id_processo_tanque,
     id_processo_tanque_sensor: tank.id_processo_tanque_sensor,
+    sensor_vacuo_id: tank.sensor_vacuo.id_sensor,
     sensor_vacuo_codigo: tank.sensor_vacuo.codigo_hardware,
     sensor_acoplamento: tank.sensor_acoplamento,
     valvulas: tank.valvulas,
@@ -281,15 +341,13 @@ async function handleStartVacuumProcess(payload, correlationId) {
     bomba: payload.bomba,
     tanques: activeTanks,
   };
-  state.pumpOnCodes.add(payload.bomba.codigo_hardware);
   state.emergencyActive = false;
   state.openValveCodes.clear();
 
   for (const tank of activeTanks) {
     state.currentVacuumByPts.set(tank.id_processo_tanque_sensor, 0);
     for (const valve of tank.valvulas) {
-      state.openValveCodes.add(valve.codigo_hardware);
-      rememberValveFromStart(valve);
+      rememberValveFromStart(valve, tank);
     }
     rememberAcoplamentoFromStart(tank);
   }
@@ -299,11 +357,12 @@ async function handleStartVacuumProcess(payload, correlationId) {
     comando: 'INICIAR_PROCESSO_VACUO',
     status: 'EXECUTADO',
     idProcesso: payload.id_processo,
-    mensagem: 'Processo de vacuo iniciado pelo simulador ESP32.',
+    mensagem:
+      'Processo carregado pelo simulador ESP32; aguardando comandos individuais de valvula e bomba.',
   });
 
   console.log(
-    `[SIM PROCESSO] Processo ativo iniciado: ${payload.id_processo}. Tanques: ${activeTanks.length}.`,
+    `[SIM PROCESSO] Processo carregado: ${payload.id_processo}. Tanques: ${activeTanks.length}.`,
   );
 }
 
@@ -337,6 +396,17 @@ function applyGenericCommand(comando, payload) {
         ok: false,
         code: 'BOMBA_DESCONHECIDA',
         error: 'Bomba desconhecida ou ausente no comando.',
+      };
+    }
+    if (
+      state.activeProcess?.bomba.codigo_hardware === bomba.codigo_hardware &&
+      !selectedMainValvesOpen()
+    ) {
+      return {
+        ok: false,
+        code: 'VP_FECHADA',
+        error:
+          'A bomba principal exige todas as valvulas principais selecionadas abertas.',
       };
     }
     state.pumpOnCodes.add(bomba.codigo_hardware);
@@ -401,6 +471,19 @@ function applyGenericCommand(comando, payload) {
   return { ok: true };
 }
 
+function selectedMainValvesOpen() {
+  if (!state.activeProcess) {
+    return false;
+  }
+
+  return state.activeProcess.tanques.every((tank) => {
+    const mainValve = tank.valvulas.find((valve) => valve.tipo === 'PRINCIPAL');
+    return Boolean(
+      mainValve && state.openValveCodes.has(mainValve.codigo_hardware),
+    );
+  });
+}
+
 function clearActiveProcessReadings(reason) {
   if (!state.activeProcess) {
     return;
@@ -456,6 +539,22 @@ function validateStartPayload(payload) {
         error: `tanques[${index}].valvulas precisa ter ao menos uma valvula.`,
       };
     }
+
+    const mainValves = tank.valvulas.filter(
+      (valve) => valve.tipo === 'PRINCIPAL',
+    );
+    const auxiliaryValves = tank.valvulas.filter(
+      (valve) => valve.tipo === 'AUXILIAR',
+    );
+
+    if (mainValves.length !== 1 || auxiliaryValves.length !== 1) {
+      return {
+        ok: false,
+        error:
+          `tanques[${index}].valvulas precisa ter exatamente uma ` +
+          'PRINCIPAL e uma AUXILIAR.',
+      };
+    }
   }
 
   return { ok: true };
@@ -474,32 +573,43 @@ function startPeriodicPublishers() {
 }
 
 async function publishHeartbeat() {
-  await publishJson(TOPICS.heartbeat, {
-    device_id: DEVICE_ID,
-    device: DEVICE_ID,
-    device_is: DEVICE_ID,
-    status: 'ONLINE',
-    enviado_em: nowIso(),
-  }, 0);
+  await publishJson(
+    TOPICS.heartbeat,
+    {
+      tipo: 'HEARTBEAT',
+      schema_version: SCHEMA_VERSION,
+      device_id: DEVICE_ID,
+      firmware_version: FIRMWARE_VERSION,
+      uptime_ms: Date.now() - STARTED_AT,
+      id_processo: state.activeProcess?.id_processo,
+      status: 'ONLINE',
+      enviado_em: nowIso(),
+    },
+    0,
+  );
   console.log('[SIM HEARTBEAT] Publicado.');
 }
 
 async function publishStatus() {
-  await publishJson(TOPICS.status, {
-    esp32_on: true,
-    tipo: 'HARDWARE_STATUS',
-    schema_version: 1,
-    device_id: DEVICE_ID,
-    device: DEVICE_ID,
-    firmware_version: FIRMWARE_VERSION,
-    status_geral: state.emergencyActive ? 'FALHA' : 'OPERACIONAL',
-    emergencia_ativa: state.emergencyActive,
-    erro_atual: state.emergencyActive ? 'PARADA_EMERGENCIA' : null,
-    bombas: buildBombasStatus(),
-    acoplamentos: buildAcoplamentosStatus(),
-    enviado_em: nowIso(),
-    ...buildLegacyValveStatusField(),
-  }, 1);
+  await publishJson(
+    TOPICS.status,
+    {
+      esp32_on: true,
+      tipo: 'HARDWARE_STATUS',
+      schema_version: SCHEMA_VERSION,
+      device_id: DEVICE_ID,
+      device: DEVICE_ID,
+      firmware_version: FIRMWARE_VERSION,
+      status_geral: state.emergencyActive ? 'FALHA' : 'OPERACIONAL',
+      emergencia_ativa: state.emergencyActive,
+      erro_atual: state.emergencyActive ? 'PARADA_EMERGENCIA' : null,
+      bombas: buildBombasStatus(),
+      valvulas: buildValveStatusList(),
+      acoplamentos: buildAcoplamentosStatus(),
+      enviado_em: nowIso(),
+    },
+    1,
+  );
   console.log('[SIM STATUS] Publicado.');
 }
 
@@ -514,13 +624,24 @@ async function publishAcoplamentos() {
   }
 
   for (const acoplamento of acoplamentos) {
-    await publishJson(TOPICS.acoplamentos, {
-      id_sensor: acoplamento.id_sensor,
-      id_tanque: acoplamento.id_tanque,
-      codigo_hardware: acoplamento.codigo_hardware,
-      sinal_detectado: true,
-      verificado_em: nowIso(),
-    }, 1);
+    await publishJson(
+      TOPICS.acoplamentos,
+      {
+        tipo: 'ACOPLAMENTO_STATUS',
+        schema_version: SCHEMA_VERSION,
+        device_id: DEVICE_ID,
+        id_processo: state.activeProcess?.id_processo,
+        id_processo_tanque: state.activeProcess?.tanques.find(
+          (tank) => tank.id_tanque === acoplamento.id_tanque,
+        )?.id_processo_tanque,
+        id_sensor: acoplamento.id_sensor,
+        id_tanque: acoplamento.id_tanque,
+        codigo_hardware: acoplamento.codigo_hardware,
+        sinal_detectado: true,
+        verificado_em: nowIso(),
+      },
+      1,
+    );
     console.log(
       `[SIM ACOPLAMENTO] Publicado ${acoplamento.codigo_hardware} tanque ${acoplamento.id_tanque}.`,
     );
@@ -532,7 +653,16 @@ async function publishReadings() {
     return;
   }
 
+  if (!state.pumpOnCodes.has(state.activeProcess.bomba.codigo_hardware)) {
+    return;
+  }
+
   for (const tank of state.activeProcess.tanques) {
+    const mainValve = tank.valvulas.find((valve) => valve.tipo === 'PRINCIPAL');
+    if (!mainValve || !state.openValveCodes.has(mainValve.codigo_hardware)) {
+      continue;
+    }
+
     const previous =
       state.currentVacuumByPts.get(tank.id_processo_tanque_sensor) ?? 0;
     const target = Number(tank.vacuo_alvo);
@@ -540,13 +670,25 @@ async function publishReadings() {
 
     state.currentVacuumByPts.set(tank.id_processo_tanque_sensor, next);
 
-    await publishJson(TOPICS.leituras, {
-      id_processo_tanque_sensor: tank.id_processo_tanque_sensor,
-      codigo_hardware: tank.sensor_vacuo_codigo,
-      valor_vacuo: next,
-      unidade_medida: tank.unidade,
-      leitura_em: nowIso(),
-    }, 0);
+    await publishJson(
+      TOPICS.leituras,
+      {
+        tipo: 'SENSOR_READING',
+        schema_version: SCHEMA_VERSION,
+        device_id: DEVICE_ID,
+        modo: 'PROCESSO',
+        id_processo: state.activeProcess.id_processo,
+        id_processo_tanque: tank.id_processo_tanque,
+        id_tanque: tank.id_tanque,
+        id_sensor: tank.sensor_vacuo_id,
+        id_processo_tanque_sensor: tank.id_processo_tanque_sensor,
+        codigo_hardware: tank.sensor_vacuo_codigo,
+        valor_vacuo: next,
+        unidade_medida: tank.unidade,
+        leitura_em: nowIso(),
+      },
+      0,
+    );
     console.log(
       `[SIM LEITURA] PTS ${tank.id_processo_tanque_sensor}: ${next} ${tank.unidade}.`,
     );
@@ -569,16 +711,21 @@ async function publishDiagnosticReadings() {
     const next = nextDiagnosticVacuumValue(previous);
     state.diagnosticVacuumByCode.set(sensor.codigo_hardware, next);
 
-    await publishJson(TOPICS.leituras, {
-      tipo: 'SENSOR_READING',
-      schema_version: 1,
-      modo: 'DIAGNOSTICO',
-      codigo_hardware: sensor.codigo_hardware,
-      id_sensor: sensor.id_sensor,
-      valor: next,
-      unidade: sensor.unidade_medida ?? 'kPa',
-      timestamp: nowIso(),
-    }, 0);
+    await publishJson(
+      TOPICS.leituras,
+      {
+        tipo: 'SENSOR_READING',
+        schema_version: SCHEMA_VERSION,
+        device_id: DEVICE_ID,
+        modo: 'DIAGNOSTICO',
+        codigo_hardware: sensor.codigo_hardware,
+        id_sensor: sensor.id_sensor,
+        valor: next,
+        unidade: sensor.unidade_medida ?? 'kPa',
+        timestamp: nowIso(),
+      },
+      0,
+    );
     console.log(
       `[SIM DIAGNOSTICO] ${sensor.codigo_hardware}: ${next} ${sensor.unidade_medida ?? 'kPa'}.`,
     );
@@ -588,7 +735,8 @@ async function publishDiagnosticReadings() {
 async function publishAck(input) {
   const payload = {
     tipo: 'ACK',
-    schema_version: 1,
+    schema_version: SCHEMA_VERSION,
+    device_id: DEVICE_ID,
     correlation_id: input.correlationId,
     comando: normalizeAckCommand(input.comando),
     status: input.status,
@@ -618,27 +766,31 @@ function buildBombasStatus() {
     codigo_hardware: bomba.codigo_hardware,
     ligada: state.pumpOnCodes.has(bomba.codigo_hardware),
     disponivel: true,
+    falha: false,
   }));
 }
 
-function buildLegacyValveStatusField() {
-  if (state.valvulaByCode.size === 0) {
-    return {};
-  }
+function buildValveStatusList() {
+  const valves = DEFAULT_VALVES.map((fallback) => ({
+    ...fallback,
+    ...(state.valvulaByCode.get(fallback.codigo_hardware) ?? {}),
+  }));
 
-  const valvulas = {};
-
-  for (const valve of state.valvulaByCode.values()) {
+  return valves.map((valve) => {
     const aberta = state.openValveCodes.has(valve.codigo_hardware);
-    valvulas[String(valve.id_valvula)] = {
+    return removeUndefined({
       id_valvula: valve.id_valvula,
+      codigo_hardware: valve.codigo_hardware,
+      id_tanque: valve.id_tanque,
+      numero_saida_manifold: valve.numero_saida_manifold,
+      tipo: valve.tipo,
       status_valvula: aberta ? 'ABERTA' : 'FECHADA',
+      aberta,
       ack: true,
       falha: false,
-    };
-  }
-
-  return { valvulas };
+      disponivel: true,
+    });
+  });
 }
 
 function buildAcoplamentosStatus() {
@@ -740,11 +892,15 @@ function ingestSyncValves(valves) {
       state.valvulaByCode.set(valve.codigo_hardware, {
         id_valvula: valve.id_valvula,
         codigo_hardware: valve.codigo_hardware,
+        id_tanque: valve.id_tanque,
+        numero_saida_manifold: valve.numero_saida_manifold,
         tipo: valve.tipo,
       });
       state.valvulaById.set(valve.id_valvula, {
         id_valvula: valve.id_valvula,
         codigo_hardware: valve.codigo_hardware,
+        id_tanque: valve.id_tanque,
+        numero_saida_manifold: valve.numero_saida_manifold,
         tipo: valve.tipo,
       });
     }
@@ -772,7 +928,7 @@ function rememberAcoplamento(input) {
   state.acoplamentoByTank.set(input.id_tanque, input);
 }
 
-function rememberValveFromStart(valve) {
+function rememberValveFromStart(valve, tank) {
   if (
     Number.isInteger(valve.id_valvula) &&
     typeof valve.codigo_hardware === 'string'
@@ -780,18 +936,24 @@ function rememberValveFromStart(valve) {
     state.valvulaByCode.set(valve.codigo_hardware, {
       id_valvula: valve.id_valvula,
       codigo_hardware: valve.codigo_hardware,
+      id_tanque: tank.id_tanque,
+      numero_saida_manifold: valve.numero_saida_manifold,
       tipo: valve.tipo,
     });
     state.valvulaById.set(valve.id_valvula, {
       id_valvula: valve.id_valvula,
       codigo_hardware: valve.codigo_hardware,
+      id_tanque: tank.id_tanque,
+      numero_saida_manifold: valve.numero_saida_manifold,
       tipo: valve.tipo,
     });
   }
 }
 
 function resolveCommandValve(payload) {
-  const idValvula = Number(payload?.parametros?.id_valvula ?? payload?.id_valvula);
+  const idValvula = Number(
+    payload?.parametros?.id_valvula ?? payload?.id_valvula,
+  );
 
   if (!Number.isInteger(idValvula) || idValvula <= 0) {
     return null;
@@ -811,7 +973,15 @@ function resolveCommandPump(payload) {
 }
 
 function resolveCommandName(payload) {
-  return payload.tipo ?? payload.comando ?? 'REINICIAR_COMUNICACAO';
+  if (payload.comando) {
+    return payload.comando;
+  }
+
+  if (payload.tipo && payload.tipo !== 'COMANDO') {
+    return payload.tipo;
+  }
+
+  return 'REINICIAR_COMUNICACAO';
 }
 
 function normalizeAckCommand(command) {
@@ -870,7 +1040,9 @@ function publishJson(topic, payload, qos) {
   const client = state.client;
 
   if (!client || !client.connected) {
-    console.error(`[SIM MQTT PUB] Cliente desconectado. Topico ignorado: ${topic}`);
+    console.error(
+      `[SIM MQTT PUB] Cliente desconectado. Topico ignorado: ${topic}`,
+    );
     return Promise.resolve();
   }
 

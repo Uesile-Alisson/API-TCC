@@ -12,6 +12,8 @@ describe('ConfiguracoesSensoresController', () => {
       'create',
       'update',
       'ativar',
+      'iniciarCalibracao',
+      'calibrar',
       'desativar',
       'findSensoresByTanque',
     ]);
@@ -32,6 +34,12 @@ describe('ConfiguracoesSensoresController', () => {
         .fn<(...args: unknown[]) => Promise<unknown>>()
         .mockResolvedValue({}),
       ativar: jest
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockResolvedValue({}),
+      iniciarCalibracao: jest
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockResolvedValue({}),
+      calibrar: jest
         .fn<(...args: unknown[]) => Promise<unknown>>()
         .mockResolvedValue({}),
       desativar: jest
@@ -55,7 +63,8 @@ describe('ConfiguracoesSensoresController', () => {
       status_sensor: statussensor.ATIVO,
     });
     await controller.update(1, { status_sensor: statussensor.INATIVO });
-    await controller.ativar(1);
+    const currentUser = { id_usuario: 7 } as never;
+    await controller.ativar(1, currentUser);
     await controller.desativar(1);
     await controller.findSensoresByTanque(5, {});
 
@@ -65,7 +74,7 @@ describe('ConfiguracoesSensoresController', () => {
     expect(service.update).toHaveBeenCalledWith(1, {
       status_sensor: statussensor.INATIVO,
     });
-    expect(service.ativar).toHaveBeenCalledWith(1);
+    expect(service.ativar).toHaveBeenCalledWith(1, currentUser);
     expect(service.desativar).toHaveBeenCalledWith(1);
     expect(service.findSensoresByTanque).toHaveBeenCalledWith(5, {});
   });

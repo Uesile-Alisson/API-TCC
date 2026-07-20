@@ -6,6 +6,8 @@ import {
   statusgeralsistema,
   tipoalarme,
 } from '@prisma/client';
+import type { BombaHardwareStatusResult } from '../../bombas/bomba-hardware-status.service';
+import type { ValvulaHardwareStatusResult } from '../../valvulas/valvula-hardware-status.service';
 
 export interface MqttAlarmHandlerResult {
   id_alarme: number;
@@ -29,6 +31,7 @@ export interface MqttReadingHandlerResult {
   id_leitura_sensor: number;
   id_processo_tanque_sensor: number;
   id_processo: number;
+  id_processo_tanque: number;
   id_tanque: number;
   id_sensor: number;
   valor_vacuo: number;
@@ -50,10 +53,15 @@ export interface MqttStatusHandlerResult {
   status_geral_sistema: statusgeralsistema;
   mensagem: string | null;
   device_id: string | null;
+  emergencia_ativa: boolean;
+  erro_atual: string | null;
+  emergency_stop_reconciled: boolean;
   status_em: Date;
   receivedAt: Date;
   topic: string;
   status_changed: boolean;
+  bombas: BombaHardwareStatusResult[];
+  valvulas: ValvulaHardwareStatusResult[];
 }
 
 export interface MqttAcoplamentoMangueiraHandlerResult {

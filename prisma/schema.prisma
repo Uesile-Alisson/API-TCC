@@ -125,44 +125,63 @@ model backups {
 }
 
 model bombas {
-  id_bomba                Int                  @id @default(autoincrement())
-  id_configuracao_sistema Int
-  id_usuario_alteracao    Int?
-  nome                    String               @unique @db.VarChar(80)
-  codigo_hardware         String?              @unique(map: "uq_bombas_codigo_hardware") @db.VarChar(80)
-  tipo_bomba              tipobomba
-  status_padrao           statusbomba
-  entrada_por_pressao     Boolean              @default(false)
-  entrada_por_tempo       Boolean              @default(false)
-  encerramento_automatico Boolean              @default(true)
-  criado_em               DateTime             @default(now()) @db.Timestamp(6)
-  atualizado_em           DateTime             @default(now()) @db.Timestamp(6)
-  configuracoessistema    configuracoessistema @relation(fields: [id_configuracao_sistema], references: [id_configuracao_sistema], map: "fk_bomba_config")
-  usuarios                usuarios?            @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_bomba_usuario")
-  valvulas                valvulas[]
+  id_bomba                  Int                  @id @default(autoincrement())
+  id_configuracao_sistema   Int
+  id_usuario_alteracao      Int?
+  nome                      String               @unique @db.VarChar(80)
+  codigo_hardware           String?              @unique(map: "uq_bombas_codigo_hardware") @db.VarChar(80)
+  tipo_bomba                tipobomba
+  status_padrao             statusbomba
+  entrada_por_pressao       Boolean              @default(false)
+  entrada_por_tempo         Boolean              @default(false)
+  encerramento_automatico   Boolean              @default(true)
+  ligada_hardware           Boolean?
+  disponivel_hardware       Boolean?
+  ultimo_status_hardware_em DateTime?            @db.Timestamp(6)
+  criado_em                 DateTime             @default(now()) @db.Timestamp(6)
+  atualizado_em             DateTime             @default(now()) @db.Timestamp(6)
+  configuracoessistema      configuracoessistema @relation(fields: [id_configuracao_sistema], references: [id_configuracao_sistema], map: "fk_bomba_config")
+  usuarios                  usuarios?            @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_bomba_usuario")
+  valvulas                  valvulas[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model configuracoessistema {
-  id_configuracao_sistema        Int                @id @default(autoincrement())
-  id_usuario_alteracao           Int?
-  tempo_maximo_padrao            Int
-  encerramento_automatico        Boolean
-  limite_seguranca_vacuo         Decimal            @db.Decimal(10, 3)
-  vacuo_padrao                   Decimal            @db.Decimal(10, 3)
-  quantidade_maxima_tanques      Int
-  status_geral_sistema           statusgeralsistema
-  versao_sistema                 String             @db.VarChar(30)
-  criado_em                      DateTime           @default(now()) @db.Timestamp(6)
-  atualizado_em                  DateTime           @default(now()) @db.Timestamp(6)
-  tolerancia_vacuo_percentual    Decimal            @default(10.00) @db.Decimal(5, 2)
-  limite_nivel_maximo_percentual Decimal            @default(95.00) @db.Decimal(5, 2)
-  tolerancia_volume_percentual   Decimal            @default(5.00) @db.Decimal(5, 2)
-  vazao_minima_l_min             Decimal            @default(0.100) @db.Decimal(10, 3)
-  vazao_maxima_l_min             Decimal            @default(5.000) @db.Decimal(10, 3)
-  backups                        backups[]
-  bombas                         bombas[]
-  usuarios                       usuarios?          @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_config_usuario")
+  id_configuracao_sistema                          Int                @id @default(autoincrement())
+  id_usuario_alteracao                             Int?
+  tempo_maximo_padrao                              Int
+  encerramento_automatico                          Boolean
+  limite_seguranca_vacuo                           Decimal            @db.Decimal(10, 3)
+  vacuo_padrao                                     Decimal            @db.Decimal(10, 3)
+  quantidade_maxima_tanques                        Int
+  status_geral_sistema                             statusgeralsistema
+  versao_sistema                                   String             @db.VarChar(30)
+  criado_em                                        DateTime           @default(now()) @db.Timestamp(6)
+  atualizado_em                                    DateTime           @default(now()) @db.Timestamp(6)
+  tolerancia_vacuo_percentual                      Decimal            @default(10.00) @db.Decimal(5, 2)
+  limite_nivel_maximo_percentual                   Decimal            @default(95.00) @db.Decimal(5, 2)
+  tolerancia_volume_percentual                     Decimal            @default(5.00) @db.Decimal(5, 2)
+  vazao_minima_l_min                               Decimal            @default(0.100) @db.Decimal(10, 3)
+  vazao_maxima_l_min                               Decimal            @default(5.000) @db.Decimal(10, 3)
+  estagnacao_janela_segundos                       Int                @default(60)
+  estagnacao_variacao_minima                       Decimal            @default(2.000) @db.Decimal(10, 3)
+  estagnacao_leituras_minimas                      Int                @default(5)
+  estagnacao_janelas_consecutivas                  Int                @default(2)
+  estagnacao_tempo_minimo_bomba_principal_segundos Int                @default(30)
+  estagnacao_tempo_maximo_sem_progresso_segundos   Int                @default(180)
+  estagnacao_fator_minimo_proximidade_alvo         Decimal            @default(0.350) @db.Decimal(5, 3)
+  auxilio_janela_avaliacao_segundos                Int                @default(30)
+  auxilio_melhoria_minima                          Decimal            @default(1.000) @db.Decimal(10, 3)
+  auxilio_timeout_segundos                         Int                @default(180)
+  tempo_estabilizacao_vacuo_segundos               Int                @default(30)
+  estabilizacao_cobertura_minima_percentual        Decimal            @default(80.00) @db.Decimal(5, 2)
+  intervalo_leitura_esperado_ms                    Int                @default(1000)
+  timeout_leitura_sensor_ms                        Int                @default(2500)
+  tempo_retencao_vacuo_segundos                    Int                @default(30)
+  perda_vacuo_maxima_retencao                      Decimal            @default(2.000) @db.Decimal(10, 3)
+  backups                                          backups[]
+  bombas                                           bombas[]
+  usuarios                                         usuarios?          @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_config_usuario")
 }
 
 model eventos {
@@ -215,36 +234,38 @@ model logsoperacionais {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model mqttconfiguracoes {
-  id_mqtt_configuracao       Int                          @id @default(autoincrement())
-  id_usuario_alteracao       Int?
-  broker_url                 String                       @db.VarChar(150)
-  porta                      Int
-  senha_mqtt_hash            String?
-  topico_leituras            String                       @db.VarChar(180)
-  topico_comandos            String                       @db.VarChar(180)
-  topico_status              String                       @db.VarChar(180)
-  topico_alarmes             String                       @db.VarChar(180)
-  reconexao_automatica       Boolean
-  timeout_comunicacao        Int
-  status_conexao             statusconexaomqtt
-  ultima_conexao             DateTime?                    @db.Timestamp(6)
-  ultima_sincronizacao       DateTime?                    @db.Timestamp(6)
-  ultima_falha               String?
-  ativo                      Boolean                      @default(true)
-  criado_em                  DateTime                     @default(now()) @db.Timestamp(6)
-  atualizado_em              DateTime                     @default(now()) @db.Timestamp(6)
-  topico_heartbeat           String                       @db.VarChar(180)
-  chave_configuracao         String                       @unique(map: "uq_mqtt_config_chave_configuracao") @default("MQTT_PRINCIPAL") @db.VarChar(50)
-  usuario_mqtt               String?                      @db.VarChar(120)
-  topico_acoplamentos        String                       @default("tsea/acoplamentos") @db.VarChar(150)
-  topico_configuracoes       String                       @default("tsea/config") @db.VarChar(180)
-  topico_acks                String                       @default("tsea/acks") @db.VarChar(180)
-  backups                    backups[]
-  usuarios                   usuarios?                    @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_usuario")
-  mqttconfiguracoeshistorico mqttconfiguracoeshistorico[]
-  mqttmensagens              mqttmensagens[]
-
-  @@index([usuario_mqtt], map: "idx_mqtt_config_usuario_mqtt")
+  id_mqtt_configuracao                  Int                          @id @default(autoincrement())
+  id_usuario_alteracao                  Int?
+  broker_url                            String                       @db.VarChar(150)
+  porta                                 Int
+  usuario_mqtt_configurado              Boolean                      @default(false)
+  senha_mqtt_configurada                Boolean                      @default(false)
+  credenciais_verificadas_em            DateTime?                    @db.Timestamp(6)
+  ultima_falha_credenciais              String?
+  credenciais_atualizacao_token         String?                      @db.VarChar(64)
+  credenciais_atualizacao_bloqueada_ate DateTime?                    @db.Timestamp(6)
+  topico_leituras                       String                       @db.VarChar(180)
+  topico_comandos                       String                       @db.VarChar(180)
+  topico_status                         String                       @db.VarChar(180)
+  topico_alarmes                        String                       @db.VarChar(180)
+  reconexao_automatica                  Boolean
+  timeout_comunicacao                   Int
+  status_conexao                        statusconexaomqtt
+  ultima_conexao                        DateTime?                    @db.Timestamp(6)
+  ultima_sincronizacao                  DateTime?                    @db.Timestamp(6)
+  ultima_falha                          String?
+  ativo                                 Boolean                      @default(true)
+  criado_em                             DateTime                     @default(now()) @db.Timestamp(6)
+  atualizado_em                         DateTime                     @default(now()) @db.Timestamp(6)
+  topico_heartbeat                      String                       @db.VarChar(180)
+  chave_configuracao                    String                       @unique(map: "uq_mqtt_config_chave_configuracao") @default("MQTT_PRINCIPAL") @db.VarChar(50)
+  topico_acoplamentos                   String                       @default("tsea/acoplamentos") @db.VarChar(150)
+  topico_configuracoes                  String                       @default("tsea/config") @db.VarChar(180)
+  topico_acks                           String                       @default("tsea/acks") @db.VarChar(180)
+  backups                               backups[]
+  usuarios                              usuarios?                    @relation(fields: [id_usuario_alteracao], references: [id_usuario], map: "fk_mqtt_config_usuario")
+  mqttconfiguracoeshistorico            mqttconfiguracoeshistorico[]
+  mqttmensagens                         mqttmensagens[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -265,6 +286,40 @@ model mqttmensagens {
   processostanquessensores  processostanquessensores? @relation(fields: [id_processo_tanque_sensor], references: [id_processo_tanque_sensor], map: "fk_mqtt_mensagem_processo_tanque_sensor")
 
   @@index([id_processo_tanque_sensor], map: "idx_mqtt_mensagens_processo_tanque_sensor")
+}
+
+/// Diario persistente dos comandos enviados ao ESP32 e dos respectivos ACKs.
+/// correlation_id e a chave de idempotencia compartilhada entre API e firmware.
+model comandosmqtt {
+  id_comando_mqtt    Int               @id @default(autoincrement())
+  correlation_id     String            @unique(map: "uq_comandosmqtt_correlation_id") @db.VarChar(200)
+  comando            String            @db.VarChar(80)
+  status             statuscomandomqtt @default(PENDENTE)
+  id_processo        Int?
+  id_processo_tanque Int?
+  id_usuario         Int?
+  topico_publicacao  String            @db.VarChar(180)
+  topico_ack         String?           @db.VarChar(180)
+  payload            Json
+  payload_ack        Json?
+  qos                Int               @db.SmallInt
+  retain             Boolean           @default(false)
+  tentativas         Int               @default(0)
+  publicado_em       DateTime?         @db.Timestamp(6)
+  ack_recebido_em    DateTime?         @db.Timestamp(6)
+  finalizado_em      DateTime?         @db.Timestamp(6)
+  mensagem_ack       String?
+  erro               String?
+  criado_em          DateTime          @default(now()) @db.Timestamp(6)
+  atualizado_em      DateTime          @default(now()) @db.Timestamp(6)
+  processos          processos?        @relation(fields: [id_processo], references: [id_processo], onDelete: SetNull, onUpdate: Cascade, map: "fk_comandosmqtt_processo")
+  processostanques   processostanques? @relation(fields: [id_processo_tanque], references: [id_processo_tanque], onDelete: SetNull, onUpdate: Cascade, map: "fk_comandosmqtt_processo_tanque")
+  usuarios           usuarios?         @relation(fields: [id_usuario], references: [id_usuario], onDelete: SetNull, onUpdate: Cascade, map: "fk_comandosmqtt_usuario")
+
+  @@index([status, atualizado_em], map: "idx_comandosmqtt_status_atualizado")
+  @@index([id_processo, criado_em], map: "idx_comandosmqtt_processo_criado")
+  @@index([id_processo_tanque, criado_em], map: "idx_comandosmqtt_processo_tanque_criado")
+  @@index([id_usuario, criado_em], map: "idx_comandosmqtt_usuario_criado")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -325,57 +380,206 @@ model processos {
   retomado_em                                                           DateTime?                            @db.Timestamp(6)
   finalizado_em                                                         DateTime?                            @db.Timestamp(6)
   parada_emergencia                                                     Boolean                              @default(false)
+  modo_operacao_auxiliar                                                modooperacaoauxiliar                 @default(AUTOMATICO)
+  encerramento_automatico                                               Boolean                              @default(true)
+  encerramento_tolerancia_vacuo_percentual                              Decimal                              @default(10.00) @db.Decimal(5, 2)
+  encerramento_limite_seguranca_vacuo                                   Decimal                              @default(-95.000) @db.Decimal(10, 3)
+  encerramento_tempo_estabilizacao_segundos                             Int                                  @default(30)
+  encerramento_estabilizacao_cobertura_minima_percentual                Decimal                              @default(80.00) @db.Decimal(5, 2)
+  encerramento_intervalo_leitura_esperado_ms                            Int                                  @default(1000)
+  encerramento_timeout_leitura_sensor_ms                                Int                                  @default(2500)
+  encerramento_tempo_retencao_segundos                                  Int                                  @default(30)
+  encerramento_perda_vacuo_maxima_retencao                              Decimal                              @default(2.000) @db.Decimal(10, 3)
+  estagnacao_janela_segundos                                            Int                                  @default(60)
+  estagnacao_variacao_minima                                            Decimal                              @default(2.000) @db.Decimal(10, 3)
+  estagnacao_leituras_minimas                                           Int                                  @default(5)
+  estagnacao_janelas_consecutivas                                       Int                                  @default(2)
+  estagnacao_tempo_minimo_bomba_principal_segundos                      Int                                  @default(30)
+  estagnacao_tempo_maximo_sem_progresso_segundos                        Int                                  @default(180)
+  estagnacao_fator_minimo_proximidade_alvo                              Decimal                              @default(0.350) @db.Decimal(5, 3)
+  auxilio_janela_avaliacao_segundos                                     Int                                  @default(30)
+  auxilio_melhoria_minima                                               Decimal                              @default(1.000) @db.Decimal(10, 3)
+  auxilio_timeout_segundos                                              Int                                  @default(180)
+  encerramento_versao                                                   Int                                  @default(0)
+  status_encerramento_geral                                             statusencerramentoprocesso           @default(INATIVO)
+  etapa_encerramento_geral                                              etapaencerramentoprocesso            @default(NENHUMA)
+  encerramento_geral_iniciado_em                                        DateTime?                            @db.Timestamp(6)
+  encerramento_geral_finalizado_em                                      DateTime?                            @db.Timestamp(6)
+  encerramento_geral_confirmacao_iniciada_em                            DateTime?                            @db.Timestamp(6)
+  encerramento_geral_proxima_tentativa_em                               DateTime?                            @db.Timestamp(6)
+  encerramento_geral_tentativa                                          Int                                  @default(0)
+  encerramento_geral_comando_tentativas                                 Int                                  @default(0)
+  encerramento_geral_ultimo_erro                                        String?
+  encerramento_geral_id_usuario                                         Int?
+  status_partida                                                        statuspartidaprocesso                @default(INATIVA)
+  etapa_partida                                                         etapapartidaprocesso                 @default(NENHUMA)
+  partida_iniciada_em                                                   DateTime?                            @db.Timestamp(6)
+  partida_finalizada_em                                                 DateTime?                            @db.Timestamp(6)
+  partida_confirmacao_iniciada_em                                       DateTime?                            @db.Timestamp(6)
+  partida_execucao_bloqueada_ate                                        DateTime?                            @db.Timestamp(6)
+  partida_tentativa                                                     Int                                  @default(0)
+  partida_comando_tentativas                                            Int                                  @default(0)
+  partida_ultimo_erro                                                   String?
+  partida_id_usuario                                                    Int?
+  partida_versao                                                        Int                                  @default(0)
   criado_em                                                             DateTime                             @default(now()) @db.Timestamp(6)
   fase_processo                                                         faseprocesso                         @default(CONFIGURACAO)
   id_processo_tanque_atual                                              Int?
   alarmes                                                               alarmes[]
+  comandosmqtt                                                          comandosmqtt[]
   eventos                                                               eventos[]
   logsoperacionais                                                      logsoperacionais[]
-  usuarios                                                              usuarios                             @relation(fields: [id_usuario], references: [id_usuario], map: "fk_processo_usuario")
+  usuarios                                                              usuarios                             @relation("processos_usuario_responsavel", fields: [id_usuario], references: [id_usuario], map: "fk_processo_usuario")
+  usuario_encerramento_geral                                            usuarios?                            @relation("processos_usuario_encerramento_geral", fields: [encerramento_geral_id_usuario], references: [id_usuario], onDelete: SetNull, onUpdate: Cascade, map: "fk_processos_usuario_encerramento_geral")
+  usuario_partida                                                       usuarios?                            @relation("processos_usuario_partida", fields: [partida_id_usuario], references: [id_usuario], onDelete: SetNull, onUpdate: Cascade, map: "fk_processos_usuario_partida")
   processostanques_processos_id_processo_tanque_atualToprocessostanques processostanques?                    @relation("processos_id_processo_tanque_atualToprocessostanques", fields: [id_processo_tanque_atual], references: [id_processo_tanque], map: "fk_processos_processo_tanque_atual")
   processosmqttconfiguracoeshistorico                                   processosmqttconfiguracoeshistorico?
+  processosauxiliares                                                   processosauxiliares?
   processostanques                                                      processostanques[]
   relatorios                                                            relatorios[]
 
   @@index([fase_processo], map: "idx_processos_fase_processo")
   @@index([status_processo, fase_processo], map: "idx_processos_status_fase")
+  @@index([status_encerramento_geral, etapa_encerramento_geral, encerramento_geral_proxima_tentativa_em], map: "idx_processos_encerramento_geral")
+  @@index([status_partida, etapa_partida, partida_execucao_bloqueada_ate], map: "idx_processos_partida_pendente")
   @@index([id_processo_tanque_atual], map: "idx_processos_tanque_atual")
+  @@index([encerramento_geral_id_usuario], map: "idx_processos_usuario_encerramento_geral")
+  @@index([partida_id_usuario], map: "idx_processos_usuario_partida")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model processostanques {
-  id_processo_tanque                                             Int                        @id @default(autoincrement())
+  id_processo_tanque                                             Int                         @id @default(autoincrement())
   id_processo                                                    Int
   id_tanque                                                      Int
-  vacuo_alvo                                                     Decimal                    @db.Decimal(10, 3)
-  vacuo_inicial                                                  Decimal?                   @db.Decimal(10, 3)
-  vacuo_final                                                    Decimal?                   @db.Decimal(10, 3)
-  vacuo_medio                                                    Decimal?                   @db.Decimal(10, 3)
-  eficiencia                                                     Decimal?                   @db.Decimal(5, 2)
+  vacuo_alvo                                                     Decimal                     @db.Decimal(10, 3)
+  vacuo_inicial                                                  Decimal?                    @db.Decimal(10, 3)
+  vacuo_final                                                    Decimal?                    @db.Decimal(10, 3)
+  vacuo_medio                                                    Decimal?                    @db.Decimal(10, 3)
+  eficiencia                                                     Decimal?                    @db.Decimal(5, 2)
   status_tanque_processo                                         statustanqueprocesso
-  iniciado_em                                                    DateTime?                  @db.Timestamp(6)
-  finalizado_em                                                  DateTime?                  @db.Timestamp(6)
-  criado_em                                                      DateTime                   @default(now()) @db.Timestamp(6)
-  volume_alvo_ml                                                 Decimal?                   @db.Decimal(10, 3)
-  volume_enviado_ml                                              Decimal                    @default(0.000) @db.Decimal(10, 3)
-  vazao_atual_l_min                                              Decimal?                   @db.Decimal(10, 3)
-  nivel_atual_percentual                                         Decimal?                   @db.Decimal(5, 2)
-  vacuo_atingido                                                 Boolean                    @default(false)
-  vacuo_estabilizado                                             Boolean                    @default(false)
-  alimentacao_iniciada_em                                        DateTime?                  @db.Timestamp(6)
-  alimentacao_finalizada_em                                      DateTime?                  @db.Timestamp(6)
+  iniciado_em                                                    DateTime?                   @db.Timestamp(6)
+  finalizado_em                                                  DateTime?                   @db.Timestamp(6)
+  criado_em                                                      DateTime                    @default(now()) @db.Timestamp(6)
+  volume_alvo_ml                                                 Decimal?                    @db.Decimal(10, 3)
+  volume_enviado_ml                                              Decimal                     @default(0.000) @db.Decimal(10, 3)
+  vazao_atual_l_min                                              Decimal?                    @db.Decimal(10, 3)
+  nivel_atual_percentual                                         Decimal?                    @db.Decimal(5, 2)
+  vacuo_atingido                                                 Boolean                     @default(false)
+  vacuo_estabilizado                                             Boolean                     @default(false)
+  status_estagnacao                                              statusestagnacao            @default(NORMAL)
+  estagnacao_iniciada_em                                         DateTime?                   @db.Timestamp(6)
+  estagnacao_detectada_em                                        DateTime?                   @db.Timestamp(6)
+  estagnacao_ultima_avaliacao_em                                 DateTime?                   @db.Timestamp(6)
+  estagnacao_variacao_vacuo                                      Decimal?                    @db.Decimal(10, 3)
+  estagnacao_leituras_janela                                     Int                         @default(0)
+  estagnacao_janelas_sem_progresso                               Int                         @default(0)
+  estagnacao_variacao_minima_ajustada                            Decimal?                    @db.Decimal(10, 3)
+  estagnacao_fator_volume                                        Decimal?                    @db.Decimal(8, 4)
+  estagnacao_fator_tanques_ativos                                Decimal?                    @db.Decimal(8, 4)
+  estagnacao_fator_proximidade_alvo                              Decimal?                    @db.Decimal(8, 4)
+  estagnacao_volume_tanque                                       Decimal?                    @db.Decimal(10, 2)
+  estagnacao_volume_medio_tanques_ativos                         Decimal?                    @db.Decimal(10, 2)
+  estagnacao_tanques_ativos                                      Int                         @default(0)
+  estagnacao_vacuo_atual                                         Decimal?                    @db.Decimal(10, 3)
+  estagnacao_distancia_alvo                                      Decimal?                    @db.Decimal(10, 3)
+  estagnacao_tempo_bomba_principal_segundos                      Int                         @default(0)
+  estagnacao_motivo_decisao                                      String?
+  alimentacao_iniciada_em                                        DateTime?                   @db.Timestamp(6)
+  alimentacao_finalizada_em                                      DateTime?                   @db.Timestamp(6)
+  status_encerramento                                            statusencerramentotanque    @default(INATIVO)
+  encerramento_iniciado_em                                       DateTime?                   @db.Timestamp(6)
+  isolado_em                                                     DateTime?                   @db.Timestamp(6)
+  retencao_iniciada_em                                           DateTime?                   @db.Timestamp(6)
+  retencao_finalizada_em                                         DateTime?                   @db.Timestamp(6)
+  vacuo_isolamento                                               Decimal?                    @db.Decimal(10, 3)
+  perda_vacuo_retencao                                           Decimal?                    @db.Decimal(10, 3)
+  motivo_bloqueio_encerramento                                   String?
+  encerramento_versao                                            Int                         @default(0)
+  etapa_encerramento                                             etapaencerramentotanque     @default(NENHUMA)
+  encerramento_tentativa                                         Int                         @default(0)
+  encerramento_comando_tentativas                                Int                         @default(0)
+  encerramento_proxima_tentativa_em                              DateTime?                   @db.Timestamp(6)
+  estabilizacao_leituras_esperadas                               Int                         @default(0)
+  estabilizacao_leituras_observadas                              Int                         @default(0)
+  estabilizacao_cobertura_percentual                             Decimal                     @default(0.00) @db.Decimal(5, 2)
+  estabilizacao_maior_intervalo_ms                               Int                         @default(0)
   alarmes                                                        alarmes[]
-  processos_processos_id_processo_tanque_atualToprocessostanques processos[]                @relation("processos_id_processo_tanque_atualToprocessostanques")
-  processos                                                      processos                  @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_processo_tanque_processo")
-  tanques                                                        tanques                    @relation(fields: [id_tanque], references: [id_tanque], map: "fk_processo_tanque_tanque")
+  comandosmqtt                                                   comandosmqtt[]
+  processos_processos_id_processo_tanque_atualToprocessostanques processos[]                 @relation("processos_id_processo_tanque_atualToprocessostanques")
+  processos                                                      processos                   @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_processo_tanque_processo")
+  processosauxiliares_atual                                      processosauxiliares?        @relation("processosauxiliares_tanque_atual")
+  processostanquesauxiliares                                     processostanquesauxiliares?
+  tanques                                                        tanques                     @relation(fields: [id_tanque], references: [id_tanque], map: "fk_processo_tanque_tanque")
   processostanquessensores                                       processostanquessensores[]
 
   @@unique([id_processo, id_tanque], map: "uq_processo_tanque")
   @@index([alimentacao_iniciada_em, alimentacao_finalizada_em], map: "idx_processostanques_alimentacao")
   @@index([nivel_atual_percentual], map: "idx_processostanques_nivel_atual")
+  @@index([status_estagnacao], map: "idx_processostanques_status_estagnacao")
+  @@index([status_encerramento], map: "idx_processostanques_status_encerramento")
+  @@index([etapa_encerramento, encerramento_proxima_tentativa_em], map: "idx_processostanques_etapa_encerramento")
   @@index([status_tanque_processo], map: "idx_processostanques_status_tanque_processo")
   @@index([volume_alvo_ml, volume_enviado_ml], map: "idx_processostanques_volume")
   @@index([volume_enviado_ml], map: "idx_processostanques_volume_enviado")
+}
+
+model processosauxiliares {
+  id_processo_auxiliar       Int                      @id @default(autoincrement())
+  id_processo                Int                      @unique(map: "uq_processosauxiliares_processo")
+  status_subsistema          statussubsistemaauxiliar @default(INATIVO)
+  id_processo_tanque_atual   Int?                     @unique(map: "uq_processosauxiliares_tanque_atual")
+  id_usuario_controle_bomba  Int?
+  controle_bomba_assumido_em DateTime?                @db.Timestamp(6)
+  controle_bomba_expira_em   DateTime?                @db.Timestamp(6)
+  versao                     Int                      @default(0)
+  motivo_bloqueio            String?
+  ultimo_erro                String?
+  criado_em                  DateTime                 @default(now()) @db.Timestamp(6)
+  atualizado_em              DateTime                 @default(now()) @db.Timestamp(6)
+  processos                  processos                @relation(fields: [id_processo], references: [id_processo], onDelete: Cascade, map: "fk_processosauxiliares_processo")
+  processo_tanque_atual      processostanques?        @relation("processosauxiliares_tanque_atual", fields: [id_processo_tanque_atual], references: [id_processo_tanque], onDelete: SetNull, map: "fk_processosauxiliares_tanque_atual")
+  usuario_controle_bomba     usuarios?                @relation("processosauxiliares_usuario_controle_bomba", fields: [id_usuario_controle_bomba], references: [id_usuario], onDelete: SetNull, map: "fk_processosauxiliares_usuario_controle_bomba")
+
+  @@index([status_subsistema], map: "idx_processosauxiliares_status")
+  @@index([id_usuario_controle_bomba], map: "idx_processosauxiliares_usuario_controle_bomba")
+  @@index([controle_bomba_expira_em], map: "idx_processosauxiliares_controle_bomba_expira")
+}
+
+model processostanquesauxiliares {
+  id_processo_tanque_auxiliar  Int                 @id @default(autoincrement())
+  id_processo_tanque           Int                 @unique(map: "uq_processostanquesauxiliares_processo_tanque")
+  status_auxilio               statusauxiliotanque @default(INATIVO)
+  prioridade                   Int                 @default(0)
+  solicitado_em                DateTime?           @db.Timestamp(6)
+  iniciado_em                  DateTime?           @db.Timestamp(6)
+  finalizado_em                DateTime?           @db.Timestamp(6)
+  avaliacao_iniciada_em        DateTime?           @db.Timestamp(6)
+  avaliacao_finalizada_em      DateTime?           @db.Timestamp(6)
+  vacuo_antes_auxilio          Decimal?            @db.Decimal(10, 3)
+  tendencia_antes_auxilio      Decimal?            @db.Decimal(10, 3)
+  vacuo_durante_auxilio        Decimal?            @db.Decimal(10, 3)
+  tendencia_durante_auxilio    Decimal?            @db.Decimal(10, 3)
+  vacuo_apos_auxilio           Decimal?            @db.Decimal(10, 3)
+  tendencia_apos_auxilio       Decimal?            @db.Decimal(10, 3)
+  melhoria_observada           Decimal?            @db.Decimal(10, 3)
+  melhoria_minima_esperada     Decimal?            @db.Decimal(10, 3)
+  eficacia_confirmada          Boolean?
+  motivo_avaliacao             String?
+  id_usuario_controle_valvula  Int?
+  controle_valvula_assumido_em DateTime?           @db.Timestamp(6)
+  controle_valvula_expira_em   DateTime?           @db.Timestamp(6)
+  versao                       Int                 @default(0)
+  motivo_bloqueio              String?
+  ultimo_erro                  String?
+  criado_em                    DateTime            @default(now()) @db.Timestamp(6)
+  atualizado_em                DateTime            @default(now()) @db.Timestamp(6)
+  processostanques             processostanques    @relation(fields: [id_processo_tanque], references: [id_processo_tanque], onDelete: Cascade, map: "fk_processostanquesauxiliares_processo_tanque")
+  usuario_controle_valvula     usuarios?           @relation("processostanquesauxiliares_usuario_controle_valvula", fields: [id_usuario_controle_valvula], references: [id_usuario], onDelete: SetNull, map: "fk_processostanquesauxiliares_usuario_controle_valvula")
+
+  @@index([status_auxilio, prioridade, solicitado_em], map: "idx_processostanquesauxiliares_fila")
+  @@index([id_usuario_controle_valvula], map: "idx_processostanquesauxiliares_usuario_controle_valvula")
+  @@index([controle_valvula_expira_em], map: "idx_processostanquesauxiliares_controle_valvula_expira")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -395,7 +599,6 @@ model processostanquessensores {
   sensores                  sensores           @relation(fields: [id_sensor], references: [id_sensor], map: "fk_processo_tanque_sensor_sensor")
 
   @@unique([id_processo_tanque, id_sensor], map: "uq_processo_tanque_sensor")
-  @@unique([id_processo_tanque, id_sensor], map: "uq_pts_processo_tanque_sensor")
   @@index([id_processo_tanque, tipo_sensor_processo], map: "idx_pts_tanque_tipo_sensor")
   @@index([tipo_sensor_processo], map: "idx_pts_tipo_sensor_processo")
 }
@@ -422,6 +625,8 @@ model relatorios {
   processos         processos?       @relation(fields: [id_processo], references: [id_processo], map: "fk_relatorio_processo")
   usuarios          usuarios         @relation(fields: [id_usuario], references: [id_usuario], map: "fk_relatorio_usuario")
 
+  @@unique([id_processo, formato_relatorio], map: "uq_relatorios_processo_formato", where: raw("\"tipo_relatorio\" = 'PROCESSO' AND \"id_processo\" IS NOT NULL"))
+  @@unique([id_alarme, formato_relatorio], map: "uq_relatorios_alarme_formato", where: raw("\"tipo_relatorio\" = 'ALARME' AND \"id_alarme\" IS NOT NULL"))
   @@index([bucket_name], map: "idx_relatorios_bucket_name")
   @@index([gridfs_file_id], map: "idx_relatorios_gridfs_file_id")
   @@index([storage_provider], map: "idx_relatorios_storage_provider")
@@ -442,11 +647,35 @@ model sensores {
   criado_em                     DateTime                       @default(now()) @db.Timestamp(6)
   excluido_em                   DateTime?                      @db.Timestamp(6)
   tipo_sensor                   tiposensor                     @default(VACUO)
-  fator_calibracao              Decimal?                       @db.Decimal(10, 4)
+  fator_calibracao              Decimal                        @default(1.0000) @db.Decimal(10, 4)
+  offset_calibracao             Decimal                        @default(0.0000) @db.Decimal(10, 4)
+  status_integridade            statusintegridadesensor        @default(PENDENTE_CALIBRACAO)
+  ultimo_valor_bruto            Decimal?                       @db.Decimal(10, 3)
+  calibrado_em                  DateTime?                      @db.Timestamp(6)
+  calibracao_valida_ate         DateTime?                      @db.Timestamp(6)
+  calibracao_referencia         String?
+  calibracao_incerteza          Decimal?                       @db.Decimal(10, 4)
+  calibracao_observacoes        String?
+  modo_calibracao_ativo         Boolean                        @default(false)
+  calibracao_iniciada_em        DateTime?                      @db.Timestamp(6)
+  id_usuario_calibracao         Int?
+  liberado_em                   DateTime?                      @db.Timestamp(6)
+  id_usuario_liberacao          Int?
+  integridade_validada_em       DateTime?                      @db.Timestamp(6)
+  integridade_ultimo_erro       String?
+  limite_minimo_operacional     Decimal?                       @db.Decimal(10, 3)
+  limite_maximo_operacional     Decimal?                       @db.Decimal(10, 3)
+  variacao_maxima_por_segundo   Decimal?                       @db.Decimal(10, 3)
+  oscilacao_maxima              Decimal?                       @db.Decimal(10, 3)
+  tempo_travado_segundos        Int                            @default(60)
   processostanquessensores      processostanquessensores[]
   sensoresacoplamentomangueiras sensoresacoplamentomangueiras?
+  usuario_calibracao            usuarios?                      @relation("sensores_usuario_calibracao", fields: [id_usuario_calibracao], references: [id_usuario], onDelete: SetNull, map: "fk_sensores_usuario_calibracao")
+  usuario_liberacao             usuarios?                      @relation("sensores_usuario_liberacao", fields: [id_usuario_liberacao], references: [id_usuario], onDelete: SetNull, map: "fk_sensores_usuario_liberacao")
 
   @@index([tipo_sensor, status_sensor], map: "idx_sensores_tipo_sensor_status")
+  @@index([status_integridade], map: "idx_sensores_status_integridade")
+  @@index([calibracao_valida_ate], map: "idx_sensores_calibracao_validade")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -467,28 +696,40 @@ model tanques {
 }
 
 model usuarios {
-  id_usuario                 Int                          @id @default(autoincrement())
-  id_nivel_acesso            Int
-  nome                       String                       @db.VarChar(120)
-  login                      String                       @unique @db.VarChar(60)
-  email                      String?                      @unique @db.VarChar(120)
-  senha_hash                 String
-  primeiro_acesso            Boolean                      @default(true)
-  ultimo_acesso              DateTime?                    @db.Timestamp(6)
-  criado_em                  DateTime                     @default(now()) @db.Timestamp(6)
-  atualizado_em              DateTime?                    @db.Timestamp(6)
-  alarmes                    alarmes[]
-  alarmesreconhecimentos     alarmesreconhecimentos[]
-  backups_criados            backups[]                    @relation("backup_usuario_criacao")
-  backups_restaurados        backups[]                    @relation("backup_usuario_restauracao")
-  bombas                     bombas[]
-  configuracoessistema       configuracoessistema[]
-  logsoperacionais           logsoperacionais[]
-  mqttconfiguracoes          mqttconfiguracoes[]
-  mqttconfiguracoeshistorico mqttconfiguracoeshistorico[]
-  processos                  processos[]
-  relatorios                 relatorios[]
-  niveisacessos              niveisacessos                @relation(fields: [id_nivel_acesso], references: [id_nivel_acesso], map: "fk_usuario_nivel_acesso")
+  id_usuario                        Int                          @id @default(autoincrement())
+  id_nivel_acesso                   Int
+  nome                              String                       @db.VarChar(120)
+  login                             String                       @unique @db.VarChar(60)
+  email                             String?                      @unique @db.VarChar(120)
+  senha_hash                        String
+  primeiro_acesso                   Boolean                      @default(true)
+  versao_token_autenticacao         Int                          @default(0)
+  tentativas_login_falhas           Int                          @default(0)
+  login_bloqueado_ate               DateTime?                    @db.Timestamp(6)
+  token_redefinicao_senha_hash      String?                      @unique @db.VarChar(64)
+  token_redefinicao_senha_expira_em DateTime?                    @db.Timestamp(6)
+  ultimo_acesso                     DateTime?                    @db.Timestamp(6)
+  criado_em                         DateTime                     @default(now()) @db.Timestamp(6)
+  atualizado_em                     DateTime?                    @db.Timestamp(6)
+  alarmes                           alarmes[]
+  alarmesreconhecimentos            alarmesreconhecimentos[]
+  backups_criados                   backups[]                    @relation("backup_usuario_criacao")
+  backups_restaurados               backups[]                    @relation("backup_usuario_restauracao")
+  bombas                            bombas[]
+  configuracoessistema              configuracoessistema[]
+  logsoperacionais                  logsoperacionais[]
+  mqttconfiguracoes                 mqttconfiguracoes[]
+  mqttconfiguracoeshistorico        mqttconfiguracoeshistorico[]
+  comandosmqtt                      comandosmqtt[]
+  processos                         processos[]                  @relation("processos_usuario_responsavel")
+  processos_encerrados              processos[]                  @relation("processos_usuario_encerramento_geral")
+  processos_iniciados               processos[]                  @relation("processos_usuario_partida")
+  controles_bomba_auxiliar          processosauxiliares[]        @relation("processosauxiliares_usuario_controle_bomba")
+  controles_valvula_auxiliar        processostanquesauxiliares[] @relation("processostanquesauxiliares_usuario_controle_valvula")
+  sensores_calibrados               sensores[]                   @relation("sensores_usuario_calibracao")
+  sensores_liberados                sensores[]                   @relation("sensores_usuario_liberacao")
+  relatorios                        relatorios[]
+  niveisacessos                     niveisacessos                @relation(fields: [id_nivel_acesso], references: [id_nivel_acesso], map: "fk_usuario_nivel_acesso")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -498,8 +739,10 @@ model mqttconfiguracoeshistorico {
   id_usuario_alteracao                Int?
   broker_url                          String                                @db.VarChar(150)
   porta                               Int
-  usuario_mqtt                        String?                               @db.VarChar(120)
-  senha_mqtt_hash                     String?
+  usuario_mqtt_configurado            Boolean                               @default(false)
+  senha_mqtt_configurada              Boolean                               @default(false)
+  credenciais_verificadas_em          DateTime?                             @db.Timestamp(6)
+  ultima_falha_credenciais            String?
   topico_leituras                     String                                @db.VarChar(180)
   topico_comandos                     String                                @db.VarChar(180)
   topico_status                       String                                @db.VarChar(180)
@@ -524,7 +767,6 @@ model mqttconfiguracoeshistorico {
 
   @@index([id_mqtt_configuracao], map: "idx_mqtt_config_hist_config")
   @@index([registrado_em], map: "idx_mqtt_config_hist_registrado")
-  @@index([usuario_mqtt], map: "idx_mqtt_config_hist_usuario_mqtt")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -758,11 +1000,52 @@ enum statusprocesso {
   FALHA
 }
 
+enum statuspartidaprocesso {
+  INATIVA
+  EM_ANDAMENTO
+  CONCLUIDA
+  FALHA
+}
+
+enum etapapartidaprocesso {
+  NENHUMA
+  PREPARANDO_ESTADO_SEGURO
+  SINCRONIZANDO_HARDWARE
+  CARREGANDO_PROCESSO
+  ABRINDO_VALVULAS_PRINCIPAIS
+  LIGANDO_BOMBA_PRINCIPAL
+  CONFIRMANDO_TELEMETRIA
+  EXECUTANDO_ROLLBACK
+  CONCLUIDA
+  FALHA
+}
+
+enum statuscomandomqtt {
+  PENDENTE
+  PUBLICADO
+  RECEBIDO
+  EXECUTADO
+  RECUSADO
+  ERRO
+  TIMEOUT
+}
+
 enum statussensor {
   ATIVO
   INATIVO
   FALHA
   DESCONECTADO
+}
+
+enum statusintegridadesensor {
+  PENDENTE_CALIBRACAO
+  VALIDO
+  LEITURA_IMPOSSIVEL
+  FORA_FAIXA
+  OSCILANDO
+  TRAVADO
+  TIMEOUT
+  MUDANCA_ABRUPTA
 }
 
 enum statustanque {
@@ -786,6 +1069,87 @@ enum statustanqueprocesso {
   CHEIO
 }
 
+enum statusestagnacao {
+  NORMAL
+  SUSPEITA
+  DETECTADA
+}
+
+enum statusencerramentotanque {
+  INATIVO
+  MONITORANDO
+  AGUARDANDO_ESTABILIZACAO
+  PRONTO_PARA_ENCERRAR
+  AGUARDANDO_ACAO_MANUAL
+  ISOLANDO
+  VERIFICANDO_RETENCAO
+  RETENCAO_APROVADA
+  CONCLUIDO
+  BLOQUEADO
+  FALHA
+}
+
+enum etapaencerramentotanque {
+  NENHUMA
+  AGUARDANDO_AUXILIAR_SEGURO
+  FECHANDO_VALVULA_PRINCIPAL
+  AGUARDANDO_LEITURA_ISOLAMENTO
+  RETENDO
+  REABRINDO_VALVULA_PRINCIPAL
+  CONCLUIDA
+  FALHA
+}
+
+enum statusencerramentoprocesso {
+  INATIVO
+  AGUARDANDO_TANQUES
+  AGUARDANDO_ACAO_MANUAL
+  ENCERRANDO
+  CONFIRMANDO_HARDWARE
+  CONCLUIDO
+  FALHA
+}
+
+enum etapaencerramentoprocesso {
+  NENHUMA
+  VALIDANDO_ISOLAMENTO
+  CONFIRMANDO_ISOLAMENTO
+  DESLIGANDO_BOMBAS
+  RECONFIRMANDO_VALVULAS
+  AGUARDANDO_TELEMETRIA
+  CONCLUIDA
+  FALHA
+}
+
+enum modooperacaoauxiliar {
+  AUTOMATICO
+  ASSISTIDO
+  MANUAL
+}
+
+enum statussubsistemaauxiliar {
+  INATIVO
+  DISPONIVEL
+  AGUARDANDO
+  PREPARANDO
+  OPERANDO
+  TROCANDO_TANQUE
+  CONTROLE_MANUAL
+  BLOQUEADO
+  FALHA
+}
+
+enum statusauxiliotanque {
+  INATIVO
+  MONITORANDO
+  ELEGIVEL
+  AGUARDANDO
+  EM_ATENDIMENTO
+  ATENDIDO
+  BLOQUEADO
+  FALHA
+}
+
 enum tipoalarme {
   SENSOR
   BOMBA
@@ -799,6 +1163,7 @@ enum tipoalarme {
   NIVEL
   VALVULA
   MANGUEIRA
+  ESTAGNACAO
 }
 
 enum tipobomba {
@@ -843,6 +1208,9 @@ enum tipoeventoprocesso {
   NIVEL_MAXIMO_ATINGIDO
   MANGUEIRA_ACOPLADA
   MANGUEIRA_DESACOPLADA
+  ESTAGNACAO_SUSPEITA
+  ESTAGNACAO_DETECTADA
+  ESTAGNACAO_NORMALIZADA
 }
 
 enum tipologoperacional {

@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -10,8 +12,14 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiAcceptedResponse,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { nivelacesso } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -20,11 +28,20 @@ import {
   CreateProcessoDTO,
   FinalizarProcessoDTO,
   InterromperProcessoDTO,
+  IniciarEncerramentoTanqueDTO,
+  IniciarEncerramentoGeralDTO,
   ListProcessosQueryDTO,
   ParadaEmergenciaProcessoDTO,
+  ProcessoAuxiliarCommandDTO,
+  ProcessoAuxiliarLeaseDTO,
+  ProcessoAuxiliarReleaseDTO,
   UpdateProcessoConfigDTO,
 } from './dto';
 import { CurrentUserPayload } from './interfaces';
+import {
+  ProcessoGeneralClosureService,
+  ProcessoTanqueClosureService,
+} from './lifecycle';
 import { ProcessosService } from './processos.service';
 
 type AuthenticatedProcessUser = {
@@ -38,9 +55,34 @@ type AuthenticatedProcessUser = {
 @ApiTags('Processos')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Throttle({
+  default: { limit: 60, ttl: 60_000, blockDuration: 60_000 },
+})
 @Controller('processos')
 export class ProcessosController {
-  constructor(private readonly processosService: ProcessosService) {}
+  constructor(
+    private readonly processosService: ProcessosService,
+    private readonly processoTanqueClosureService: ProcessoTanqueClosureService,
+    private readonly processoGeneralClosureService: ProcessoGeneralClosureService,
+  ) {}
+
+  @Post(':id/encerramento/finalizar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({
+    summary:
+      'Inicia ou repete o encerramento geral seguro apos todos os tanques concluirem.',
+  })
+  startGeneralClosure(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Body() dto: IniciarEncerramentoGeralDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processoGeneralClosureService.startManual({
+      id_processo,
+      dto,
+      user: this.toCurrentUserPayload(user),
+    });
+  }
 
   @Post()
   @Roles('TECNICO', 'ADMINISTRADOR')
@@ -75,9 +117,179 @@ export class ProcessosController {
 
   @Get(':id/dashboard')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
-  @ApiOperation({ summary: 'Consulta dashboard de um processo.' })
+  @ApiOperation({
+    summary: 'Consulta snapshot dos cards de tanques de um processo.',
+  })
   getDashboard(@Param('id', ParseIntPipe) id_processo: number) {
     return this.processosService.getDashboard(id_processo);
+  }
+
+  @Get(':id/encerramento')
+  @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({
+    summary: 'Consulta o estado persistido do encerramento geral do processo.',
+  })
+  getGeneralClosure(@Param('id', ParseIntPipe) id_processo: number) {
+    return this.processoGeneralClosureService.getState(id_processo);
+  }
+
+  @Get(':id/auxiliar')
+  @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({
+    summary: 'Consulta o estado atual do subsistema auxiliar do processo.',
+  })
+  getAuxiliaryState(@Param('id', ParseIntPipe) id_processo: number) {
+    return this.processosService.getAuxiliaryState(id_processo);
+  }
+
+  @Post(':id/auxiliar/controle-bomba/assumir')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Assume o lease da bomba auxiliar compartilhada.' })
+  acquireAuxiliaryPumpControl(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Body() dto: ProcessoAuxiliarLeaseDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.acquireAuxiliaryPumpControl(
+      id_processo,
+      dto,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/auxiliar/controle-bomba/liberar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Libera o lease da bomba auxiliar compartilhada.' })
+  releaseAuxiliaryPumpControl(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Body() dto: ProcessoAuxiliarReleaseDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.releaseAuxiliaryPumpControl(
+      id_processo,
+      dto,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/tanques/:id_processo_tanque/auxiliar/controle-valvula/assumir')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Assume o lease da valvula auxiliar de um tanque.' })
+  acquireAuxiliaryValveControl(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
+    @Body() dto: ProcessoAuxiliarLeaseDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.acquireAuxiliaryValveControl(
+      id_processo,
+      id_processo_tanque,
+      dto,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/tanques/:id_processo_tanque/auxiliar/controle-valvula/liberar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Libera o lease da valvula auxiliar de um tanque.' })
+  releaseAuxiliaryValveControl(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
+    @Body() dto: ProcessoAuxiliarReleaseDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.releaseAuxiliaryValveControl(
+      id_processo,
+      id_processo_tanque,
+      dto,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/tanques/:id_processo_tanque/auxiliar/bomba/ligar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Liga a bomba auxiliar para o tanque selecionado.' })
+  turnOnAuxiliaryPump(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
+    @Body() dto: ProcessoAuxiliarCommandDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.turnOnAuxiliaryPump(
+      id_processo,
+      id_processo_tanque,
+      dto,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/auxiliar/bomba/desligar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Desliga a bomba auxiliar compartilhada.' })
+  turnOffAuxiliaryPump(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Body() dto: ProcessoAuxiliarCommandDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.turnOffAuxiliaryPump(
+      id_processo,
+      dto,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/tanques/:id_processo_tanque/auxiliar/valvula/abrir')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Abre a valvula auxiliar do tanque.' })
+  openAuxiliaryValve(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
+    @Body() dto: ProcessoAuxiliarCommandDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.openAuxiliaryValve(
+      id_processo,
+      id_processo_tanque,
+      dto,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/tanques/:id_processo_tanque/auxiliar/valvula/fechar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({ summary: 'Fecha a valvula auxiliar do tanque.' })
+  closeAuxiliaryValve(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
+    @Body() dto: ProcessoAuxiliarCommandDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processosService.closeAuxiliaryValve(
+      id_processo,
+      id_processo_tanque,
+      dto,
+      this.toCurrentUserPayload(user),
+    );
+  }
+
+  @Post(':id/tanques/:id_processo_tanque/encerramento/iniciar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({
+    summary:
+      'Inicia o encerramento individual de um tanque estabilizado com ACK e retencao.',
+  })
+  startTankClosure(
+    @Param('id', ParseIntPipe) id_processo: number,
+    @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
+    @Body() dto: IniciarEncerramentoTanqueDTO,
+    @CurrentUser() user: AuthenticatedProcessUser,
+  ) {
+    return this.processoTanqueClosureService.startManual({
+      id_processo,
+      id_processo_tanque,
+      dto,
+      user: this.toCurrentUserPayload(user),
+    });
   }
 
   @Get(':id/prechecagem')
@@ -233,16 +445,23 @@ export class ProcessosController {
   @Post(':id/finalizar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Finaliza um processo em execução.' })
-  finish(
+  async finish(
     @Param('id', ParseIntPipe) id_processo: number,
     @Body() dto: FinalizarProcessoDTO,
     @CurrentUser() user: AuthenticatedProcessUser,
   ) {
-    return this.processosService.finish(
+    const state =
+      await this.processoGeneralClosureService.getState(id_processo);
+    return this.processoGeneralClosureService.startManual({
       id_processo,
-      dto,
-      this.toCurrentUserPayload(user),
-    );
+      dto: {
+        expected_version: state.versao,
+        motivo:
+          dto?.observacao ??
+          'Encerramento geral solicitado pela rota de compatibilidade.',
+      },
+      user: this.toCurrentUserPayload(user),
+    });
   }
 
   @Post(':id/interromper')
@@ -262,7 +481,16 @@ export class ProcessosController {
 
   @Post(':id/parada-emergencia')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
-  @ApiOperation({ summary: 'Executa parada de emergência do processo.' })
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Solicita a parada de emergencia fail-safe do processo.',
+    description:
+      'Interrompe a automacao antes dos comandos MQTT e retorna o estado persistido da confirmacao do controlador. HTTP 202 nao significa hardware confirmado; consulte data.parada_emergencia.nivel_confirmacao e acompanhe os eventos Socket.IO. A API nao possui feedback mecanico dedicado.',
+  })
+  @ApiAcceptedResponse({
+    description:
+      'Parada registrada. O corpo distingue interrupcao logica de confirmacao das saidas pelo ESP32.',
+  })
   emergencyStop(
     @Param('id', ParseIntPipe) id_processo: number,
     @Body() dto: ParadaEmergenciaProcessoDTO,
@@ -273,6 +501,17 @@ export class ProcessosController {
       dto,
       this.toCurrentUserPayload(user),
     );
+  }
+
+  @Get(':id/parada-emergencia')
+  @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({
+    summary: 'Consulta a confirmacao da parada de emergencia pelo controlador.',
+    description:
+      'Use esta rota para carregar o estado inicial ou recuperar o snapshot depois de uma reconexao. hardware_confirmado somente e verdadeiro apos snapshot fresco e completo com latch ativo; nao representa feedback mecanico dedicado.',
+  })
+  getEmergencyStopState(@Param('id', ParseIntPipe) id_processo: number) {
+    return this.processoGeneralClosureService.getEmergencyState(id_processo);
   }
 
   private toCurrentUserPayload(

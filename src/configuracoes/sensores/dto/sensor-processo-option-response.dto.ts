@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { statussensor, tiposensor } from '@prisma/client';
+import {
+  statussensor,
+  statusintegridadesensor,
+  tiposensor,
+} from '@prisma/client';
 
 export class SensorProcessoOptionResponseDto {
   @ApiProperty({ example: 1 })
@@ -23,6 +27,17 @@ export class SensorProcessoOptionResponseDto {
   @ApiProperty({ enum: statussensor })
   status_sensor!: statussensor;
 
+  @ApiProperty({ enum: statusintegridadesensor })
+  status_integridade!: statusintegridadesensor;
+
   @ApiPropertyOptional({ example: 'kPa' })
   unidade_medida!: string;
+}
+
+export class SensoresProcessoOptionsResponseDto {
+  @ApiProperty({ type: SensorProcessoOptionResponseDto, isArray: true })
+  data!: SensorProcessoOptionResponseDto[];
+
+  @ApiProperty({ example: 3 })
+  total!: number;
 }

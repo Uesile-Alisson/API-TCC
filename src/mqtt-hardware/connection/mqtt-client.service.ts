@@ -5,8 +5,13 @@ import {
   OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import mqtt, { IClientPublishOptions, MqttClient } from 'mqtt';
+import mqtt, {
+  IClientPublishOptions,
+  ISubscriptionGrant,
+  MqttClient,
+} from 'mqtt';
 import { statusconexaomqtt } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { MqttConfigService } from '../config/mqtt-config.service';
 import { ActiveMqttConfig } from '../interfaces/active-mqtt-config.interface';
 import { MqttClientOptions } from '../interfaces/mqtt-client-options.interfaces';
@@ -14,17 +19,45 @@ import { MqttMessage } from '../interfaces/mqtt-message.interface';
 import { MqttOperationResult } from '../interfaces/mqtt-operation-result.interface';
 import { MqttPublishOptions } from '../interfaces/mqtt-publish-options.interface';
 import { MqttSubscriptions } from '../interfaces/mqtt-subscription.interface';
+import { TopicMatcher } from '../topics/topic-matcher';
 import { MqttMessageValidator } from '../validators/mqtt-message.validator';
 import {
   normalizeMqttBrokerUrl,
   sanitizeMqttBrokerUrlForLog,
 } from '../config/mqtt-broker-url.util';
+import {
+  MqttCredentials,
+  MqttCredentialsService,
+} from '../config/mqtt-credentials.service';
 
 type MqttMessageListenner = (message: MqttMessage) => Promise<void> | void;
 type MqttConnectionStatusListener = (
   status: statusconexaomqtt,
   error?: string,
 ) => Promise<void> | void;
+
+type MqttCredentialTransition =
+  | { type: 'VERIFIED' }
+  | { type: 'AUTHENTICATION_FAILURE'; message: string };
+
+interface MqttConnectionTransition {
+  status: statusconexaomqtt;
+  error?: string;
+  expectedConfig?: ActiveMqttConfig;
+  client?: MqttClient;
+  credential?: MqttCredentialTransition;
+}
+
+export type MqttCredentialProbeFailureCode =
+  | 'AUTHENTICATION_REJECTED'
+  | 'SUBSCRIPTION_REJECTED'
+  | 'BROKER_UNAVAILABLE';
+
+export type MqttCredentialProbeResult = MqttOperationResult & {
+  failureCode: MqttCredentialProbeFailureCode | null;
+};
+
+export type MqttConfigurationProbeResult = MqttCredentialProbeResult;
 
 @Injectable()
 export class MqttClientService implements OnModuleInit, OnModuleDestroy {
@@ -33,22 +66,47 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
   private client: MqttClient | null = null;
   private isConnecting = false;
   private isConnected = false;
+  private appliedConfigFingerprint: string | null = null;
+  private disconnectingClient: MqttClient | null = null;
+  private isShuttingDown = false;
+  private connectionTransitionQueue: Promise<void> = Promise.resolve();
 
   private readonly messageListenner = new Set<MqttMessageListenner>();
   private readonly connectionStatusListeners =
     new Set<MqttConnectionStatusListener>();
 
-  constructor(private readonly mqttConfigService: MqttConfigService) {}
+  constructor(
+    private readonly mqttConfigService: MqttConfigService,
+    private readonly mqttCredentialsService: MqttCredentialsService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     await this.connect();
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.disconnect();
+    this.isShuttingDown = true;
+
+    try {
+      await this.disconnect();
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao encerrar o cliente MQTT: ${this.getErrorMessage(error)}`,
+      );
+    } finally {
+      await this.drainConnectionTransitions();
+    }
   }
 
   async connect(): Promise<MqttOperationResult> {
+    if (this.isShuttingDown) {
+      return {
+        success: false,
+        message: 'Cliente MQTT esta em processo de encerramento.',
+        timestamp: new Date(),
+      };
+    }
+
     if (this.isConnected && this.client) {
       return {
         success: true,
@@ -66,13 +124,19 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.isConnecting = true;
+    let attemptedConfig: ActiveMqttConfig | undefined;
 
     try {
       const config = await this.mqttConfigService.getConfig();
-      const clientOptions = this.buildClientOptions(config);
+      attemptedConfig = config;
+      const credentials = await this.mqttCredentialsService.readCredentials();
+      const clientOptions = this.buildClientOptions(config, credentials);
       const connectionUrl = this.buildConnectionUrl(clientOptions);
 
-      await this.updateConnectionStatus(statusconexaomqtt.RECONECTANDO);
+      await this.enqueueConnectionTransition({
+        status: statusconexaomqtt.RECONECTANDO,
+        expectedConfig: config,
+      });
 
       this.logger.log(
         `Iniciando conexão MQTT em ${sanitizeMqttBrokerUrlForLog(connectionUrl)}`,
@@ -89,16 +153,27 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
         password: clientOptions.password,
       });
 
-      this.registerClientEvents();
+      this.registerClientEvents(config);
 
       await this.waitForConnection(config.timeout_comunicacao);
 
+      TopicMatcher.configure(config);
       const subscriptions = this.buildDefaultSubscriptions(config);
-      await this.subscribeMany(subscriptions);
+      await this.withTimeout(
+        this.subscribeMany(subscriptions),
+        config.timeout_comunicacao,
+        'Timeout ao confirmar as assinaturas MQTT obrigatorias.',
+      );
 
-      await this.updateConnectionStatus(statusconexaomqtt.CONECTADO);
+      await this.enqueueConnectionTransition({
+        status: statusconexaomqtt.CONECTADO,
+        expectedConfig: config,
+        client: this.client ?? undefined,
+        credential: { type: 'VERIFIED' },
+      });
 
       this.isConnected = true;
+      this.appliedConfigFingerprint = this.buildConfigFingerprint(config);
 
       return {
         success: true,
@@ -110,9 +185,25 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.error(`Falha ao conectar no MQTT: ${errorMessage}`);
 
-      await this.updateConnectionStatus(statusconexaomqtt.FALHA, errorMessage);
-
-      this.forceClearCient();
+      try {
+        await this.enqueueConnectionTransition({
+          status: statusconexaomqtt.FALHA,
+          error: errorMessage,
+          expectedConfig: attemptedConfig,
+          credential: this.isAuthenticationError(errorMessage)
+            ? {
+                type: 'AUTHENTICATION_FAILURE',
+                message: errorMessage,
+              }
+            : undefined,
+        });
+      } catch (persistError) {
+        this.logger.warn(
+          `Falha ao persistir o erro da conexao MQTT: ${this.getErrorMessage(persistError)}`,
+        );
+      } finally {
+        await this.closeFailedClientSafely();
+      }
 
       return {
         success: false,
@@ -129,8 +220,11 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     const client = this.client;
     if (!client) {
       this.isConnected = false;
+      this.appliedConfigFingerprint = null;
 
-      await this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
+      await this.enqueueConnectionTransition({
+        status: statusconexaomqtt.DESCONECTADO,
+      });
 
       return {
         success: true,
@@ -139,15 +233,24 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    await new Promise<void>((resolve) => {
-      client.end(false, {}, () => {
-        resolve();
+    this.disconnectingClient = client;
+    try {
+      await new Promise<void>((resolve) => {
+        client.end(false, {}, () => {
+          resolve();
+        });
       });
-    });
+    } finally {
+      if (this.disconnectingClient === client) {
+        this.disconnectingClient = null;
+      }
+    }
 
     this.forceClearCient();
 
-    await this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
+    await this.enqueueConnectionTransition({
+      status: statusconexaomqtt.DESCONECTADO,
+    });
 
     return {
       success: true,
@@ -159,6 +262,84 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
   async reconnect(): Promise<MqttOperationResult> {
     await this.disconnect();
     return this.connect();
+  }
+
+  async verifyCredentials(
+    credentials: MqttCredentials,
+  ): Promise<MqttCredentialProbeResult> {
+    const config = await this.mqttConfigService.getConfig();
+
+    return await this.verifyConfiguration(config, credentials);
+  }
+
+  async verifyConfiguration(
+    config: ActiveMqttConfig,
+    credentials: MqttCredentials,
+  ): Promise<MqttConfigurationProbeResult> {
+    const clientOptions = this.buildClientOptions(config, credentials);
+    const connectionUrl = this.buildConnectionUrl(clientOptions);
+    let probeClient: MqttClient | null = null;
+
+    try {
+      const candidateClient = mqtt.connect(connectionUrl, {
+        clientId: this.buildCredentialProbeClientId(),
+        clean: true,
+        reconnectPeriod: 0,
+        connectTimeout: clientOptions.connectTimeout,
+        username: credentials.username,
+        password: credentials.password,
+        resubscribe: false,
+        queueQoSZero: false,
+      });
+      probeClient = candidateClient;
+
+      await this.waitForClientConnection(
+        candidateClient,
+        config.timeout_comunicacao,
+      );
+
+      await this.withTimeout(
+        Promise.all(
+          this.buildDefaultSubscriptions(config).map(async (subscription) => {
+            const grants = await candidateClient.subscribeAsync(
+              subscription.topic,
+              { qos: subscription.qos },
+            );
+            this.assertSubscriptionGranted(subscription.topic, grants);
+          }),
+        ),
+        config.timeout_comunicacao,
+        'Timeout ao confirmar as assinaturas MQTT da configuracao candidata.',
+      );
+
+      return {
+        success: true,
+        failureCode: null,
+        message:
+          'O broker aceitou as credenciais MQTT e as assinaturas obrigatorias.',
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      const rawError = this.getErrorMessage(error);
+      const failureCode = this.classifyCredentialProbeFailure(error, rawError);
+      const safeError = this.sanitizeCredentialProbeError(
+        rawError,
+        credentials,
+      );
+
+      return {
+        success: false,
+        failureCode,
+        message: this.buildCredentialProbeFailureMessage(failureCode),
+        error: safeError,
+        timestamp: new Date(),
+      };
+    } finally {
+      if (probeClient) {
+        await probeClient.endAsync(true).catch(() => undefined);
+        probeClient.removeAllListeners();
+      }
+    }
   }
 
   async publish<TPayload extends object>(
@@ -220,9 +401,20 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
         {
           qos: subscription.qos,
         },
-        (error) => {
+        (error, grants) => {
           if (error) {
             reject(error);
+            return;
+          }
+
+          try {
+            this.assertSubscriptionGranted(subscription.topic, grants ?? []);
+          } catch (subscriptionError) {
+            reject(
+              subscriptionError instanceof Error
+                ? subscriptionError
+                : new Error('Assinatura MQTT obrigatoria recusada.'),
+            );
             return;
           }
 
@@ -239,9 +431,9 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
   }
 
   async subscribeMany(subscriptions: MqttSubscriptions[]): Promise<void> {
-    for (const subscription of subscriptions) {
-      await this.subscribe(subscription);
-    }
+    await Promise.all(
+      subscriptions.map((subscription) => this.subscribe(subscription)),
+    );
   }
 
   registerMessageListener(listener: MqttMessageListenner): void {
@@ -266,76 +458,220 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     return this.isConnected;
   }
 
+  isConfigApplied(config: ActiveMqttConfig): boolean {
+    return (
+      this.isConnected &&
+      this.appliedConfigFingerprint === this.buildConfigFingerprint(config)
+    );
+  }
+
   private async notifyConnectionStatusListeners(
     status: statusconexaomqtt,
     error?: string,
   ): Promise<void> {
     for (const listener of this.connectionStatusListeners) {
-      await listener(status, error);
+      try {
+        await listener(status, error);
+      } catch (listenerError) {
+        this.logger.warn(
+          `Listener do estado MQTT falhou para ${String(status)}: ${this.getErrorMessage(listenerError)}`,
+        );
+      }
     }
   }
 
   private async updateConnectionStatus(
     status: statusconexaomqtt,
     error?: string,
+    expectedConfig?: ActiveMqttConfig,
   ): Promise<void> {
-    await this.mqttConfigService.updateConnectionStatus(status, error);
-    await this.notifyConnectionStatusListeners(status, error);
+    const persisted = expectedConfig
+      ? await this.mqttConfigService.updateConnectionStatus(
+          status,
+          error,
+          expectedConfig,
+        )
+      : await this.mqttConfigService.updateConnectionStatus(status, error);
+    if (persisted === false) {
+      throw new ServiceUnavailableException(
+        'A configuracao MQTT mudou antes da persistencia do estado da conexao.',
+      );
+    }
   }
 
-  private registerClientEvents(): void {
-    if (!this.client) {
+  private enqueueConnectionTransition(
+    transition: MqttConnectionTransition,
+  ): Promise<void> {
+    const operation = this.connectionTransitionQueue.then(() =>
+      this.executeConnectionTransition(transition),
+    );
+
+    this.connectionTransitionQueue = operation.catch((persistError) => {
+      this.logger.warn(
+        `Nao foi possivel persistir o estado MQTT ${String(transition.status)}: ${this.getErrorMessage(persistError)}`,
+      );
+    });
+
+    return operation;
+  }
+
+  private async executeConnectionTransition(
+    transition: MqttConnectionTransition,
+  ): Promise<void> {
+    if (
+      transition.client &&
+      !this.isCurrentOperationalClient(transition.client)
+    ) {
       return;
     }
 
-    this.client.on('connect', () => {
+    let persistenceError: unknown;
+
+    try {
+      await this.updateConnectionStatus(
+        transition.status,
+        transition.error,
+        transition.expectedConfig,
+      );
+    } catch (error) {
+      persistenceError = error;
+    }
+
+    if (
+      transition.credential &&
+      (transition.credential.type === 'AUTHENTICATION_FAILURE' ||
+        !persistenceError)
+    ) {
+      await this.persistCredentialTransition(transition.credential);
+    }
+
+    await this.notifyConnectionStatusListeners(
+      transition.status,
+      transition.error,
+    );
+
+    if (persistenceError) {
+      throw persistenceError instanceof Error
+        ? persistenceError
+        : new Error(this.getErrorMessage(persistenceError));
+    }
+  }
+
+  private async drainConnectionTransitions(): Promise<void> {
+    await this.connectionTransitionQueue;
+  }
+
+  private registerClientEvents(expectedConfig?: ActiveMqttConfig): void {
+    const client = this.client;
+    if (!client) {
+      return;
+    }
+
+    client.on('connect', () => {
+      if (this.isShuttingDown || !this.isCurrentOperationalClient(client)) {
+        return;
+      }
       this.isConnected = true;
 
       this.logger.log('Cliente MQTT conectado ao broker');
 
-      void this.updateConnectionStatus(statusconexaomqtt.CONECTADO);
+      if (!this.isConnecting) {
+        void this.enqueueConnectionTransition({
+          status: statusconexaomqtt.CONECTADO,
+          expectedConfig,
+          client,
+          credential: { type: 'VERIFIED' },
+        });
+      }
     });
 
-    this.client.on('reconnect', () => {
+    client.on('reconnect', () => {
+      if (this.isShuttingDown || !this.isCurrentOperationalClient(client)) {
+        return;
+      }
       this.isConnected = false;
 
       this.logger.warn('Cliente MQTT tentando reconectar ...');
 
-      void this.updateConnectionStatus(statusconexaomqtt.RECONECTANDO);
+      void this.enqueueConnectionTransition({
+        status: statusconexaomqtt.RECONECTANDO,
+        expectedConfig,
+        client,
+      });
     });
 
-    this.client.on('close', () => {
+    client.on('close', () => {
+      if (this.isShuttingDown || !this.isCurrentOperationalClient(client)) {
+        return;
+      }
       this.isConnected = false;
 
       this.logger.log('Conexão MQTT fechada');
 
-      void this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
+      void this.enqueueConnectionTransition({
+        status: statusconexaomqtt.DESCONECTADO,
+        expectedConfig,
+        client,
+      });
     });
 
-    this.client.on('offline', () => {
+    client.on('offline', () => {
+      if (this.isShuttingDown || !this.isCurrentOperationalClient(client)) {
+        return;
+      }
       this.isConnected = false;
 
       this.logger.log('Cliente MQTT offline');
 
-      void this.updateConnectionStatus(statusconexaomqtt.DESCONECTADO);
+      void this.enqueueConnectionTransition({
+        status: statusconexaomqtt.DESCONECTADO,
+        expectedConfig,
+        client,
+      });
     });
 
-    this.client.on('error', (error) => {
+    client.on('error', (error) => {
+      if (this.isShuttingDown || !this.isCurrentOperationalClient(client)) {
+        return;
+      }
       this.isConnected = false;
 
       const messageError = this.getErrorMessage(error);
 
       this.logger.log('Conexão MQTT fechada');
 
-      void this.updateConnectionStatus(statusconexaomqtt.FALHA, messageError);
+      void this.enqueueConnectionTransition({
+        status: statusconexaomqtt.FALHA,
+        error: messageError,
+        expectedConfig,
+        client,
+        credential: this.isAuthenticationError(messageError)
+          ? {
+              type: 'AUTHENTICATION_FAILURE',
+              message: messageError,
+            }
+          : undefined,
+      });
     });
 
-    this.client.on('message', (topic, rawPayoad, packet) => {
+    client.on('message', (topic, rawPayoad, packet) => {
+      if (this.isShuttingDown || !this.isCurrentOperationalClient(client)) {
+        return;
+      }
       void this.handleIncomingMessage(topic, rawPayoad, {
         qos: packet.qos,
         retain: packet.retain,
+      }).catch((processingError) => {
+        this.logger.error(
+          `Falha inesperada no pipeline MQTT do topico ${topic}: ${this.getErrorMessage(processingError)}`,
+          processingError instanceof Error ? processingError.stack : undefined,
+        );
       });
     });
+  }
+
+  private isCurrentOperationalClient(client: MqttClient): boolean {
+    return this.client === client && this.disconnectingClient !== client;
   }
 
   private async handleIncomingMessage(
@@ -366,14 +702,15 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
     try {
       await this.mqttConfigService.updateLastSync();
-      await this.notifyMessageListenner(message);
     } catch (error) {
       const errorMessage = this.getErrorMessage(error);
 
-      this.logger.log(
-        `Erro ao processar mensagem MQTT do tópico ${topic}: ${errorMessage}`,
+      this.logger.warn(
+        `Mensagem MQTT recebida no topico ${topic}, mas a ultima sincronizacao nao pode ser persistida: ${errorMessage}`,
       );
     }
+
+    await this.notifyMessageListenner(message);
   }
 
   private async notifyMessageListenner(message: MqttMessage): Promise<void> {
@@ -386,25 +723,77 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private buildClientOptions(config: ActiveMqttConfig): MqttClientOptions {
-    const mqttUsername =
-      config.usuario_mqtt?.trim() || process.env.MQTT_USERNAME || undefined;
-    const mqttPassword = process.env.MQTT_PASSWORD?.trim() || undefined;
-
+  private buildClientOptions(
+    config: ActiveMqttConfig,
+    credentials: MqttCredentials,
+  ): MqttClientOptions {
     return {
       brokerUrl: config.broker_url,
       port: config.porta,
-      username: mqttUsername,
-      password: mqttPassword,
+      username: credentials.username,
+      password: credentials.password,
       reconnectPeriod: 5000,
       connectTimeout: config.timeout_comunicacao,
-      clean: true,
-      clientId: 'tsea-api-server',
+      clean: false,
+      clientId: process.env.MQTT_CLIENT_ID?.trim() || 'tsea-api-server',
     };
   }
 
+  private async persistCredentialTransition(
+    transition: MqttCredentialTransition,
+  ): Promise<void> {
+    if (transition.type === 'VERIFIED') {
+      try {
+        await this.mqttCredentialsService.markCredentialsVerified();
+      } catch {
+        this.logger.warn(
+          'Conexao MQTT confirmada, mas o estado de verificacao das credenciais nao pode ser persistido.',
+        );
+      }
+      return;
+    }
+
+    try {
+      await this.mqttCredentialsService.markAuthenticationFailure(
+        transition.message,
+      );
+    } catch {
+      this.logger.warn(
+        'Nao foi possivel persistir a falha de autenticacao MQTT.',
+      );
+    }
+  }
+
+  private async closeFailedClientSafely(): Promise<void> {
+    const client = this.client;
+
+    if (!client) {
+      this.forceClearCient();
+      return;
+    }
+
+    this.disconnectingClient = client;
+    client.removeAllListeners();
+
+    try {
+      await client.endAsync(true);
+    } catch (closeError) {
+      this.logger.warn(
+        `Falha ao fechar o cliente MQTT apos erro de conexao: ${this.getErrorMessage(closeError)}`,
+      );
+    } finally {
+      this.forceClearCient();
+    }
+  }
+
+  private isAuthenticationError(message: string): boolean {
+    return /not authorized|not authorised|bad user name|bad username|bad password|authentication|nao autorizado|não autorizado/iu.test(
+      message,
+    );
+  }
+
   private buildConnectionUrl(options: MqttClientOptions): string {
-    return normalizeMqttBrokerUrl(options.brokerUrl, options.port);
+    return normalizeMqttBrokerUrl(options.brokerUrl, options.port, true);
   }
 
   private buildDefaultSubscriptions(
@@ -438,13 +827,75 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
     ];
   }
 
-  waitForConnection(timeoutMs: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (!this.client) {
-        reject(
-          new ServiceUnavailableException('Cliente MQTT não foi inicializado.'),
-        );
+  private assertSubscriptionGranted(
+    expectedTopic: string,
+    grants: ISubscriptionGrant[],
+  ): void {
+    const matchingGrant = grants.find((grant) => grant.topic === expectedTopic);
+    if (!matchingGrant || matchingGrant.qos === 128) {
+      throw Object.assign(
+        new Error(
+          `Subscribe error: broker recusou o topico obrigatorio ${expectedTopic}.`,
+        ),
+        { code: 128 },
+      );
+    }
+  }
 
+  private async withTimeout<T>(
+    operation: Promise<T>,
+    timeoutMs: number,
+    message: string,
+  ): Promise<T> {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+
+    try {
+      return await Promise.race([operation, timeoutPromise]);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    }
+  }
+
+  private buildConfigFingerprint(config: ActiveMqttConfig): string {
+    return JSON.stringify({
+      broker_url: normalizeMqttBrokerUrl(config.broker_url, config.porta, true),
+      porta: config.porta,
+      topico_leituras: config.topico_leituras,
+      topico_comandos: config.topico_comandos,
+      topico_status: config.topico_status,
+      topico_alarmes: config.topico_alarmes,
+      topico_heartbeat: config.topico_heartbeat,
+      topico_acoplamentos: config.topico_acoplamentos,
+      topico_configuracoes: config.topico_configuracoes,
+      topico_acks: config.topico_acks,
+      reconexao_automatica: config.reconexao_automatica,
+      timeout_comunicacao: config.timeout_comunicacao,
+      ativo: config.ativo,
+    });
+  }
+
+  waitForConnection(timeoutMs: number): Promise<void> {
+    if (!this.client) {
+      return Promise.reject(
+        new ServiceUnavailableException('Cliente MQTT não foi inicializado.'),
+      );
+    }
+
+    return this.waitForClientConnection(this.client, timeoutMs);
+  }
+
+  private waitForClientConnection(
+    client: MqttClient,
+    timeoutMs: number,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (client.connected) {
+        resolve();
         return;
       }
 
@@ -458,6 +909,15 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
         reject(error);
       };
 
+      const onClose = (): void => {
+        cleanup();
+        reject(
+          new ServiceUnavailableException(
+            'Conexão encerrada antes da confirmação do broker MQTT.',
+          ),
+        );
+      };
+
       const timeout = setTimeout(() => {
         cleanup();
         reject(
@@ -469,13 +929,78 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
 
       const cleanup = (): void => {
         clearTimeout(timeout);
-        this.client?.off('connect', onConnect);
-        this.client?.off('error', onError);
+        client.off('connect', onConnect);
+        client.off('error', onError);
+        client.off('close', onClose);
       };
 
-      this.client.once('connect', onConnect);
-      this.client.once('error', onError);
+      client.once('connect', onConnect);
+      client.once('error', onError);
+      client.once('close', onClose);
     });
+  }
+
+  private buildCredentialProbeClientId(): string {
+    const randomSuffix = randomUUID().replaceAll('-', '').slice(0, 12);
+    return `tsea-probe-${randomSuffix}`;
+  }
+
+  private classifyCredentialProbeFailure(
+    error: unknown,
+    message: string,
+  ): MqttCredentialProbeFailureCode {
+    const errorCode =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? (error as { code?: unknown }).code
+        : undefined;
+
+    if (
+      errorCode === 128 ||
+      errorCode === 135 ||
+      /subscribe error|subscription.*(?:denied|refused|reject)/iu.test(message)
+    ) {
+      return 'SUBSCRIPTION_REJECTED';
+    }
+
+    if (this.isAuthenticationError(message)) {
+      return 'AUTHENTICATION_REJECTED';
+    }
+
+    return 'BROKER_UNAVAILABLE';
+  }
+
+  private buildCredentialProbeFailureMessage(
+    failureCode: MqttCredentialProbeFailureCode,
+  ): string {
+    if (failureCode === 'AUTHENTICATION_REJECTED') {
+      return 'O broker MQTT recusou o usuário ou a senha informados.';
+    }
+
+    if (failureCode === 'SUBSCRIPTION_REJECTED') {
+      return 'O broker aceitou a conexão, mas recusou uma assinatura MQTT obrigatória.';
+    }
+
+    return 'Não foi possível confirmar as novas credenciais no broker MQTT.';
+  }
+
+  private sanitizeCredentialProbeError(
+    message: string,
+    credentials: MqttCredentials,
+  ): string {
+    let sanitized = message;
+
+    for (const secret of [credentials.password, credentials.username].sort(
+      (left, right) => right.length - left.length,
+    )) {
+      if (secret) {
+        sanitized = sanitized.split(secret).join('[redigido]');
+      }
+    }
+
+    return sanitized
+      .replace(/\p{Cc}/gu, ' ')
+      .trim()
+      .slice(0, 1000);
   }
 
   private ensureClientConnected(): void {
@@ -487,10 +1012,14 @@ export class MqttClientService implements OnModuleInit, OnModuleDestroy {
   }
 
   private forceClearCient(): void {
+    if (this.disconnectingClient === this.client) {
+      this.disconnectingClient = null;
+    }
     this.client?.removeAllListeners();
     this.client = null;
     this.isConnected = false;
     this.isConnecting = false;
+    this.appliedConfigFingerprint = null;
   }
 
   private getErrorMessage(error: unknown): string {

@@ -6,7 +6,11 @@ import { TopicMatcher } from '../topics/topic-matcher';
 import { Esp32AlarmDTO } from '../dto/esp32-alarm.dto';
 import { Esp32HeartbeatDTO } from '../dto/esp32-heartbeat.dto';
 import { Esp32ReadingDTO } from '../dto/esp32-reading.dto';
-import { Esp32StatusDTO } from '../dto/esp32-status.dto';
+import {
+  Esp32StatusDTO,
+  Esp32StatusPumpDTO,
+  Esp32StatusValveDTO,
+} from '../dto/esp32-status.dto';
 import { Esp32AcoplamentoDTO } from '../dto/esp32-acoplamento.dto';
 import { Esp32CommandAckDTO } from '../dto/esp32-command-ack.dto';
 
@@ -25,7 +29,7 @@ export class MqttPayloadValidator {
     }
 
     if (TopicMatcher.isStatus(message.topic)) {
-      return this.validateDto(Esp32StatusDTO, message.payload);
+      return this.validateStatus(message.payload);
     }
 
     if (TopicMatcher.isAlarme(message.topic)) {
@@ -97,7 +101,50 @@ export class MqttPayloadValidator {
   }
 
   static validateStatus(payload: Record<string, unknown>): Esp32StatusDTO {
-    return this.validateDto(Esp32StatusDTO, payload);
+    const dto = this.validateDto(Esp32StatusDTO, payload);
+
+    if (dto.schema_version === 2) {
+      if (dto.tipo !== 'HARDWARE_STATUS') {
+        throw new BadRequestException({
+          message: 'Payload MQTT invÃ¡lido.',
+          errors: ['Status MQTT v2 exige tipo igual a HARDWARE_STATUS.'],
+        });
+      }
+
+      if (!Array.isArray(dto.valvulas)) {
+        throw new BadRequestException({
+          message: 'Payload MQTT invÃ¡lido.',
+          errors: ['Status MQTT v2 exige valvulas como lista.'],
+        });
+      }
+
+      if (!Array.isArray(dto.bombas)) {
+        throw new BadRequestException({
+          message: 'Payload MQTT invÃ¡lido.',
+          errors: ['Status MQTT v2 exige bombas como lista.'],
+        });
+      }
+    }
+
+    if (Array.isArray(dto.valvulas)) {
+      dto.valvulas = dto.valvulas.map((valvula) =>
+        this.validateDto(
+          Esp32StatusValveDTO,
+          valvula as unknown as Record<string, unknown>,
+        ),
+      );
+    }
+
+    if (Array.isArray(dto.bombas)) {
+      dto.bombas = dto.bombas.map((bomba) =>
+        this.validateDto(
+          Esp32StatusPumpDTO,
+          bomba as unknown as Record<string, unknown>,
+        ),
+      );
+    }
+
+    return dto;
   }
 
   static validateHeartbeat(

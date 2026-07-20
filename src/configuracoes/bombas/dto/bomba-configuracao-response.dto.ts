@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { statusbomba, tipobomba } from '@prisma/client';
+import { ConfiguracoesPaginationMetaDto } from '../../common/paginated-configuracoes-response.interface';
 
 export class BombaConfiguracaoResponseDto {
   @ApiProperty({ example: 1 })
@@ -34,4 +35,12 @@ export class BombaConfiguracaoResponseDto {
 
   @ApiProperty({ type: String, format: 'date-time' })
   atualizado_em!: Date;
+}
+
+export class BombasConfiguracaoListResponseDto {
+  @ApiProperty({ type: BombaConfiguracaoResponseDto, isArray: true })
+  data!: BombaConfiguracaoResponseDto[];
+
+  @ApiProperty({ type: ConfiguracoesPaginationMetaDto })
+  meta!: ConfiguracoesPaginationMetaDto;
 }

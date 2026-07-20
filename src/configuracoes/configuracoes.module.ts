@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MqttModule } from '../mqtt-hardware/mqtt.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { BackupModule } from './backup/backup.module';
 import { ConfiguracoesBombasController } from './bombas/configuracoes-bombas.controller';
@@ -11,7 +12,7 @@ import { ConfiguracoesTanquesController } from './tanques/configuracoes-tanques.
 import { ConfiguracoesTanquesService } from './tanques/configuracoes-tanques.service';
 
 @Module({
-  imports: [PrismaModule, BackupModule],
+  imports: [PrismaModule, MqttModule, BackupModule],
   controllers: [
     ConfiguracoesSistemaController,
     ConfiguracoesTanquesController,

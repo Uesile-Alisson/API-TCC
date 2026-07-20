@@ -105,6 +105,83 @@ describe('AlarmeLogService', () => {
     );
   });
 
+  it('logAction registra ação de usuário com sucesso', async () => {
+    await service.logAction({
+      id_alarme: 10,
+      id_usuario: 7,
+      id_processo: 20,
+      acao: 'ALARME_TESTADO',
+      descricao: 'Alarme testado manualmente',
+      sucesso: true,
+    });
+
+    expect(getCreateData()).toMatchObject({
+      id_usuario: 7,
+      id_processo: 20,
+      tipo_log: tipologoperacional.ALARME,
+      acao: 'ALARME_TESTADO',
+      origem: origemlogoperacional.USUARIO,
+      resultado: resultadooperacao.SUCESSO,
+    });
+    expect(getDescription()).toBe('Alarme #10. Alarme testado manualmente.');
+  });
+
+  it('logAction sem usuário registra falha do sistema e vínculos nulos', async () => {
+    await service.logAction({
+      id_alarme: 10,
+      acao: 'ALARME_RECUPERACAO_TENTADA',
+      descricao: 'Recuperação indisponível.',
+      sucesso: false,
+    });
+
+    expect(getCreateData()).toMatchObject({
+      id_usuario: null,
+      id_processo: null,
+      origem: origemlogoperacional.SISTEMA,
+      resultado: resultadooperacao.FALHA,
+    });
+  });
+
+  it('logAcknowledged registra reconhecimento e normaliza observação', async () => {
+    const reconhecidoEm = new Date('2026-06-21T11:00:00Z');
+
+    await service.logAcknowledged({
+      id_alarme: 10,
+      id_usuario: 7,
+      id_processo: undefined,
+      titulo: 'Falha de pressão.',
+      observacao: ' Ciente. ',
+      reconhecido_em: reconhecidoEm,
+    });
+
+    expect(getCreateData()).toMatchObject({
+      id_usuario: 7,
+      id_processo: null,
+      tipo_log: tipologoperacional.ALARME,
+      acao: 'ALARME_RECONHECIDO',
+      origem: origemlogoperacional.USUARIO,
+      resultado: resultadooperacao.SUCESSO,
+    });
+    expect(getDescription()).toBe(
+      `Alarme #10 reconhecido. Titulo: Falha de pressão. Reconhecido em: ${reconhecidoEm.toISOString()}. Observacao: Ciente.`,
+    );
+  });
+
+  it('rejeita data inválida antes de acessar o Prisma', async () => {
+    await expect(
+      service.logResolved(makeInput({ resolvido_em: new Date('inválida') })),
+    ).rejects.toBeInstanceOf(RangeError);
+
+    expect(prisma.logsoperacionais.create).not.toHaveBeenCalled();
+  });
+
+  it('propaga falha do Prisma', async () => {
+    const databaseError = new Error('foreign key violation');
+    prisma.logsoperacionais.create.mockRejectedValueOnce(databaseError);
+
+    await expect(service.logResolved(makeInput())).rejects.toBe(databaseError);
+  });
+
   function getCreateArgs(): CreateArgs {
     return prisma.logsoperacionais.create.mock.calls[0][0] as CreateArgs;
   }

@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { nivelacesso } from '@prisma/client';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -60,6 +61,9 @@ function isNivelAcesso(value: unknown): value is nivelacesso {
 @ApiTags('Relatórios')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Throttle({
+  default: { limit: 60, ttl: 60_000, blockDuration: 60_000 },
+})
 @Controller('relatorios')
 export class RelatoriosController {
   constructor(private readonly relatoriosService: RelatoriosService) {}
@@ -78,6 +82,13 @@ export class RelatoriosController {
   }
 
   @Post('processos/:id_processo')
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 10 * 60_000,
+      blockDuration: 10 * 60_000,
+    },
+  })
   @HttpCode(HttpStatus.CREATED)
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Gera relatório operacional de processo.' })
@@ -94,6 +105,13 @@ export class RelatoriosController {
   }
 
   @Post('alarmes/:id_alarme')
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 10 * 60_000,
+      blockDuration: 10 * 60_000,
+    },
+  })
   @HttpCode(HttpStatus.CREATED)
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Gera relatório técnico de alarme.' })

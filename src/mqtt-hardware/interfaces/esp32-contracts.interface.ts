@@ -1,5 +1,11 @@
 import { CommandName } from '../commands/interfaces/command-name.interface';
 
+export const ESP32_MQTT_SCHEMA_VERSION = 2 as const;
+export const ESP32_MQTT_SUPPORTED_SCHEMA_VERSIONS = [1, 2] as const;
+
+export type Esp32MqttSchemaVersion =
+  (typeof ESP32_MQTT_SUPPORTED_SCHEMA_VERSIONS)[number];
+
 export interface Esp32MqttTopicsPayload {
   topico_comandos: string;
   topico_leituras: string;
@@ -63,7 +69,7 @@ export interface Esp32HardwareSensorPayload {
 
 export interface Esp32SyncConfigPayload {
   tipo: 'SYNC_CONFIG';
-  schema_version: number;
+  schema_version: typeof ESP32_MQTT_SCHEMA_VERSION;
   correlation_id: string;
   enviado_em: string;
   sistema: Esp32SistemaPayload;
@@ -97,6 +103,7 @@ export interface Esp32ProcessStartValvePayload {
   tipo: 'PRINCIPAL' | 'AUXILIAR' | 'OUTRA';
   id_bomba: number;
   bomba_codigo_hardware: string;
+  numero_saida_manifold: number;
 }
 
 export interface Esp32ProcessStartPumpPayload {
@@ -120,10 +127,11 @@ export interface Esp32ProcessStartTankPayload {
 
 export interface Esp32ProcessStartPayload {
   tipo: 'INICIAR_PROCESSO_VACUO';
-  schema_version: number;
+  schema_version: typeof ESP32_MQTT_SCHEMA_VERSION;
   correlation_id: string;
   enviado_em: string;
   id_processo: number;
+  modo_operacao_auxiliar: 'AUTOMATICO' | 'ASSISTIDO' | 'MANUAL';
   tanques: Esp32ProcessStartTankPayload[];
   bomba: Esp32ProcessStartPumpPayload;
   vacuo_alvo: number;
@@ -138,7 +146,7 @@ export interface Esp32ProcessStartPayload {
 
 export interface Esp32CommandAckPayload {
   tipo: 'ACK';
-  schema_version: number;
+  schema_version: Esp32MqttSchemaVersion;
   correlation_id: string;
   comando: CommandName;
   status: 'RECEBIDO' | 'EXECUTADO' | 'RECUSADO' | 'ERRO';

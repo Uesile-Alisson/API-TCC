@@ -22,13 +22,19 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
+import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { ConfiguracoesSensoresService } from './configuracoes-sensores.service';
 import { CreateSensorConfiguracaoDto } from './dto/create-sensor-configuracao.dto';
+import { CalibrarSensorDto } from './dto/calibrar-sensor.dto';
 import { QuerySensoresConfiguracaoDto } from './dto/query-sensores-configuracao.dto';
-import { SensorConfiguracaoResponseDto } from './dto/sensor-configuracao-response.dto';
-import { SensorProcessoOptionResponseDto } from './dto/sensor-processo-option-response.dto';
+import {
+  SensorConfiguracaoResponseDto,
+  SensoresConfiguracaoListResponseDto,
+} from './dto/sensor-configuracao-response.dto';
+import { SensoresProcessoOptionsResponseDto } from './dto/sensor-processo-option-response.dto';
 import { UpdateSensorConfiguracaoDto } from './dto/update-sensor-configuracao.dto';
 
 @ApiTags('Configuracoes - Sensores')
@@ -43,7 +49,7 @@ export class ConfiguracoesSensoresController {
   @Get('sensores')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista sensores configurados.' })
-  @ApiOkResponse({ type: SensorConfiguracaoResponseDto, isArray: true })
+  @ApiOkResponse({ type: SensoresConfiguracaoListResponseDto })
   @ApiBadRequestResponse({ description: 'Filtros invalidos.' })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
@@ -70,7 +76,10 @@ export class ConfiguracoesSensoresController {
   @ApiBadRequestResponse({ description: 'Payload invalido.' })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
-  @ApiConflictResponse({ description: 'Sensor duplicado.' })
+  @ApiConflictResponse({
+    description:
+      'Sensor duplicado ou alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   create(@Body() dto: CreateSensorConfiguracaoDto) {
     return this.configuracoesSensoresService.create(dto);
   }
@@ -83,7 +92,10 @@ export class ConfiguracoesSensoresController {
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Sensor nao encontrado.' })
-  @ApiConflictResponse({ description: 'Sensor duplicado.' })
+  @ApiConflictResponse({
+    description:
+      'Sensor duplicado ou alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   update(
     @Param('id_sensor', ParseIntPipe) id_sensor: number,
     @Body() dto: UpdateSensorConfiguracaoDto,
@@ -99,8 +111,59 @@ export class ConfiguracoesSensoresController {
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Sensor nao encontrado.' })
-  ativar(@Param('id_sensor', ParseIntPipe) id_sensor: number) {
-    return this.configuracoesSensoresService.ativar(id_sensor);
+  @ApiConflictResponse({
+    description:
+      'Alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
+  ativar(
+    @Param('id_sensor', ParseIntPipe) id_sensor: number,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.configuracoesSensoresService.ativar(id_sensor, currentUser);
+  }
+
+  @Post('sensores/:id_sensor/calibracao/iniciar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({
+    summary:
+      'Inicia calibracao segura; exige ausencia de processo ativo e mantem o sensor inativo.',
+  })
+  @ApiOkResponse({ type: SensorConfiguracaoResponseDto })
+  @ApiConflictResponse({
+    description:
+      'Sensor incompativel ou alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
+  iniciarCalibracao(
+    @Param('id_sensor', ParseIntPipe) id_sensor: number,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.configuracoesSensoresService.iniciarCalibracao(
+      id_sensor,
+      currentUser,
+    );
+  }
+
+  @Post('sensores/:id_sensor/calibracao/finalizar')
+  @Roles('TECNICO', 'ADMINISTRADOR')
+  @ApiOperation({
+    summary:
+      'Calcula e registra fator/offset rastreaveis; a liberacao tecnica continua separada.',
+  })
+  @ApiOkResponse({ type: SensorConfiguracaoResponseDto })
+  @ApiConflictResponse({
+    description:
+      'Modo de calibracao nao iniciado ou alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
+  calibrar(
+    @Param('id_sensor', ParseIntPipe) id_sensor: number,
+    @Body() dto: CalibrarSensorDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.configuracoesSensoresService.calibrar(
+      id_sensor,
+      dto,
+      currentUser,
+    );
   }
 
   @Patch('sensores/:id_sensor/desativar')
@@ -111,6 +174,10 @@ export class ConfiguracoesSensoresController {
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
   @ApiNotFoundResponse({ description: 'Sensor nao encontrado.' })
+  @ApiConflictResponse({
+    description:
+      'Alteracao bloqueada (EQUIPMENT_CONFIG_BLOCKED_BY_OPERATIONAL_STATE / EQUIPMENT_CONFIG_BLOCKED_BY_MQTT_EXCLUSIVE_OPERATION).',
+  })
   desativar(@Param('id_sensor', ParseIntPipe) id_sensor: number) {
     return this.configuracoesSensoresService.desativar(id_sensor);
   }
@@ -120,7 +187,7 @@ export class ConfiguracoesSensoresController {
   @ApiOperation({
     summary: 'Lista opcoes reais de sensores para configurar um processo.',
   })
-  @ApiOkResponse({ type: SensorProcessoOptionResponseDto, isArray: true })
+  @ApiOkResponse({ type: SensoresProcessoOptionsResponseDto })
   @ApiBadRequestResponse({ description: 'Filtros ou ID invalidos.' })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
