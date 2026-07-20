@@ -105,16 +105,7 @@ async function main() {
 
   await startProcessIfRequested(context);
 
-  await publishAlarm({
-    id_processo: context.id_processo,
-    tipo_alarme: 'SISTEMA',
-    origem_alarme: 'SISTEMA',
-    severidade: 'INFO',
-    titulo: 'ESP32 sincronizado',
-    descricao: 'ESP32 simulado sincronizado antes da falha operacional.',
-    valor_detectado: 1,
-    unidade: 'flag',
-  });
+  console.log('[INFO] ESP32 simulado sincronizado antes da falha operacional.');
 
   await publishReadingsForAll(
     context,

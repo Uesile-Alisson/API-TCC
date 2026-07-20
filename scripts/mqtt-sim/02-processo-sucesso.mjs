@@ -5,7 +5,6 @@ import {
   loadConfig,
   maybePublishStatus,
   publishAcoplamento,
-  publishAlarm,
   publishHeartbeat,
   publishReading,
   resolveSimulationContext,
@@ -99,16 +98,7 @@ async function main() {
 
   await startProcessIfRequested(context);
 
-  await publishAlarm({
-    id_processo: context.id_processo,
-    tipo_alarme: 'SISTEMA',
-    origem_alarme: 'SISTEMA',
-    severidade: 'INFO',
-    titulo: 'ESP32 sincronizado',
-    descricao: 'ESP32 simulado sincronizado para execucao do processo.',
-    valor_detectado: 1,
-    unidade: 'flag',
-  });
+  console.log('[INFO] ESP32 simulado sincronizado para execucao do processo.');
 
   await publishReadingsForAll(context, vacuumSuccessSequence(config.vacuumUnit));
   await publishReadingsForAll(context, [
@@ -117,17 +107,7 @@ async function main() {
     config.vacuumUnit.toLowerCase() === 'mbar' ? 40 : -80,
   ]);
 
-  await publishAlarm({
-    id_processo: context.id_processo,
-    tipo_alarme: 'PROCESSO',
-    origem_alarme: 'SISTEMA',
-    severidade: 'INFO',
-    titulo: 'Vacuo estabilizado',
-    descricao:
-      'Processo simulado atingiu estabilidade operacional de vacuo.',
-    valor_detectado: config.vacuumUnit.toLowerCase() === 'mbar' ? 40 : -80,
-    unidade: config.vacuumUnit,
-  });
+  console.log('[INFO] Processo simulado atingiu estabilidade operacional de vacuo.');
 
   await finalizeProcessIfEndpointExists(context);
 
