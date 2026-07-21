@@ -249,7 +249,7 @@ Observacoes:
 - O limite global usa `HTTP_RATE_LIMIT_MAX`, `HTTP_RATE_LIMIT_TTL_MS` e `HTTP_RATE_LIMIT_BLOCK_DURATION_MS`, por IP e por rota. Autenticacao, processos, MQTT/hardware, usuarios, backups e geracao de relatorios possuem limites mais restritivos.
 - Respostas de erro usam `statusCode`, `error`, `message`, `timestamp`, `path` e `method`. Campos operacionais publicos existentes, como `code`, `reasons` e `checklist`, sao preservados; excecoes internas retornam somente uma mensagem generica.
 - Sem proxy, mantenha `TRUST_PROXY` vazio. Atras de proxy, informe somente os IPs/CIDRs confiaveis ou nomes de sub-rede aceitos pelo Express, por exemplo `loopback` para um proxy local. Valores amplos como `true` ou `*` sao recusados para impedir falsificacao de `X-Forwarded-For`.
-- O armazenamento atual do rate limiter continua em memoria e e local a cada processo. Em uma implantacao com varias replicas, cada instancia aplica seu proprio contador; configure um `ThrottlerStorage` compartilhado antes de depender de um limite agregado entre servidores.
+- O armazenamento atual do rate limiter e local ao processo. `API_INSTANCE_COUNT=1` formaliza esse modo suportado; o bootstrap recusa valores maiores para impedir uma implantacao que aparente ter um limite agregado sem possuir `ThrottlerStorage` compartilhado. Antes de escalar horizontalmente, implemente o armazenamento distribuido e adapte essa validacao.
 
 ### Seed de desenvolvimento
 
@@ -282,23 +282,39 @@ API local:
 
 ## Scripts
 
-| Script                           | Descricao                                                |
-| -------------------------------- | -------------------------------------------------------- |
-| `npm run build`                  | Compila a aplicacao NestJS.                              |
-| `npm run start`                  | Inicia a API via Nest.                                   |
-| `npm run start:dev`              | Inicia em modo desenvolvimento com watch.                |
-| `npm run start:prod`             | Executa `dist/src/main.js`.                              |
-| `npm run lint`                   | Executa ESLint com correcao automatica.                  |
-| `npm run test`                   | Executa testes Jest.                                     |
-| `npm run test:e2e`               | Executa testes e2e configurados em `test/jest-e2e.json`. |
-| `npm run seed:dev-users`         | Executa seed de usuarios de desenvolvimento.             |
-| `npm run validate:dev-users`     | Valida usuarios de desenvolvimento.                      |
-| `npm run seed:validation:phase1` | Executa seed de validacao fase 1.                        |
-| `npm run seed:validation:phase2` | Executa seed de validacao fase 2.                        |
-| `npm run seed:validation:phase3` | Executa seed de validacao fase 3.                        |
-| `npm run sim:mqtt:preparo`       | Simulacao MQTT de preparo/online.                        |
-| `npm run sim:mqtt:sucesso`       | Simulacao MQTT de processo com sucesso.                  |
-| `npm run sim:mqtt:falha`         | Simulacao MQTT de processo com falha.                    |
+| Script                                 | Descricao                                                     |
+| -------------------------------------- | ------------------------------------------------------------- |
+| `npm run build`                        | Compila a aplicacao NestJS.                                   |
+| `npm run start`                        | Inicia a API via Nest.                                        |
+| `npm run start:dev`                    | Inicia em modo desenvolvimento com watch.                     |
+| `npm run start:prod`                   | Executa `dist/src/main.js`.                                   |
+| `npm run lint`                         | Executa ESLint com correcao automatica.                       |
+| `npm run test`                         | Executa testes Jest.                                          |
+| `npm run test:e2e`                     | Executa testes e2e configurados em `test/jest-e2e.json`.      |
+| `npm run seed:dev-users`               | Executa seed de usuarios de desenvolvimento.                  |
+| `npm run validate:dev-users`           | Valida usuarios de desenvolvimento.                           |
+| `npm run validate:infrastructure:real` | Testa Postgres, MongoDB, MQTT e SMTP reais sem alterar dados. |
+| `npm run seed:validation:phase1`       | Executa seed de validacao fase 1.                             |
+| `npm run seed:validation:phase2`       | Executa seed de validacao fase 2.                             |
+| `npm run seed:validation:phase3`       | Executa seed de validacao fase 3.                             |
+| `npm run sim:mqtt:preparo`             | Simulacao MQTT de preparo/online.                             |
+| `npm run sim:mqtt:sucesso`             | Simulacao MQTT de processo com sucesso.                       |
+| `npm run sim:mqtt:falha`               | Simulacao MQTT de processo com falha.                         |
+
+O smoke de infraestrutura real e explicitamente opt-in e nao publica comandos,
+nao envia e-mail e nao grava nos bancos. Com o `.env` definitivo configurado,
+execute no PowerShell:
+
+```powershell
+$env:RUN_REAL_INFRASTRUCTURE_CHECK='true'
+npm run validate:infrastructure:real
+```
+
+Ele abre uma transacao PostgreSQL `READ ONLY`, executa `ping` no MongoDB,
+autentica um cliente MQTT efemero sem assinar/publicar e usa `verify()` no SMTP.
+Isso valida a infraestrutura; a confirmacao de atuadores e sensores continua
+dependendo do simulador ou do prototipo fisico e dos ACKs/estados descritos no
+contrato MQTT.
 
 ## Autenticacao e Permissoes
 

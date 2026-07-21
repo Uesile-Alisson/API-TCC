@@ -19,17 +19,20 @@ import { ProcessoLogService } from '../logs';
 import { ProcessosSocketGateway } from '../socket';
 import { ProcessoTanqueClosureService } from './processo-tanque-closure.service';
 
+const asyncMock = () => jest.fn<(...args: unknown[]) => Promise<unknown>>();
+type AsyncMock = ReturnType<typeof asyncMock>;
+
 describe('ProcessoTanqueClosureService', () => {
   const now = new Date('2026-07-16T12:00:00.000Z');
   let prisma: ReturnType<typeof makePrisma>;
   let commands: {
-    fecharValvula: jest.Mock;
-    abrirValvula: jest.Mock;
+    fecharValvula: AsyncMock;
+    abrirValvula: AsyncMock;
   };
-  let auxiliaryCommands: { executeAutomaticCommand: jest.Mock };
+  let auxiliaryCommands: { executeAutomaticCommand: AsyncMock };
   let logs: {
-    registerSystemAction: jest.Mock;
-    registerUserAction: jest.Mock;
+    registerSystemAction: AsyncMock;
+    registerUserAction: AsyncMock;
   };
   let socket: { emitTankClosureUpdated: jest.Mock };
   let service: ProcessoTanqueClosureService;
@@ -37,13 +40,13 @@ describe('ProcessoTanqueClosureService', () => {
   beforeEach(() => {
     prisma = makePrisma();
     commands = {
-      fecharValvula: jest.fn(),
-      abrirValvula: jest.fn(),
+      fecharValvula: asyncMock(),
+      abrirValvula: asyncMock(),
     };
-    auxiliaryCommands = { executeAutomaticCommand: jest.fn() };
+    auxiliaryCommands = { executeAutomaticCommand: asyncMock() };
     logs = {
-      registerSystemAction: jest.fn().mockResolvedValue({ created: true }),
-      registerUserAction: jest.fn().mockResolvedValue({ created: true }),
+      registerSystemAction: asyncMock().mockResolvedValue({ created: true }),
+      registerUserAction: asyncMock().mockResolvedValue({ created: true }),
     };
     socket = { emitTankClosureUpdated: jest.fn() };
     service = new ProcessoTanqueClosureService(
@@ -431,13 +434,13 @@ describe('ProcessoTanqueClosureService', () => {
 
 function makePrisma() {
   const processostanques = {
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    updateMany: jest.fn(),
+    findFirst: asyncMock(),
+    findMany: asyncMock(),
+    updateMany: asyncMock(),
   };
-  const alarmes = { updateMany: jest.fn() };
+  const alarmes = { updateMany: asyncMock() };
   const prisma = {
-    processos: { findMany: jest.fn() },
+    processos: { findMany: asyncMock() },
     processostanques,
     alarmes,
     $transaction: jest.fn((operation: (tx: unknown) => unknown) =>

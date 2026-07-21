@@ -12,7 +12,18 @@ Na criacao, `modo_operacao_auxiliar` e obrigatorio:
   "tempo_maximo": 900,
   "vacuo_alvo": -80,
   "modo_operacao_auxiliar": "AUTOMATICO",
-  "tanques": []
+  "tanques": [
+    {
+      "id_tanque": 1,
+      "prioridade": 2,
+      "sensores": [{ "id_sensor": 1 }]
+    },
+    {
+      "id_tanque": 2,
+      "prioridade": 1,
+      "sensores": [{ "id_sensor": 2 }]
+    }
+  ]
 }
 ```
 
@@ -23,6 +34,19 @@ Valores aceitos:
 - `MANUAL`: a API continuara monitorando e validando seguranca, mas nao tomara decisoes automaticas de acionamento auxiliar.
 
 O modo pode ser alterado por `PATCH /processos/:id/config` somente enquanto o processo estiver `CONFIGURADO`.
+
+`prioridade` pertence a cada item de `tanques` e controla somente a ordem da
+fila do subsistema auxiliar: o maior valor e atendido primeiro. Em processos
+com dois ou tres tanques, o front pode omitir todas as prioridades para manter
+o comportamento legado por ordem de estagnacao ou enviar uma ordem completa,
+sem repeticoes, formada pelos valores de `1` ate a quantidade de tanques. Nao
+e permitido enviar prioridade para processo com um unico tanque. A mesma regra
+vale para `PATCH /processos/:id/config`, que substitui a configuracao dos
+tanques quando o campo `tanques` e enviado.
+
+A prioridade configurada e preservada ao iniciar, pausar ou retomar o
+processo. Ela nao interrompe um tanque que ja esteja em atendimento: a ordem e
+aplicada quando o subsistema auxiliar fica livre e escolhe o proximo candidato.
 
 ## Snapshot HTTP
 
@@ -57,7 +81,7 @@ Operador, tecnico e administrador podem consultar. O endpoint nao executa comand
       "id_tanque": 1,
       "nome_tanque": "Tanque 1",
       "status_auxilio": "AGUARDANDO",
-      "prioridade": 0,
+      "prioridade": 2,
       "posicao_fila": 1,
       "solicitado_em": "2026-07-16T12:00:01.000Z",
       "iniciado_em": null,

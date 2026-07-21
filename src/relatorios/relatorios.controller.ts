@@ -13,7 +13,14 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiProduces,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { nivelacesso } from '@prisma/client';
 import type { Response } from 'express';
@@ -25,6 +32,10 @@ import {
   GenerateAlarmReportDto,
   GenerateProcessReportDto,
   ListRelatoriosQueryDto,
+  RelatorioGenerationResponseDto,
+  RelatorioListResponseDto,
+  RelatorioResponseDto,
+  SingleRelatorioGenerationResponseDto,
 } from './dto';
 import type {
   RelatorioGenerationResult,
@@ -59,7 +70,7 @@ function isNivelAcesso(value: unknown): value is nivelacesso {
 }
 
 @ApiTags('Relatórios')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Throttle({
   default: { limit: 60, ttl: 60_000, blockDuration: 60_000 },
@@ -71,6 +82,7 @@ export class RelatoriosController {
   @Get()
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista relatórios gerados.' })
+  @ApiOkResponse({ type: RelatorioListResponseDto })
   listRelatorios(
     @Query() query: ListRelatoriosQueryDto,
     @CurrentUser() user: CurrentRelatoriosUserPayload,
@@ -92,6 +104,7 @@ export class RelatoriosController {
   @HttpCode(HttpStatus.CREATED)
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Gera relatório operacional de processo.' })
+  @ApiCreatedResponse({ type: RelatorioGenerationResponseDto })
   generateProcessReports(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @Body() dto: GenerateProcessReportDto,
@@ -115,6 +128,7 @@ export class RelatoriosController {
   @HttpCode(HttpStatus.CREATED)
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Gera relatório técnico de alarme.' })
+  @ApiCreatedResponse({ type: SingleRelatorioGenerationResponseDto })
   generateAlarmReport(
     @Param('id_alarme', ParseIntPipe) id_alarme: number,
     @Body() dto: GenerateAlarmReportDto,
@@ -130,6 +144,11 @@ export class RelatoriosController {
   @Get(':id_relatorio/preview')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Abre preview PDF ou XLSX de um relatório.' })
+  @ApiProduces(
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  )
+  @ApiOkResponse({ schema: { type: 'string', format: 'binary' } })
   async previewRelatorio(
     @Param('id_relatorio', ParseIntPipe) id_relatorio: number,
     @CurrentUser() user: CurrentRelatoriosUserPayload,
@@ -148,6 +167,11 @@ export class RelatoriosController {
   @Get(':id_relatorio/download')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Baixa arquivo de relatório.' })
+  @ApiProduces(
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  )
+  @ApiOkResponse({ schema: { type: 'string', format: 'binary' } })
   async downloadRelatorio(
     @Param('id_relatorio', ParseIntPipe) id_relatorio: number,
     @CurrentUser() user: CurrentRelatoriosUserPayload,
@@ -166,6 +190,7 @@ export class RelatoriosController {
   @Get(':id_relatorio')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Consulta detalhes de um relatório.' })
+  @ApiOkResponse({ type: RelatorioResponseDto })
   getRelatorioById(
     @Param('id_relatorio', ParseIntPipe) id_relatorio: number,
     @CurrentUser() user: CurrentRelatoriosUserPayload,

@@ -18,6 +18,7 @@
     "validate:alarm-resolution-policy:cleanup": "node scripts/cleanup-alarm-resolution-policy.cjs",
     "cleanup:info-alarms": "node scripts/cleanup-info-alarms.cjs",
     "validate:esp32-seed": "node scripts/validate-esp32-seed.cjs",
+    "validate:infrastructure:real": "node scripts/validate-real-infrastructure.cjs",
     "seed:validation:phase1": "ts-node --transpile-only prisma/seeds/validation/phase-1-base.seed.ts",
     "seed:validation:phase2": "ts-node --transpile-only prisma/seeds/validation/phase-2-operational.seed.ts",
     "seed:validation:phase3": "ts-node --transpile-only prisma/seeds/validation/phase-3-alarms-events.seed.ts",

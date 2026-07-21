@@ -53,6 +53,20 @@ export class CreateProcessoTanqueDTO {
   id_tanque: number;
 
   @ApiPropertyOptional({
+    example: 3,
+    minimum: 1,
+    maximum: 3,
+    description:
+      'Prioridade do tanque na fila do subsistema auxiliar. Quanto maior o valor, maior a prioridade. Para processos com mais de um tanque, envie uma ordem completa e sem repeticoes de 1 ate a quantidade de tanques. Omita em processos com um unico tanque.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'A prioridade do tanque deve ser um numero inteiro.' })
+  @Min(1, { message: 'A prioridade do tanque deve ser maior que zero.' })
+  @Max(3, { message: 'A prioridade do tanque deve ser no maximo 3.' })
+  prioridade?: number;
+
+  @ApiPropertyOptional({
     example: -80.5,
     maximum: -0.001,
     description:

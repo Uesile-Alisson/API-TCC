@@ -50,6 +50,9 @@ lerna-debug.log*
 # Credenciais MQTT externas (defesa adicional caso sejam criadas por engano no projeto)
 mqtt-credentials*.json
 
+# Credenciais locais do firmware (use secrets.example.h como modelo)
+firmware/**/secrets.h
+
 # temp directory
 .temp
 .tmp

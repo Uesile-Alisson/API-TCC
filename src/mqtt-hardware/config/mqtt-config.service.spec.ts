@@ -323,7 +323,9 @@ describe('MqttConfigService - contrato de credenciais externas', () => {
   it('executa mutacao de equipamento somente depois do lock e da revalidacao operacional', async () => {
     const prisma = createPrismaMock();
     const service = new MqttConfigService(prisma as unknown as PrismaService);
-    const mutation = jest.fn(() => Promise.resolve('updated'));
+    const mutation = jest.fn<(...args: unknown[]) => Promise<string>>(() =>
+      Promise.resolve('updated'),
+    );
     prisma.$queryRaw.mockResolvedValue([
       {
         id_mqtt_configuracao: 1,
@@ -642,7 +644,9 @@ describe('MqttConfigService - contrato de credenciais externas', () => {
     const prisma = createPrismaMock();
     const service = new MqttConfigService(prisma as unknown as PrismaService);
     const confirmedAt = new Date('2026-07-19T18:00:00.000Z');
-    const mutation = jest.fn(() => Promise.resolve('updated'));
+    const mutation = jest.fn<(...args: unknown[]) => Promise<string>>(() =>
+      Promise.resolve('updated'),
+    );
     prisma.$queryRaw.mockResolvedValue([
       {
         id_mqtt_configuracao: 1,
@@ -689,7 +693,9 @@ describe('MqttConfigService - contrato de credenciais externas', () => {
     const prisma = createPrismaMock();
     const service = new MqttConfigService(prisma as unknown as PrismaService);
     const confirmedAt = new Date('2026-07-19T18:00:00.000Z');
-    const mutation = jest.fn(() => Promise.resolve('updated'));
+    const mutation = jest.fn<(...args: unknown[]) => Promise<string>>(() =>
+      Promise.resolve('updated'),
+    );
     prisma.$queryRaw.mockResolvedValue([
       {
         id_mqtt_configuracao: 1,

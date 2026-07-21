@@ -5,6 +5,7 @@ import {
 import {
   ProcessoPrecheckGrupo,
   ProcessoPrecheckGrupoResultado,
+  ProcessoPrecheckAcaoCorretiva,
   ProcessoPrecheckItem,
   ProcessoPrecheckItemStatus,
   ProcessoPrecheckResultado,
@@ -23,6 +24,7 @@ type BuildItemInput = {
   detalhes?: Record<string, unknown> | null;
   id_recurso?: number | null;
   tipo_recurso?: ProcessoPrecheckTipoRecurso | null;
+  acao_corretiva?: ProcessoPrecheckAcaoCorretiva | null;
   timestamp?: Date;
 };
 
@@ -42,6 +44,7 @@ export class ProcessoPrecheckMapper {
       detalhes: input.detalhes ?? null,
       id_recurso: input.id_recurso ?? null,
       tipo_recurso: input.tipo_recurso ?? null,
+      acao_corretiva: input.acao_corretiva ?? null,
       timestamp: input.timestamp ?? new Date(),
     };
   }

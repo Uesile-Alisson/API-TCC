@@ -23,6 +23,14 @@ import { ProcessosRepository } from '../processos.repository';
 import { ProcessosSocketGateway } from '../socket';
 import { ProcessoGeneralClosureService } from './processo-general-closure.service';
 
+type AsyncMock<T = unknown> = jest.Mock<(...args: unknown[]) => Promise<T>>;
+
+type CommandMockResult = {
+  comando: string;
+  correlation_id: string;
+  ack_status: string;
+};
+
 describe('ProcessoGeneralClosureService', () => {
   const baseTime = new Date('2026-07-17T00:00:00.000Z');
   const hardwareTime = new Date('2026-07-17T00:00:01.000Z');
@@ -30,16 +38,16 @@ describe('ProcessoGeneralClosureService', () => {
   let state: any;
   let prisma: any;
   let commands: {
-    paradaEmergencia: jest.Mock;
-    fecharTodasValvulas: jest.Mock;
-    desligarTodasBombas: jest.Mock;
+    paradaEmergencia: AsyncMock<CommandMockResult>;
+    fecharTodasValvulas: AsyncMock<CommandMockResult>;
+    desligarTodasBombas: AsyncMock<CommandMockResult>;
   };
   let metrics: { calculateProcessMetrics: jest.Mock };
   let sockets: Record<string, jest.Mock>;
-  let mqttConfig: { findLatestHardwareStatusSnapshotAfter: jest.Mock };
+  let mqttConfig: { findLatestHardwareStatusSnapshotAfter: AsyncMock };
   let repository: {
-    findReadingsForMetrics: jest.Mock;
-    findEmergencyTargetProcessId: jest.Mock;
+    findReadingsForMetrics: AsyncMock;
+    findEmergencyTargetProcessId: AsyncMock;
   };
   let service: ProcessoGeneralClosureService;
 
@@ -580,7 +588,9 @@ describe('ProcessoGeneralClosureService', () => {
   });
 
   it('persiste a auditoria na mesma transacao da nova parada de emergencia', async () => {
-    const persistAudit = jest.fn(async () => undefined);
+    const persistAudit = jest.fn<(...args: unknown[]) => Promise<void>>(
+      async () => undefined,
+    );
 
     await service.requestEmergencyStop({
       id_processo: 10,
@@ -598,7 +608,9 @@ describe('ProcessoGeneralClosureService', () => {
     state.parada_emergencia = true;
     state.status_encerramento_geral = statusencerramentoprocesso.CONCLUIDO;
     state.etapa_encerramento_geral = etapaencerramentoprocesso.CONCLUIDA;
-    const persistAudit = jest.fn(async () => undefined);
+    const persistAudit = jest.fn<(...args: unknown[]) => Promise<void>>(
+      async () => undefined,
+    );
 
     const result = await service.requestEmergencyStop({
       id_processo: 10,
@@ -689,9 +701,13 @@ describe('ProcessoGeneralClosureService', () => {
         motivo_resolucao: 'FECHAMENTO_POS_PROCESSO',
       }),
     });
-    expect(commands.fecharTodasValvulas.mock.calls[0][0].correlation_id).toBe(
-      'process-emergency-p10-r1-c1-fechar-todas-valvulas',
-    );
+    expect(
+      (
+        commands.fecharTodasValvulas.mock.calls[0][0] as {
+          correlation_id: string;
+        }
+      ).correlation_id,
+    ).toBe('process-emergency-p10-r1-c1-fechar-todas-valvulas');
   });
 
   it('registra as tres falhas sem confirmar o controlador quando todos os comandos falham', async () => {

@@ -48,12 +48,16 @@ describe('MqttModule - cadeia unica de mensagens', () => {
 });
 
 describe('HandlersService - transporte do lifecycle por tanque', () => {
-  const readingHandler = { handle: jest.fn() };
+  const readingHandler = {
+    handle: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+  };
   const mqttSocket = {
     publishedSensorReadingCreated: jest.fn(),
     publishMqttError: jest.fn(),
   };
-  const monitor = { monitorReading: jest.fn() };
+  const monitor = {
+    monitorReading: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+  };
   const cache = { invalidate: jest.fn() };
   const processSocket = { emitTankUpdated: jest.fn() };
   let service: HandlersService;
@@ -252,6 +256,9 @@ describe('HandlersService - transporte do lifecycle por tanque', () => {
       status_geral_sistema: statusgeralsistema.OPERACIONAL,
       mensagem: null,
       device_id: 'ESP32_TSEA_01',
+      emergencia_ativa: false,
+      erro_atual: null,
+      emergency_stop_reconciled: false,
       status_em: statusAt,
       receivedAt: statusAt,
       topic: 'tsea/status',

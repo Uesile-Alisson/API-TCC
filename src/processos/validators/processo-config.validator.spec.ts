@@ -79,6 +79,103 @@ describe('ProcessoConfigValidator', () => {
     expect(() => validator.validateCreate(buildValidDto())).not.toThrow();
   });
 
+  it('aceita uma ordem completa de prioridades para varios tanques', () => {
+    const dto = buildValidDto({
+      tanques: [
+        {
+          id_tanque: 1,
+          prioridade: 2,
+          sensores: [{ id_sensor: 1 }],
+        },
+        {
+          id_tanque: 2,
+          prioridade: 1,
+          sensores: [{ id_sensor: 2 }],
+        },
+      ],
+    });
+
+    expect(() => validator.validateCreate(dto)).not.toThrow();
+  });
+
+  it('mantem compatibilidade quando nenhuma prioridade e informada', () => {
+    const dto = buildValidDto({
+      tanques: [
+        { id_tanque: 1, sensores: [{ id_sensor: 1 }] },
+        { id_tanque: 2, sensores: [{ id_sensor: 2 }] },
+      ],
+    });
+
+    expect(() => validator.validateCreate(dto)).not.toThrow();
+  });
+
+  it('bloqueia prioridade em processo com apenas um tanque', () => {
+    const dto = buildValidDto({
+      tanques: [
+        {
+          id_tanque: 1,
+          prioridade: 1,
+          sensores: [{ id_sensor: 1 }],
+        },
+      ],
+    });
+
+    expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
+  });
+
+  it('bloqueia configuracao parcial de prioridades', () => {
+    const dto = buildValidDto({
+      tanques: [
+        {
+          id_tanque: 1,
+          prioridade: 2,
+          sensores: [{ id_sensor: 1 }],
+        },
+        { id_tanque: 2, sensores: [{ id_sensor: 2 }] },
+      ],
+    });
+
+    expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
+  });
+
+  it('bloqueia prioridades repetidas', () => {
+    const dto = buildValidDto({
+      tanques: [
+        {
+          id_tanque: 1,
+          prioridade: 1,
+          sensores: [{ id_sensor: 1 }],
+        },
+        {
+          id_tanque: 2,
+          prioridade: 1,
+          sensores: [{ id_sensor: 2 }],
+        },
+      ],
+    });
+
+    expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
+  });
+
+  it('bloqueia prioridade fora da faixa definida pela quantidade de tanques', () => {
+    const dto = buildValidDto({
+      tanques: [
+        {
+          id_tanque: 1,
+          prioridade: 3,
+          sensores: [{ id_sensor: 1 }],
+        },
+        {
+          id_tanque: 2,
+          prioridade: 1,
+          sensores: [{ id_sensor: 2 }],
+        },
+      ],
+    });
+
+    expect(() => validator.validateCreate(dto)).toThrow(BadRequestException);
+  });
+
   it('bloqueia vacuo_alvo positivo em um tanque', () => {
     const dto = buildValidDto({
       tanques: [

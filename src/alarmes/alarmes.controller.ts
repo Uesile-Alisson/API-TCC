@@ -9,7 +9,13 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -17,7 +23,12 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { AlarmesService } from './alarmes.service';
 import {
   AcknowledgeAlarmeDto,
+  AcknowledgeAlarmeResponseDto,
+  AlarmeDashboardResponseDto,
+  AlarmeDetailsResponseDto,
+  AlarmeListResponseDto,
   ListAlarmesQueryDto,
+  ResolveAlarmeResponseDto,
   ResolveAlarmeDto,
 } from './dto';
 
@@ -31,7 +42,7 @@ type AuthenticatedAlarmesUser = {
 };
 
 @ApiTags('Alarmes')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('alarmes')
 export class AlarmesController {
@@ -40,6 +51,7 @@ export class AlarmesController {
   @Get()
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista alarmes.' })
+  @ApiOkResponse({ type: AlarmeListResponseDto })
   list(@Query() query: ListAlarmesQueryDto) {
     return this.alarmesService.list(query);
   }
@@ -47,6 +59,7 @@ export class AlarmesController {
   @Get('dashboard')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Consulta dashboard de alarmes.' })
+  @ApiOkResponse({ type: AlarmeDashboardResponseDto })
   getDashboard(@Query() query: ListAlarmesQueryDto) {
     return this.alarmesService.getDashboard(query);
   }
@@ -54,6 +67,7 @@ export class AlarmesController {
   @Get('ativos')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista alarmes ativos.' })
+  @ApiOkResponse({ type: AlarmeListResponseDto })
   findActive(@Query() query: ListAlarmesQueryDto) {
     return this.alarmesService.findActive(query);
   }
@@ -61,6 +75,7 @@ export class AlarmesController {
   @Get('criticos')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista alarmes criticos.' })
+  @ApiOkResponse({ type: AlarmeListResponseDto })
   findCritical(@Query() query: ListAlarmesQueryDto) {
     return this.alarmesService.findCritical(query);
   }
@@ -68,6 +83,7 @@ export class AlarmesController {
   @Get('processo/:id_processo')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista alarmes de um processo.' })
+  @ApiOkResponse({ type: AlarmeListResponseDto })
   findByProcess(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @Query() query: ListAlarmesQueryDto,
@@ -78,6 +94,7 @@ export class AlarmesController {
   @Get('processo/:id_processo/ativos')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista alarmes ativos de um processo.' })
+  @ApiOkResponse({ type: AlarmeListResponseDto })
   findActiveByProcess(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @Query() query: ListAlarmesQueryDto,
@@ -88,6 +105,7 @@ export class AlarmesController {
   @Get('processo/:id_processo/criticos')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista alarmes criticos de um processo.' })
+  @ApiOkResponse({ type: AlarmeListResponseDto })
   findCriticalByProcess(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @Query() query: ListAlarmesQueryDto,
@@ -98,6 +116,7 @@ export class AlarmesController {
   @Get(':id')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Consulta detalhes de um alarme.' })
+  @ApiOkResponse({ type: AlarmeDetailsResponseDto })
   findById(@Param('id', ParseIntPipe) id_alarme: number) {
     return this.alarmesService.findDetailsById(id_alarme);
   }
@@ -105,6 +124,7 @@ export class AlarmesController {
   @Patch(':id/resolver')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Resolve um alarme.' })
+  @ApiOkResponse({ type: ResolveAlarmeResponseDto })
   resolve(
     @Param('id', ParseIntPipe) id_alarme: number,
     @Body() dto: ResolveAlarmeDto,
@@ -116,6 +136,7 @@ export class AlarmesController {
   @Post(':id/resolver')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Resolve um alarme.' })
+  @ApiCreatedResponse({ type: ResolveAlarmeResponseDto })
   resolvePost(
     @Param('id', ParseIntPipe) id_alarme: number,
     @Body() dto: ResolveAlarmeDto,
@@ -127,6 +148,7 @@ export class AlarmesController {
   @Post(':id/reconhecer')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Reconhece ciencia operacional de um alarme.' })
+  @ApiCreatedResponse({ type: AcknowledgeAlarmeResponseDto })
   acknowledge(
     @Param('id', ParseIntPipe) id_alarme: number,
     @Body() dto: AcknowledgeAlarmeDto,

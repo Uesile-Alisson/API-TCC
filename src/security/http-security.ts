@@ -59,6 +59,7 @@ const TEST_ENVIRONMENT_DEFAULTS: Record<string, string> = {
 export type ValidatedEnvironment = Record<string, unknown> & {
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
+  API_INSTANCE_COUNT: number;
   HTTP_RATE_LIMIT_TTL_MS: number;
   HTTP_RATE_LIMIT_MAX: number;
   HTTP_RATE_LIMIT_BLOCK_DURATION_MS: number;
@@ -160,6 +161,17 @@ export function validateEnvironment(
     3000,
     65_535,
   );
+  const apiInstanceCount = parsePositiveInteger(
+    environment.API_INSTANCE_COUNT,
+    'API_INSTANCE_COUNT',
+    1,
+  );
+  environment.API_INSTANCE_COUNT = apiInstanceCount;
+  if (apiInstanceCount > 1) {
+    throw new Error(
+      'API_INSTANCE_COUNT maior que 1 exige ThrottlerStorage compartilhado; esta versao suporta rate limiting seguro em uma unica instancia.',
+    );
+  }
   environment.MAIL_PORT = parsePositiveInteger(
     environment.MAIL_PORT,
     'MAIL_PORT',

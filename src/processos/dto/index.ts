@@ -1,5 +1,6 @@
 export * from './create-processo.dto';
 export * from './update-processo-config.dto';
+export * from './processo-response.dto';
 export * from './list-processos-query.dto';
 export * from './finalizar-processo.dto';
 export * from './interromper-processo.dto';

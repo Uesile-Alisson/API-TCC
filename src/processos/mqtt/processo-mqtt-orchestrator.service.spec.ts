@@ -19,7 +19,7 @@ type CommandServiceMock = {
   desligarTodasBombas: Mock<() => Promise<CommandResult>>;
   fecharTodasValvulas: Mock<() => Promise<CommandResult>>;
   sincronizarHardware: Mock<() => Promise<CommandResult>>;
-  iniciarProcessoVacuo: Mock<() => Promise<CommandResult>>;
+  iniciarProcessoVacuo: Mock<(...args: unknown[]) => Promise<CommandResult>>;
   abrirValvula: Mock<(...args: unknown[]) => Promise<CommandResult>>;
   ligarBomba: Mock<(...args: unknown[]) => Promise<CommandResult>>;
   paradaEmergencia: Mock<

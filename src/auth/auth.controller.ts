@@ -48,14 +48,14 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({
-    summary: 'Retorna o usuÃ¡rio autenticado pelo token JWT.',
+    summary: 'Retorna o usuário autenticado pelo token JWT.',
   })
   @ApiOkResponse({
     type: MeResponseDTO,
     description: 'Usuário autenticado retornado com sucesso.',
   })
   @ApiUnauthorizedResponse({
-    description: 'Token ausente, invÃ¡lido ou usuÃ¡rio nÃ£o encontrado.',
+    description: 'Token ausente, inválido ou usuário não encontrado.',
   })
   me(@CurrentUser() user: AuthenticatedUser): Promise<MeResponse> {
     return this.authService.me(user);
@@ -85,7 +85,9 @@ export class AuthController {
   @Throttle({
     default: { limit: 3, ttl: 15 * 60_000, blockDuration: 15 * 60_000 },
   })
-  @ApiOperation({ summary: 'Solicita recuperacao de senha sem enumerar contas.' })
+  @ApiOperation({
+    summary: 'Solicita recuperacao de senha sem enumerar contas.',
+  })
   @ApiCreatedResponse({ type: AuthMessageResponseDTO })
   forgotPassword(@Body() dto: ForgotPasswordDTO) {
     return this.authService.forgotPassword(dto);

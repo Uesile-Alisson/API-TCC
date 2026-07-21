@@ -1,6 +1,7 @@
 import { statuscomandomqtt } from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Esp32CommandAckStatus } from '../dto/esp32-command-ack.dto';
 import { CommandLedgerService } from './command-ledger.service';
 
 describe('CommandLedgerService', () => {
@@ -42,7 +43,7 @@ describe('CommandLedgerService', () => {
     expect(prepared.shouldPublish).toBe(false);
     expect(prepared.restoredAck).toMatchObject({
       correlation_id: 'startup-10-load',
-      status: 'EXECUTADO',
+      status: Esp32CommandAckStatus.EXECUTADO,
       mensagem: 'Aplicado.',
       id_processo: 10,
     });
@@ -57,7 +58,7 @@ describe('CommandLedgerService', () => {
     await service.recordAck({
       correlation_id: 'startup-10-load',
       comando: 'INICIAR_PROCESSO_VACUO',
-      status: 'EXECUTADO',
+      status: Esp32CommandAckStatus.EXECUTADO,
       codigo_hardware: null,
       id_processo: 10,
       mensagem: 'Aplicado.',

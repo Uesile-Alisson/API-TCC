@@ -46,7 +46,7 @@ describe('MqttClientService', () => {
 
     const verificationPromise = service.verifyCredentials(makeCredentials());
     probeClient.client.connected = true;
-    probeClient.client.emit('connect');
+    (probeClient.client as unknown as EventEmitter).emit('connect');
 
     const result = await verificationPromise;
 
@@ -87,7 +87,7 @@ describe('MqttClientService', () => {
       makeCredentials(),
     );
     probeClient.client.connected = true;
-    probeClient.client.emit('connect');
+    (probeClient.client as unknown as EventEmitter).emit('connect');
 
     await expect(verificationPromise).resolves.toMatchObject({
       success: true,
@@ -157,7 +157,7 @@ describe('MqttClientService', () => {
 
     const verificationPromise = service.verifyCredentials(makeCredentials());
     probeClient.client.connected = true;
-    probeClient.client.emit('connect');
+    (probeClient.client as unknown as EventEmitter).emit('connect');
 
     await expect(verificationPromise).resolves.toMatchObject({
       success: false,
@@ -173,7 +173,7 @@ describe('MqttClientService', () => {
 
     const verificationPromise = service.verifyCredentials(makeCredentials());
     probeClient.client.connected = true;
-    probeClient.client.emit('connect');
+    (probeClient.client as unknown as EventEmitter).emit('connect');
 
     await expect(verificationPromise).resolves.toMatchObject({
       success: false,
@@ -350,10 +350,12 @@ describe('MqttClientService', () => {
 
   it('isola listener rejeitado e continua notificando os demais', async () => {
     const { service, updateConnectionStatus } = makeService();
-    const rejectedListener = jest.fn(() =>
-      Promise.reject(new Error('Socket indisponivel')),
+    const rejectedListener = jest.fn<(...args: unknown[]) => Promise<void>>(
+      () => Promise.reject(new Error('Socket indisponivel')),
     );
-    const successfulListener = jest.fn(() => Promise.resolve());
+    const successfulListener = jest.fn<(...args: unknown[]) => Promise<void>>(
+      () => Promise.resolve(),
+    );
     service.registerConnectionStatusListener(rejectedListener);
     service.registerConnectionStatusListener(successfulListener);
     const client = new EventEmitter();
@@ -407,7 +409,9 @@ describe('MqttClientService', () => {
   it('processa a mensagem mesmo quando ultima sincronizacao nao pode ser persistida', async () => {
     const { service, updateLastSync } = makeService();
     updateLastSync.mockRejectedValueOnce(new Error('Falha no timestamp'));
-    const listener = jest.fn(() => Promise.resolve());
+    const listener = jest.fn<(...args: unknown[]) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
     service.registerMessageListener(listener);
 
     await service['handleIncomingMessage'](
@@ -447,7 +451,9 @@ describe('MqttClientService', () => {
   });
 
   it('permite a inicializacao da API quando o arquivo de credenciais nao existe', async () => {
-    const updateConnectionStatus = jest.fn(() => Promise.resolve());
+    const updateConnectionStatus = jest.fn<
+      (...args: unknown[]) => Promise<void>
+    >(() => Promise.resolve());
     const configService = {
       getConfig: jest.fn(() => Promise.resolve(makeConfig())),
       updateConnectionStatus,
@@ -481,10 +487,18 @@ describe('MqttClientService', () => {
 });
 
 function makeService() {
-  const updateConnectionStatus = jest.fn(() => Promise.resolve());
-  const updateLastSync = jest.fn(() => Promise.resolve());
-  const markCredentialsVerified = jest.fn(() => Promise.resolve());
-  const markAuthenticationFailure = jest.fn(() => Promise.resolve());
+  const updateConnectionStatus = jest.fn<(...args: unknown[]) => Promise<void>>(
+    () => Promise.resolve(),
+  );
+  const updateLastSync = jest.fn<(...args: unknown[]) => Promise<void>>(() =>
+    Promise.resolve(),
+  );
+  const markCredentialsVerified = jest.fn<
+    (...args: unknown[]) => Promise<void>
+  >(() => Promise.resolve());
+  const markAuthenticationFailure = jest.fn<
+    (...args: unknown[]) => Promise<void>
+  >(() => Promise.resolve());
   const configService = {
     getConfig: jest.fn(() => Promise.resolve(makeConfig())),
     updateConnectionStatus,
@@ -527,7 +541,9 @@ function makeProbeClient(subscriptionError?: Error, grantedQos?: number) {
           },
         ]),
       );
-  const endAsync = jest.fn(() => Promise.resolve());
+  const endAsync = jest.fn<(...args: unknown[]) => Promise<void>>(() =>
+    Promise.resolve(),
+  );
   const client = Object.assign(emitter, {
     connected: false,
     subscribeAsync,
@@ -609,7 +625,9 @@ function makeOperationalClient() {
 
 function makeFailedConnectionClient() {
   const emitter = new EventEmitter();
-  const endAsync = jest.fn(() => Promise.resolve());
+  const endAsync = jest.fn<(...args: unknown[]) => Promise<void>>(() =>
+    Promise.resolve(),
+  );
   const client = Object.assign(emitter, {
     connected: false,
     endAsync,

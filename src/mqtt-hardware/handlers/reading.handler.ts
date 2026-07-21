@@ -264,7 +264,7 @@ export class ReadingHandler implements MqttMessageHandler<MqttReadingHandlerResu
 
     if (!sensor) {
       this.logIgnoredReading(
-        `Sensor diagnÃ³stico nÃ£o encontrado. codigo_hardware=${dto.codigo_hardware ?? 'ausente'}; id_sensor=${dto.id_sensor ?? 'ausente'}`,
+        `Sensor diagnóstico não encontrado. codigo_hardware=${dto.codigo_hardware ?? 'ausente'}; id_sensor=${dto.id_sensor ?? 'ausente'}`,
         message.topic,
       );
 
@@ -273,7 +273,7 @@ export class ReadingHandler implements MqttMessageHandler<MqttReadingHandlerResu
 
     if (sensor.excluido_em) {
       this.logIgnoredReading(
-        `Sensor diagnÃ³stico ${sensor.id_sensor} estÃ¡ excluÃ­do.`,
+        `Sensor diagnóstico ${sensor.id_sensor} está excluído.`,
         message.topic,
       );
 
@@ -323,10 +323,10 @@ export class ReadingHandler implements MqttMessageHandler<MqttReadingHandlerResu
     });
 
     this.logger.debug(
-      `Leitura diagnÃ³stica MQTT registrada no estado do sensor. ` +
-        `TÃ³pico: ${message.topic}. ` +
+      `Leitura diagnóstica MQTT registrada no estado do sensor. ` +
+        `Tópico: ${message.topic}. ` +
         `Sensor: ${sensor.id_sensor}. ` +
-        `CÃ³digo hardware: ${sensor.codigo_hardware ?? 'nÃ£o informado'}. ` +
+        `Código hardware: ${sensor.codigo_hardware ?? 'não informado'}. ` +
         `Valor: ${valor_vacuo.toString()}. ` +
         `Leitura em: ${leitura_em.toISOString()}.`,
     );
@@ -545,7 +545,7 @@ export class ReadingHandler implements MqttMessageHandler<MqttReadingHandlerResu
 
     if (!Number.isInteger(idProcessoTanqueSensor)) {
       throw new Error(
-        'Leitura de processo sem id_processo_tanque_sensor apÃ³s validaÃ§Ã£o.',
+        'Leitura de processo sem id_processo_tanque_sensor após validação.',
       );
     }
 

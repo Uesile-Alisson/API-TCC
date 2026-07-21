@@ -6,7 +6,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -16,6 +21,15 @@ import {
   HistoricoGraficoVacuoQueryDto,
   HistoricoProcessoAlarmesQueryDto,
   HistoricoProcessoEventosQueryDto,
+  HistoricoAlarmeListResponseDto,
+  HistoricoDashboardResponseDto,
+  HistoricoEventoListResponseDto,
+  HistoricoProcessoDetailsResponseDto,
+  HistoricoProcessoListResponseDto,
+  HistoricoRelatorioSummaryDto,
+  HistoricoTanqueComparisonResponseDto,
+  HistoricoTanqueSummaryDto,
+  HistoricoVacuoChartResponseDto,
   ListHistoricoProcessosQueryDto,
 } from './dto';
 import type {
@@ -49,7 +63,7 @@ type HistoricoPaginatedControllerResponse<T> = {
 };
 
 @ApiTags('Histórico')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('historico')
 export class HistoricoController {
@@ -58,6 +72,7 @@ export class HistoricoController {
   @Get('processos')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista processos históricos.' })
+  @ApiOkResponse({ type: HistoricoProcessoListResponseDto })
   listHistoricalProcesses(
     @Query() query: ListHistoricoProcessosQueryDto,
     @CurrentUser() currentUser: AuthenticatedHistoricoUser,
@@ -71,6 +86,7 @@ export class HistoricoController {
   @Get('dashboard')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Consulta dashboard histórico.' })
+  @ApiOkResponse({ type: HistoricoDashboardResponseDto })
   getHistoricalDashboard(
     @Query() query: HistoricoDashboardQueryDto,
     @CurrentUser() currentUser: AuthenticatedHistoricoUser,
@@ -84,6 +100,7 @@ export class HistoricoController {
   @Get('processos/:id_processo')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Consulta detalhes de um processo histórico.' })
+  @ApiOkResponse({ type: HistoricoProcessoDetailsResponseDto })
   findHistoricalProcessById(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @CurrentUser() currentUser: AuthenticatedHistoricoUser,
@@ -97,6 +114,7 @@ export class HistoricoController {
   @Get('processos/:id_processo/tanques')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista tanques de um processo histórico.' })
+  @ApiOkResponse({ type: HistoricoTanqueSummaryDto, isArray: true })
   getHistoricalProcessTanks(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @CurrentUser() currentUser: AuthenticatedHistoricoUser,
@@ -110,6 +128,7 @@ export class HistoricoController {
   @Get('processos/:id_processo/alarmes')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista alarmes de um processo histórico.' })
+  @ApiOkResponse({ type: HistoricoAlarmeListResponseDto })
   getHistoricalProcessAlarms(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @Query() query: HistoricoProcessoAlarmesQueryDto,
@@ -125,6 +144,7 @@ export class HistoricoController {
   @Get('processos/:id_processo/eventos')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista eventos de um processo histórico.' })
+  @ApiOkResponse({ type: HistoricoEventoListResponseDto })
   getHistoricalProcessEvents(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @Query() query: HistoricoProcessoEventosQueryDto,
@@ -142,6 +162,7 @@ export class HistoricoController {
   @ApiOperation({
     summary: 'Lista metadados de relatórios de um processo histórico.',
   })
+  @ApiOkResponse({ type: HistoricoRelatorioSummaryDto, isArray: true })
   getHistoricalProcessReports(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @CurrentUser() currentUser: AuthenticatedHistoricoUser,
@@ -157,6 +178,7 @@ export class HistoricoController {
   @ApiOperation({
     summary: 'Consulta gráfico histórico de vácuo de um processo.',
   })
+  @ApiOkResponse({ type: HistoricoVacuoChartResponseDto })
   getHistoricalVacuumChart(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @Query() query: HistoricoGraficoVacuoQueryDto,
@@ -174,6 +196,7 @@ export class HistoricoController {
   @ApiOperation({
     summary: 'Consulta dashboard histórico de um processo específico.',
   })
+  @ApiOkResponse({ type: HistoricoDashboardResponseDto })
   getHistoricalProcessDashboard(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @CurrentUser() currentUser: AuthenticatedHistoricoUser,
@@ -189,6 +212,7 @@ export class HistoricoController {
   @ApiOperation({
     summary: 'Consulta comparativo histórico de tanques de um processo.',
   })
+  @ApiOkResponse({ type: HistoricoTanqueComparisonResponseDto })
   getHistoricalTankComparison(
     @Param('id_processo', ParseIntPipe) id_processo: number,
     @CurrentUser() currentUser: AuthenticatedHistoricoUser,

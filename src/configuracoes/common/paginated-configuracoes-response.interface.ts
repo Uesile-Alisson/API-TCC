@@ -7,9 +7,7 @@ export interface ConfiguracoesPaginationMeta {
   total_pages: number;
 }
 
-export class ConfiguracoesPaginationMetaDto
-  implements ConfiguracoesPaginationMeta
-{
+export class ConfiguracoesPaginationMetaDto implements ConfiguracoesPaginationMeta {
   @ApiProperty({ example: 1 })
   page!: number;
 

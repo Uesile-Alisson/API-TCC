@@ -75,6 +75,6 @@ describe('ProcessoSafetyValidator - contrato operacional MQTT', () => {
         can_start: false,
         blocking_reasons: [],
       },
-    } as ProcessoOperationalContext;
+    } as unknown as ProcessoOperationalContext;
   }
 });

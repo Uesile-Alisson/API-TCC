@@ -165,24 +165,32 @@ describe('ProcessosController (e2e)', () => {
     processosService.interrupt.mockResolvedValue(processoCanceladoResponse);
     processosService.emergencyStop.mockResolvedValue(paradaEmergenciaResponse);
     closureService = {
-      startManual: jest.fn().mockResolvedValue({
-        success: true,
-        message: 'Encerramento individual aceito.',
-        id_processo: 1,
-        id_processo_tanque: 20,
-      }),
+      startManual: jest
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockResolvedValue({
+          success: true,
+          message: 'Encerramento individual aceito.',
+          id_processo: 1,
+          id_processo_tanque: 20,
+        }),
     };
     generalClosureService = {
-      getState: jest.fn().mockResolvedValue({
-        status: 'AGUARDANDO_ACAO_MANUAL',
-        versao: 4,
-      }),
-      getEmergencyState: jest.fn().mockResolvedValue({
-        ativa: true,
-        status: 'AGUARDANDO_CONFIRMACAO',
-        hardware_confirmado: false,
-      }),
-      startManual: jest.fn().mockResolvedValue(processoFinalizadoResponse),
+      getState: jest
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockResolvedValue({
+          status: 'AGUARDANDO_ACAO_MANUAL',
+          versao: 4,
+        }),
+      getEmergencyState: jest
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockResolvedValue({
+          ativa: true,
+          status: 'AGUARDANDO_CONFIRMACAO',
+          hardware_confirmado: false,
+        }),
+      startManual: jest
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockResolvedValue(processoFinalizadoResponse),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -258,6 +266,40 @@ describe('ProcessosController (e2e)', () => {
 
     expect(response.body).toEqual(processoConfiguradoResponse);
     expect(processosService.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('/processos (POST) aceita prioridade em cada tanque', async () => {
+    const body = {
+      nome_processo: 'Processo com prioridades',
+      vacuo_alvo: -80,
+      tempo_maximo: 300,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
+      tanques: [
+        {
+          id_tanque: 1,
+          prioridade: 2,
+          sensores: [{ id_sensor: 1 }],
+        },
+        {
+          id_tanque: 2,
+          prioridade: 1,
+          sensores: [{ id_sensor: 2 }],
+        },
+      ],
+    };
+
+    await request(httpServer).post('/processos').send(body).expect(201);
+
+    expect(processosService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tanques: [
+          expect.objectContaining({ id_tanque: 1, prioridade: 2 }),
+          expect.objectContaining({ id_tanque: 2, prioridade: 1 }),
+        ],
+      }),
+      expect.any(Object),
+    );
   });
 
   it.each([0, 80])(

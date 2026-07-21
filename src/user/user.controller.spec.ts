@@ -5,7 +5,7 @@ import { USER_ROLES_KEY } from './decorators/user.decorator';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
 
-type AsyncMock = jest.Mock<(...args: never[]) => Promise<unknown>>;
+type AsyncMock = jest.Mock<(...args: unknown[]) => Promise<unknown>>;
 
 describe('UserController', () => {
   let controller: UserController;
@@ -31,12 +31,12 @@ describe('UserController', () => {
 
   beforeEach(() => {
     service = {
-      create: jest.fn<(...args: never[]) => Promise<unknown>>(),
-      listUsers: jest.fn<(...args: never[]) => Promise<unknown>>(),
-      findUser: jest.fn<(...args: never[]) => Promise<unknown>>(),
-      updateUser: jest.fn<(...args: never[]) => Promise<unknown>>(),
-      updateUserRole: jest.fn<(...args: never[]) => Promise<unknown>>(),
-      removeUser: jest.fn<(...args: never[]) => Promise<unknown>>(),
+      create: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+      listUsers: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+      findUser: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+      updateUser: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+      updateUserRole: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+      removeUser: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
     };
     controller = new UserController(service as unknown as UserService);
   });
@@ -48,7 +48,11 @@ describe('UserController', () => {
       email: 'operador@teste.com',
       id_nivel_acesso: 1,
     };
-    const updateDto = { nome: 'Operador Atualizado' };
+    const updateDto = {
+      nome: 'Operador Atualizado',
+      login: 'operador.atualizado',
+      email: 'operador.atualizado@teste.com',
+    };
     const roleDto = { id_nivel_acesso: 2 };
 
     await controller.create(createDto);

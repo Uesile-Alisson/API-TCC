@@ -45,7 +45,7 @@ TSEA_SIM_VALVULA_IDS=
 
 Os scripts carregam primeiro `.env` e depois `.env.mqtt-sim` com prioridade para `.env.mqtt-sim`. Se a mesma variavel existir nos dois arquivos, o valor de `.env.mqtt-sim` vence.
 
-Para aprovar valvulas na pre-checagem, `TSEA_SIM_PUBLISH_STATUS=true` e obrigatorio. Sem essa variavel, o script publica heartbeat, leituras e acoplamentos, mas nao publica o ACK fisico em `tsea/status`; nesse caso o backend deve continuar exibindo valvulas como `NAO_CONFIRMADO`.
+Para aprovar valvulas na pre-checagem, `TSEA_SIM_PUBLISH_STATUS=true` e obrigatorio. Sem essa variavel, o script publica heartbeat, leituras e acoplamentos, mas nao publica o estado logico do controlador em `tsea/status`; nesse caso o backend deve continuar exibindo valvulas como `NAO_CONFIRMADO`.
 
 `TSEA_SIM_PTS_IDS` aceita lista como `1,2,3`.
 
@@ -79,35 +79,48 @@ Nao foi possivel resolver PTS/acoplamentos. Configure TSEA_SIM_PTS_IDS e TSEA_SI
 
 ## Limitacoes conhecidas
 
-- `tsea/status` fica desativado por padrao para evitar publicacao automatica de status durante preparo. Ative `TSEA_SIM_PUBLISH_STATUS=true` para publicar ACK fisico das valvulas.
-- Sem ACK recente de valvula em `tsea/status`, a pre-checagem deve manter a valvula como `NAO_CONFIRMADO`.
+- `tsea/status` fica desativado por padrao para evitar publicacao automatica de status durante preparo. Ative `TSEA_SIM_PUBLISH_STATUS=true` para publicar o estado logico das valvulas e bombas.
+- Sem estado recente de valvula em `tsea/status`, a pre-checagem deve manter a valvula como `NAO_CONFIRMADO`.
 - Com `TSEA_SIM_PUBLISH_STATUS=true`, o script falha se nao conseguir resolver valvulas reais do processo. Ele nao publica `valvulas: {}` silenciosamente.
 - Os scripts de cenario apenas assinam e registram os comandos. O processo `simulate:esp32` responde ACKs de aplicacao em `tsea/acks`.
-- O status eletrico de valvulas continua em `tsea/status`; ele nao substitui o ACK de aplicacao correlacionado em `tsea/acks`.
+- O estado logico informado pelo controlador continua em `tsea/status`; ele nao substitui o ACK de aplicacao correlacionado em `tsea/acks`.
 - Os scripts de sucesso/falha usam endpoints HTTP reais: `/processos/:id/iniciar`, `/processos/:id/finalizar` e `/processos/:id/interromper`.
 
-## ACK fisico das valvulas
+## Estado logico das valvulas e bombas
 
 Quando `TSEA_SIM_PUBLISH_STATUS=true`, os scripts publicam em `tsea/status`:
 
 ```json
 {
+  "tipo": "HARDWARE_STATUS",
+  "schema_version": 2,
   "esp32_on": true,
   "status_geral": "OPERACIONAL",
   "mensagem": "ESP32 operacional",
   "device_id": "esp32-tsea-simulado",
+  "emergencia_ativa": false,
   "sensores_ativos": 3,
-  "valvulas": {
-    "1": {
+  "valvulas": [
+    {
       "id_valvula": 1,
+      "codigo_hardware": "VP_T1",
       "status_valvula": "FECHADA",
       "ack": true,
+      "falha": false,
+      "disponivel": true
+    }
+  ],
+  "bombas": [
+    {
+      "id_bomba": 1,
+      "codigo_hardware": "BOMBA_VACUO_PRINCIPAL",
+      "ligada": false,
+      "disponivel": true,
       "falha": false
     }
-  },
-  "tanques": {},
+  ],
   "enviado_em": "2026-07-01T12:00:00.000Z"
 }
 ```
 
-Para a pre-checagem aprovar valvula, o backend exige valvula ativa, ACK recente, `status_valvula=FECHADA` e `falha=false`.
+Para a consulta normal da pre-checagem aprovar uma valvula, o backend exige valvula ativa, estado recente e `status_valvula=FECHADA`. A acao corretiva de teste seguro e mais rigorosa: exige schema v2 novo e posterior aos ACKs, correlacao univoca por `codigo_hardware`, todas as valvulas do processo fechadas/disponiveis/sem falha e todas as bombas desligadas/disponiveis/sem falha. Isso confirma apenas o estado logico informado pelo ESP32; posicao mecanica exige fim de curso ou sensor dedicado.

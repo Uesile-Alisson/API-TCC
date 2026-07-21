@@ -6,11 +6,13 @@ import type { Namespace, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
 import { SocketAuthService } from './socket-auth.service';
 
+const asyncMock = () => jest.fn<(...args: unknown[]) => Promise<unknown>>();
+
 describe('SocketAuthService', () => {
-  const jwt = { verifyAsync: jest.fn() };
+  const jwt = { verifyAsync: asyncMock() };
   const prisma = {
     usuarios: {
-      findUnique: jest.fn(),
+      findUnique: asyncMock(),
     },
   };
   let service: SocketAuthService;
@@ -196,9 +198,16 @@ describe('SocketAuthService', () => {
       | undefined;
     const namespace = {
       name: '/processos',
-      use: jest.fn((registeredMiddleware) => {
-        middleware = registeredMiddleware;
-      }),
+      use: jest.fn(
+        (
+          registeredMiddleware: (
+            client: Socket,
+            next: (error?: Error) => void,
+          ) => void,
+        ) => {
+          middleware = registeredMiddleware;
+        },
+      ),
       sockets: new Map(),
     };
     service.registerAuthenticationMiddleware(namespace as unknown as Namespace);
@@ -243,9 +252,16 @@ describe('SocketAuthService', () => {
     const sockets = new Map<string, Socket>();
     const namespace = {
       name: '/mqtt-hardware',
-      use: jest.fn((registeredMiddleware) => {
-        middleware = registeredMiddleware;
-      }),
+      use: jest.fn(
+        (
+          registeredMiddleware: (
+            client: Socket,
+            next: (error?: Error) => void,
+          ) => void,
+        ) => {
+          middleware = registeredMiddleware;
+        },
+      ),
       sockets,
     };
     service.registerAuthenticationMiddleware(namespace as unknown as Namespace);
@@ -331,9 +347,16 @@ describe('SocketAuthService', () => {
       | undefined;
     const namespace = {
       name: '/alarmes',
-      use: jest.fn((registeredMiddleware) => {
-        middleware = registeredMiddleware;
-      }),
+      use: jest.fn(
+        (
+          registeredMiddleware: (
+            client: Socket,
+            next: (error?: Error) => void,
+          ) => void,
+        ) => {
+          middleware = registeredMiddleware;
+        },
+      ),
     };
     service.registerAuthenticationMiddleware(namespace as unknown as Namespace);
     const client = makeClient({});

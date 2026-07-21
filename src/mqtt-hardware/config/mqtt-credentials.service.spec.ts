@@ -220,10 +220,13 @@ describe('MqttCredentialsService', () => {
 
 function makeService(path: string) {
   let currentConfig = makeConfig();
-  const updateCredentialState = jest.fn((state: Partial<ActiveMqttConfig>) => {
-    currentConfig = { ...currentConfig, ...state };
-    return Promise.resolve(currentConfig);
-  });
+  const updateCredentialState = jest.fn(
+    (state: Partial<ActiveMqttConfig>, options?: Record<string, unknown>) => {
+      void options;
+      currentConfig = { ...currentConfig, ...state };
+      return Promise.resolve(currentConfig);
+    },
+  );
   const mqttConfigService = {
     getConfig: jest.fn(() => Promise.resolve(currentConfig)),
     updateCredentialState,

@@ -43,6 +43,27 @@ export type ProcessoPrecheckTipoRecurso =
   | 'SOCKET'
   | 'LOG';
 
+export type ProcessoPrecheckAcaoCorretivaCodigo =
+  | 'CALIBRAR_SENSOR'
+  | 'CONTINUAR_CALIBRACAO_SENSOR'
+  | 'LIBERAR_SENSOR'
+  | 'ATIVAR_SENSOR'
+  | 'AGUARDAR_TELEMETRIA_SENSOR'
+  | 'DIAGNOSTICAR_SENSOR'
+  | 'TESTAR_ESTADO_SEGURO_VALVULA'
+  | 'REVISAR_CONFIGURACAO_VALVULA';
+
+export interface ProcessoPrecheckAcaoCorretiva {
+  codigo: ProcessoPrecheckAcaoCorretivaCodigo;
+  titulo: string;
+  metodo: 'GET' | 'POST' | 'PATCH' | null;
+  endpoint: string | null;
+  disponivel: boolean;
+  requer_confirmacao: boolean;
+  reexecutar_prechecagem: boolean;
+  motivo_indisponibilidade: string | null;
+}
+
 export interface ProcessoPrecheckItem {
   codigo: string;
   titulo: string;
@@ -55,6 +76,7 @@ export interface ProcessoPrecheckItem {
   detalhes: Record<string, unknown> | null;
   id_recurso: number | null;
   tipo_recurso: ProcessoPrecheckTipoRecurso | null;
+  acao_corretiva: ProcessoPrecheckAcaoCorretiva | null;
   timestamp: Date;
 }
 

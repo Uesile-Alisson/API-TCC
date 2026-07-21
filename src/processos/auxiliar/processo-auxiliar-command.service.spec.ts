@@ -18,6 +18,8 @@ import { ProcessoAuxiliarSafetyValidator } from '../validators';
 import { ProcessoAuxiliarCommandService } from './processo-auxiliar-command.service';
 import { ProcessoAuxiliarRepository } from './processo-auxiliar.repository';
 
+const asyncMock = () => jest.fn<(...args: unknown[]) => Promise<unknown>>();
+
 describe('ProcessoAuxiliarCommandService', () => {
   const user: CurrentUserPayload = {
     sub: 7,
@@ -26,27 +28,27 @@ describe('ProcessoAuxiliarCommandService', () => {
     nivel_acesso: nivelacesso.TECNICO,
   };
   const repository = {
-    acquirePumpControl: jest.fn(),
-    releasePumpControl: jest.fn(),
-    acquireValveControl: jest.fn(),
-    releaseValveControl: jest.fn(),
-    reserveCommand: jest.fn(),
-    finalizeCommand: jest.fn(),
-    rollbackCommand: jest.fn(),
-    markInconsistentAfterAck: jest.fn(),
+    acquirePumpControl: asyncMock(),
+    releasePumpControl: asyncMock(),
+    acquireValveControl: asyncMock(),
+    releaseValveControl: asyncMock(),
+    reserveCommand: asyncMock(),
+    finalizeCommand: asyncMock(),
+    rollbackCommand: asyncMock(),
+    markInconsistentAfterAck: asyncMock(),
   };
-  const safety = { assertAllowed: jest.fn() };
+  const safety = { assertAllowed: asyncMock() };
   const commands = {
-    ligarBomba: jest.fn(),
-    desligarBomba: jest.fn(),
-    abrirValvula: jest.fn(),
-    fecharValvula: jest.fn(),
+    ligarBomba: asyncMock(),
+    desligarBomba: asyncMock(),
+    abrirValvula: asyncMock(),
+    fecharValvula: asyncMock(),
   };
   const logs = {
-    registerUserAction: jest.fn(),
-    registerSystemAction: jest.fn(),
+    registerUserAction: asyncMock(),
+    registerSystemAction: asyncMock(),
   };
-  const events = { create: jest.fn() };
+  const events = { create: asyncMock() };
   let service: ProcessoAuxiliarCommandService;
 
   beforeEach(() => {

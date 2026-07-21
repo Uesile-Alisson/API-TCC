@@ -45,7 +45,9 @@ export class UserController {
 
   @Post()
   @UserRoles(nivelacesso.ADMINISTRADOR)
-  @ApiOperation({ summary: 'Cria um usuario com senha temporaria de uso unico.' })
+  @ApiOperation({
+    summary: 'Cria um usuario com senha temporaria de uso unico.',
+  })
   @ApiCreatedResponse({ type: CreateUserResponseDTO })
   create(@Body() dto: CreateUserDTO) {
     return this.userService.create(dto);

@@ -116,9 +116,7 @@ export class RelatoriosService {
     waitForCompletion: true,
     disabled: process.env.NODE_ENV === 'test',
   })
-  async reconcileOrphanedReportFiles(
-    now: Date = new Date(),
-  ): Promise<{
+  async reconcileOrphanedReportFiles(now: Date = new Date()): Promise<{
     scanned: number;
     preserved: number;
     deleted: number;

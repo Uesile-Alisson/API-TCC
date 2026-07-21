@@ -246,8 +246,64 @@ export class ProcessoConfigValidator {
     }
 
     this.validateTanquesDuplicados(tanques);
+    this.validatePrioridades(tanques);
     this.validateSensoresPorTanque(tanques);
     this.validateSensoresDuplicadosNoProcesso(tanques);
+  }
+
+  private validatePrioridades(
+    tanques: Array<CreateProcessoTanqueDTO | UpdateProcessoTanqueDTO>,
+  ): void {
+    const prioridadesInformadas = tanques.filter(
+      (tanque) => tanque.prioridade !== undefined,
+    );
+
+    if (tanques.length === 1) {
+      if (prioridadesInformadas.length > 0) {
+        throw new BadRequestException(
+          'Nao informe prioridade quando o processo possuir apenas um tanque.',
+        );
+      }
+
+      return;
+    }
+
+    // Mantem compatibilidade com clientes anteriores. Quando o front optar
+    // pela priorizacao, a ordem precisa ser completa para nao haver empate
+    // acidental nem tanque com semantica indefinida.
+    if (prioridadesInformadas.length === 0) {
+      return;
+    }
+
+    if (prioridadesInformadas.length !== tanques.length) {
+      throw new BadRequestException(
+        'Ao configurar prioridades, informe a prioridade de todos os tanques do processo.',
+      );
+    }
+
+    const prioridades = prioridadesInformadas.map(
+      (tanque) => tanque.prioridade as number,
+    );
+    const quantidadeTanques = tanques.length;
+
+    if (
+      prioridades.some(
+        (prioridade) =>
+          !Number.isInteger(prioridade) ||
+          prioridade < 1 ||
+          prioridade > quantidadeTanques,
+      )
+    ) {
+      throw new BadRequestException(
+        `As prioridades devem ser numeros inteiros de 1 a ${quantidadeTanques}.`,
+      );
+    }
+
+    if (new Set(prioridades).size !== prioridades.length) {
+      throw new BadRequestException(
+        'Cada tanque deve possuir uma prioridade diferente.',
+      );
+    }
   }
 
   private validateTanquesDuplicados(

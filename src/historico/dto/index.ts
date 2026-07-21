@@ -1,4 +1,5 @@
 export * from './list-historico-processos-query.dto';
+export * from './historico-response.dto';
 export * from './historico-dashboard-query.dto';
 export * from './historico-processo-id-param.dto';
 export * from './historico-periodo-query.dto';

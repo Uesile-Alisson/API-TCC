@@ -4,6 +4,7 @@ import {
   modooperacaoauxiliar,
   statusauxiliotanque,
   statusbomba,
+  statusencerramentoprocesso,
   statusprocesso,
   statussubsistemaauxiliar,
   statustanqueprocesso,
@@ -20,12 +21,19 @@ import { ProcessoMqttOrchestratorService } from '../mqtt';
 import { ProcessosRepository } from '../processos.repository';
 import { ProcessoAuxiliarSafetyValidator } from './processo-auxiliar-safety.validator';
 
+type AuxiliarySafetyContext = NonNullable<
+  Awaited<
+    ReturnType<ProcessosRepository['findAuxiliarySafetyContextByProcessId']>
+  >
+>;
+
 const NOW = new Date('2026-07-16T12:00:00.000Z');
 const FRESH_STATUS = new Date('2026-07-16T11:59:59.000Z');
 
-const buildContext = () => ({
+const buildContext = (): AuxiliarySafetyContext => ({
   id_processo: 10,
   status_processo: statusprocesso.EM_EXECUCAO,
+  status_encerramento_geral: statusencerramentoprocesso.INATIVO,
   modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
   parada_emergencia: false,
   alarmes: [],
@@ -146,7 +154,9 @@ const buildContext = () => ({
 
 const createValidator = (context = buildContext()) => {
   const repository = {
-    findAuxiliarySafetyContextByProcessId: jest.fn().mockResolvedValue(context),
+    findAuxiliarySafetyContextByProcessId: jest
+      .fn<(...args: unknown[]) => Promise<unknown>>()
+      .mockResolvedValue(context),
   };
   const mqttOrchestrator = {
     getHardwareReadiness: jest.fn().mockReturnValue({
@@ -161,7 +171,9 @@ const createValidator = (context = buildContext()) => {
     }),
   };
   const mqttConfig = {
-    getConfig: jest.fn().mockResolvedValue({ timeout_comunicacao: 10000 }),
+    getConfig: jest
+      .fn<(...args: unknown[]) => Promise<unknown>>()
+      .mockResolvedValue({ timeout_comunicacao: 10000 }),
   };
 
   return new ProcessoAuxiliarSafetyValidator(
@@ -213,8 +225,8 @@ describe('ProcessoAuxiliarSafetyValidator', () => {
   it('aprova comando humano assistido quando o usuario possui lease ativo', async () => {
     const context = buildContext();
     context.modo_operacao_auxiliar = modooperacaoauxiliar.ASSISTIDO;
-    context.processostanques[0].processostanquesauxiliares.id_usuario_controle_valvula = 7;
-    context.processostanques[0].processostanquesauxiliares.controle_valvula_expira_em =
+    context.processostanques[0].processostanquesauxiliares!.id_usuario_controle_valvula = 7;
+    context.processostanques[0].processostanquesauxiliares!.controle_valvula_expira_em =
       new Date('2026-07-16T12:05:00.000Z');
     const validator = createValidator(context);
 
@@ -236,8 +248,8 @@ describe('ProcessoAuxiliarSafetyValidator', () => {
     context.modo_operacao_auxiliar = modooperacaoauxiliar.ASSISTIDO;
     context.processostanques[0].tanques.valvulas[1].status_valvula =
       StatusValvula.FECHADA;
-    context.processostanques[0].processostanquesauxiliares.id_usuario_controle_valvula = 99;
-    context.processostanques[0].processostanquesauxiliares.controle_valvula_expira_em =
+    context.processostanques[0].processostanquesauxiliares!.id_usuario_controle_valvula = 99;
+    context.processostanques[0].processostanquesauxiliares!.controle_valvula_expira_em =
       new Date('2026-07-16T12:05:00.000Z');
     context.processostanques[1].tanques.valvulas[1].status_valvula =
       StatusValvula.ABERTA;
@@ -269,7 +281,7 @@ describe('ProcessoAuxiliarSafetyValidator', () => {
     context.parada_emergencia = true;
     context.alarmes = [{ id_alarme: 55 }];
     context.status_processo = statusprocesso.FALHA;
-    context.processosauxiliares.status_subsistema =
+    context.processosauxiliares!.status_subsistema =
       statussubsistemaauxiliar.FALHA;
     const validator = createValidator(context);
 

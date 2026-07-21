@@ -67,28 +67,28 @@ export class MqttPayloadValidator {
 
     if (isDiagnostic && !hasSensorReference) {
       throw new BadRequestException({
-        message: 'Payload MQTT invÃ¡lido.',
-        errors: ['Leitura diagnÃ³stica exige codigo_hardware ou id_sensor.'],
+        message: 'Payload MQTT inválido.',
+        errors: ['Leitura diagnóstica exige codigo_hardware ou id_sensor.'],
       });
     }
 
     if (!isDiagnostic && !Number.isInteger(dto.id_processo_tanque_sensor)) {
       throw new BadRequestException({
-        message: 'Payload MQTT invÃ¡lido.',
+        message: 'Payload MQTT inválido.',
         errors: ['Leitura de processo exige id_processo_tanque_sensor.'],
       });
     }
 
     if (!hasValue) {
       throw new BadRequestException({
-        message: 'Payload MQTT invÃ¡lido.',
+        message: 'Payload MQTT inválido.',
         errors: ['Leitura MQTT exige valor_vacuo ou valor.'],
       });
     }
 
     if (!hasUnit) {
       throw new BadRequestException({
-        message: 'Payload MQTT invÃ¡lido.',
+        message: 'Payload MQTT inválido.',
         errors: ['Leitura MQTT exige unidade_medida ou unidade.'],
       });
     }
@@ -106,21 +106,21 @@ export class MqttPayloadValidator {
     if (dto.schema_version === 2) {
       if (dto.tipo !== 'HARDWARE_STATUS') {
         throw new BadRequestException({
-          message: 'Payload MQTT invÃ¡lido.',
+          message: 'Payload MQTT inválido.',
           errors: ['Status MQTT v2 exige tipo igual a HARDWARE_STATUS.'],
         });
       }
 
       if (!Array.isArray(dto.valvulas)) {
         throw new BadRequestException({
-          message: 'Payload MQTT invÃ¡lido.',
+          message: 'Payload MQTT inválido.',
           errors: ['Status MQTT v2 exige valvulas como lista.'],
         });
       }
 
       if (!Array.isArray(dto.bombas)) {
         throw new BadRequestException({
-          message: 'Payload MQTT invÃ¡lido.',
+          message: 'Payload MQTT inválido.',
           errors: ['Status MQTT v2 exige bombas como lista.'],
         });
       }

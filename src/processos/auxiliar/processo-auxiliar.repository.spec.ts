@@ -18,31 +18,33 @@ import {
   ProcessoAuxiliarRepository,
 } from './processo-auxiliar.repository';
 
+const asyncMock = () => jest.fn<(...args: unknown[]) => Promise<unknown>>();
+
 describe('ProcessoAuxiliarRepository', () => {
   const tx = {
-    processos: { findUnique: jest.fn(), findMany: jest.fn() },
+    processos: { findUnique: asyncMock(), findMany: asyncMock() },
     processosauxiliares: {
-      updateMany: jest.fn(),
-      findUniqueOrThrow: jest.fn(),
+      updateMany: asyncMock(),
+      findUniqueOrThrow: asyncMock(),
     },
     processostanques: {
-      findFirst: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: asyncMock(),
+      findUnique: asyncMock(),
     },
     processostanquesauxiliares: {
-      updateMany: jest.fn(),
-      findUniqueOrThrow: jest.fn(),
+      updateMany: asyncMock(),
+      findUniqueOrThrow: asyncMock(),
     },
-    bombas: { findFirst: jest.fn() },
-    valvulas: { count: jest.fn() },
+    bombas: { findFirst: asyncMock() },
+    valvulas: { count: asyncMock() },
   };
   type TransactionCallback = (client: typeof tx) => Promise<unknown>;
   const prisma = {
-    $transaction: jest.fn(),
-    processos: { findMany: jest.fn() },
-    configuracoessistema: { findFirst: jest.fn() },
-    processosauxiliares: { updateMany: jest.fn() },
-    processostanquesauxiliares: { updateMany: jest.fn() },
+    $transaction: asyncMock(),
+    processos: { findMany: asyncMock() },
+    configuracoessistema: { findFirst: asyncMock() },
+    processosauxiliares: { updateMany: asyncMock() },
+    processostanquesauxiliares: { updateMany: asyncMock() },
   };
   let repository: ProcessoAuxiliarRepository;
 

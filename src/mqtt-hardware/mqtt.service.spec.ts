@@ -14,6 +14,9 @@ import { MqttHealthService } from './connection/mqtt-health.service';
 import type { ActiveMqttConfig } from './interfaces/active-mqtt-config.interface';
 import { MqttService } from './mqtt.service';
 
+const asyncMock = <T>(implementation: () => Promise<T>) =>
+  jest.fn<(...args: unknown[]) => Promise<T>>(implementation);
+
 describe('MqttService - estado publico das credenciais', () => {
   it('expoe indicadores derivados sem retornar usuario, senha ou hash', async () => {
     const verifiedAt = new Date('2026-07-17T12:00:00.000Z');
@@ -79,11 +82,11 @@ describe('MqttService - estado publico das credenciais', () => {
       credenciais_verificadas_em: verifiedAt,
       status_conexao: statusconexaomqtt.CONECTADO,
     });
-    const configureCredentials = jest.fn(() => Promise.resolve());
+    const configureCredentials = asyncMock(() => Promise.resolve());
     const validateAndNormalizeCredentials = jest.fn(
       (input: { usuario_mqtt: string; senha_mqtt: string }) => input,
     );
-    const verifyCredentials = jest.fn(() =>
+    const verifyCredentials = asyncMock(() =>
       Promise.resolve({
         success: true,
         failureCode: null,
@@ -98,13 +101,13 @@ describe('MqttService - estado publico das credenciais', () => {
         timestamp: new Date('2026-07-17T13:00:00.000Z'),
       }),
     );
-    const claimCredentialsUpdateLease = jest.fn(() =>
+    const claimCredentialsUpdateLease = asyncMock(() =>
       Promise.resolve(new Date('2026-07-17T13:05:00.000Z')),
     );
-    const renewCredentialsUpdateLease = jest.fn(() =>
+    const renewCredentialsUpdateLease = asyncMock(() =>
       Promise.resolve(new Date('2026-07-17T13:05:01.000Z')),
     );
-    const releaseCredentialsUpdateLease = jest.fn(() => Promise.resolve());
+    const releaseCredentialsUpdateLease = asyncMock(() => Promise.resolve());
     const service = new MqttService(
       {
         getConfig: jest.fn(() => Promise.resolve(config)),
@@ -369,7 +372,7 @@ describe('MqttService - estado publico das credenciais', () => {
       status_conexao: statusconexaomqtt.CONECTADO,
     };
     let current = previous;
-    const claimConfigurationUpdateLease = jest.fn(() =>
+    const claimConfigurationUpdateLease = asyncMock(() =>
       Promise.resolve(new Date()),
     );
     const renewConfigurationUpdateLease = jest.fn(() =>
@@ -379,8 +382,8 @@ describe('MqttService - estado publico das credenciais', () => {
       current = applied;
       return Promise.resolve(applied);
     });
-    const releaseConfigurationUpdateLease = jest.fn(() => Promise.resolve());
-    const verifyConfiguration = jest.fn(() =>
+    const releaseConfigurationUpdateLease = asyncMock(() => Promise.resolve());
+    const verifyConfiguration = asyncMock(() =>
       Promise.resolve({
         success: true,
         failureCode: null,
@@ -508,7 +511,7 @@ describe('MqttService - estado publico das credenciais', () => {
       porta: 1884,
     });
     let current = previous;
-    const restoreOperationalConfig = jest.fn(() => {
+    const restoreOperationalConfig = asyncMock(() => {
       current = previous;
       return Promise.resolve(previous);
     });
@@ -719,10 +722,10 @@ function makeOperationalService() {
     published_at: new Date('2026-07-19T18:00:00.000Z'),
   };
   const config = {
-    claimOperationalControlLease: jest.fn(() =>
+    claimOperationalControlLease: asyncMock(() =>
       Promise.resolve(new Date('2026-07-19T18:05:00.000Z')),
     ),
-    releaseOperationalControlLease: jest.fn(() => Promise.resolve()),
+    releaseOperationalControlLease: asyncMock(() => Promise.resolve()),
   };
   const client = {
     reconnect: jest.fn(() => Promise.resolve(operationResult)),
@@ -739,7 +742,7 @@ function makeOperationalService() {
     paradaEmergencia: jest.fn(() => Promise.resolve(commandResult)),
   };
   const generalClosure = {
-    requestEmergencyStopForCurrent: jest.fn(() =>
+    requestEmergencyStopForCurrent: asyncMock(() =>
       Promise.resolve({
         escopo: 'PROCESSO' as const,
         id_processo: 42,

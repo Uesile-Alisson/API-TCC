@@ -376,16 +376,18 @@ describe('JwtStrategy', () => {
   it('aceita somente a versão de token atual da conta', async () => {
     const prisma = {
       usuarios: {
-        findUnique: jest.fn().mockResolvedValue({
-          id_usuario: 7,
-          id_nivel_acesso: 2,
-          login: 'tecnico',
-          nome: 'Técnico',
-          email: 'tecnico@teste.com',
-          primeiro_acesso: false,
-          versao_token_autenticacao: 4,
-          niveisacessos: { nome: nivelacesso.TECNICO },
-        }),
+        findUnique: jest
+          .fn<(...args: unknown[]) => Promise<unknown>>()
+          .mockResolvedValue({
+            id_usuario: 7,
+            id_nivel_acesso: 2,
+            login: 'tecnico',
+            nome: 'Técnico',
+            email: 'tecnico@teste.com',
+            primeiro_acesso: false,
+            versao_token_autenticacao: 4,
+            niveisacessos: { nome: nivelacesso.TECNICO },
+          }),
       },
     };
     const config = {

@@ -235,6 +235,7 @@ describe('Environment validation', () => {
       expect.objectContaining({
         NODE_ENV: 'production',
         PORT: 8080,
+        API_INSTANCE_COUNT: 1,
         TRUST_PROXY: 'loopback, 10.0.0.0/8',
         HTTP_RATE_LIMIT_MAX: 50,
         HTTP_RATE_LIMIT_TTL_MS: 30_000,
@@ -250,7 +251,19 @@ describe('Environment validation', () => {
       'postgresql://test:test@127.0.0.1:5432/tsea_test',
     );
     expect(validated.PORT).toBe(3000);
+    expect(validated.API_INSTANCE_COUNT).toBe(1);
     expect(validated.HTTP_RATE_LIMIT_MAX).toBe(120);
+  });
+
+  it('recusa multiplas instancias enquanto o rate limiter usar memoria local', () => {
+    expect(() =>
+      validateEnvironment({
+        ...makeRequiredEnvironment(),
+        NODE_ENV: 'production',
+        CORS_ALLOWED_ORIGINS: 'https://app.example.com',
+        API_INSTANCE_COUNT: '2',
+      }),
+    ).toThrow(/ThrottlerStorage compartilhado/);
   });
 
   it('recusa trust proxy amplo que permitiria forjar o IP do cliente', () => {

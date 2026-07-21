@@ -26,19 +26,25 @@
 #include <sys/time.h>
 #include <time.h>
 
+#if __has_include("secrets.h")
+#include "secrets.h"
+#else
+#include "secrets.example.h"
+#endif
+
 // =============================================================================
 // CONFIGURACAO OBRIGATORIA
 // =============================================================================
 
-constexpr char WIFI_SSID[] = "ALTERE_AQUI";
-constexpr char WIFI_PASSWORD[] = "ALTERE_AQUI";
+constexpr char WIFI_SSID[] = TSEA_WIFI_SSID;
+constexpr char WIFI_PASSWORD[] = TSEA_WIFI_PASSWORD;
 
 // Use o IP/nome da maquina que executa o broker. "localhost" apontaria para
 // o proprio ESP32 e, portanto, nao deve ser usado aqui.
-constexpr char MQTT_HOST[] = "192.168.1.100";
-constexpr uint16_t MQTT_PORT = 1883;
-constexpr char MQTT_USERNAME[] = "";
-constexpr char MQTT_PASSWORD[] = "";
+constexpr char MQTT_HOST[] = TSEA_MQTT_HOST;
+constexpr uint16_t MQTT_PORT = TSEA_MQTT_PORT;
+constexpr char MQTT_USERNAME[] = TSEA_MQTT_USERNAME;
+constexpr char MQTT_PASSWORD[] = TSEA_MQTT_PASSWORD;
 constexpr bool MQTT_USE_TLS = false;
 
 // Para TLS, cole a CA raiz do broker entre R"CERT(...)CERT" e use porta 8883.
@@ -47,7 +53,7 @@ constexpr char MQTT_CA_CERT[] = R"CERT(
 )CERT";
 
 constexpr char DEVICE_ID[] = "ESP32_TSEA_01";
-constexpr char FIRMWARE_VERSION[] = "tsea-esp32-2.0.0";
+constexpr char FIRMWARE_VERSION[] = "tsea-esp32-2.1.0";
 
 /*
  * O seed atual cita XGZP6847D001MP. Se esse for exatamente o componente
@@ -72,37 +78,36 @@ constexpr uint8_t TCA9548A_ADDRESS = 0x70;
 constexpr uint8_t XGZP_MUX_CHANNELS[3] = {0, 1, 2};
 constexpr uint8_t XGZP_DIRECT_ADDRESSES[3] = {0x58, 0x59, 0x5A};
 
+// Os 12 GPIOs informados nao comportam 8 saidas, I2C, tres acoplamentos e
+// emergencia ao mesmo tempo. Os acoplamentos usam um PCF8574 a 3,3 V no
+// mesmo I2C. P0/P1/P2 ficam em HIGH (entrada quasi-bidirecional) e cada
+// contato de acoplamento os leva a GND quando acoplado.
+constexpr uint8_t PCF8574_COUPLING_ADDRESS = 0x20;
+constexpr uint8_t COUPLING_BITS[3] = {0, 1, 2};
+constexpr uint8_t COUPLING_ACTIVE_LEVEL = LOW;
+
 // ESP32-WROOM. GPIO16/17 nao devem ser usados assim em placas WROVER com PSRAM.
 constexpr uint8_t I2C_SDA_PIN = 21;
 constexpr uint8_t I2C_SCL_PIN = 22;
-constexpr uint8_t VALVE_PINS[6] = {13, 14, 16, 17, 18, 19};
+constexpr uint32_t I2C_FREQUENCY_HZ = 100000;
+constexpr uint8_t VALVE_PINS[6] = {16, 17, 18, 19, 25, 26};
 constexpr uint8_t MAIN_PUMP_PIN = 23;
-constexpr uint8_t AUX_PUMP_PWM_PIN = 25;
-constexpr uint8_t COUPLING_PINS[3] = {26, 27, 32};
-constexpr uint8_t AUX_POTENTIOMETER_PIN = 33;  // ADC1; funciona durante Wi-Fi.
+constexpr uint8_t AUX_PUMP_PIN = 27;
 
 // Ajuste conforme a placa de acionamento. O boot sempre escreve o nivel inativo.
 constexpr uint8_t VALVE_ACTIVE_LEVEL = HIGH;
 constexpr uint8_t MAIN_PUMP_ACTIVE_LEVEL = HIGH;
-constexpr uint8_t COUPLING_ACTIVE_LEVEL = LOW;  // INPUT_PULLUP, contato para GND.
+constexpr uint8_t AUX_PUMP_ACTIVE_LEVEL = HIGH;
 
-// Entrada fisica opcional de emergencia. GPIO34 nao tem pull-up interno.
-// Se habilitar, instale resistor externo e prefira contato NC (fail-safe).
-constexpr bool ENABLE_PHYSICAL_ESTOP = false;
-constexpr uint8_t PHYSICAL_ESTOP_PIN = 34;
-constexpr uint8_t PHYSICAL_ESTOP_ACTIVE_LEVEL = LOW;
+// Contato NC entre GPIO32 e GND: normal=LOW; pressionado, fio rompido ou
+// conector removido=HIGH. A entrada possui pull-up interno e e sempre ativa.
+constexpr uint8_t PHYSICAL_ESTOP_PIN = 32;
+constexpr uint8_t PHYSICAL_ESTOP_ACTIVE_LEVEL = HIGH;
 
 // INICIAR_PROCESSO_VACUO carrega somente o contexto operacional. A API abre
 // cada VP_Tn selecionada e liga a bomba principal em comandos individuais,
 // aguardando o ACK EXECUTADO de cada etapa antes de prosseguir.
 constexpr bool START_COMMAND_ACTUATES_MAIN_LINE = false;
-
-// PWM e potenciometro sao exclusivamente locais e nunca entram no MQTT.
-constexpr uint32_t AUX_PWM_FREQUENCY_HZ = 20000;
-constexpr uint8_t AUX_PWM_RESOLUTION_BITS = 8;
-constexpr uint16_t AUX_POT_MIN_MV = 100;
-constexpr uint16_t AUX_POT_MAX_MV = 3100;
-constexpr uint8_t AUX_MIN_SAFE_DUTY = 90;
 
 // =============================================================================
 // CONSTANTES OPERACIONAIS
@@ -126,6 +131,7 @@ constexpr uint32_t DIAGNOSTIC_READING_INTERVAL_MS = 2000;
 constexpr uint32_t PROCESS_READING_INTERVAL_MS = 1000;
 constexpr uint32_t VALVE_SETTLE_MS = 250;
 constexpr uint32_t INPUT_DEBOUNCE_MS = 50;
+constexpr uint8_t COUPLING_EXPANDER_FAILURE_LIMIT = 3;
 constexpr uint8_t RECENT_COMMAND_COUNT = 10;
 constexpr uint8_t SENSOR_FILTER_SIZE = 5;
 
@@ -160,11 +166,12 @@ struct PumpState {
 
 struct CouplingState {
   const char* code;
-  uint8_t pin;
+  uint8_t bit;
   uint8_t tankIndex;
   int32_t id;
   int32_t tankId;
   bool configured;
+  bool apiAvailable;
   bool available;
   bool coupled;
   bool rawCoupled;
@@ -239,13 +246,13 @@ ValveState valves[6] = {
 
 PumpState pumps[2] = {
     {"BOMBA_VACUO_PRINCIPAL", MAIN_PUMP_PIN, false, 0, false, false, false, false},
-    {"BOMBA_VACUO_AUXILIAR", AUX_PUMP_PWM_PIN, true, 0, false, false, false, false},
+    {"BOMBA_VACUO_AUXILIAR", AUX_PUMP_PIN, true, 0, false, false, false, false},
 };
 
 CouplingState couplings[3] = {
-    {"ACOP_T1", COUPLING_PINS[0], 0, 0, 0, false, false, false, false, 0},
-    {"ACOP_T2", COUPLING_PINS[1], 1, 0, 0, false, false, false, false, 0},
-    {"ACOP_T3", COUPLING_PINS[2], 2, 0, 0, false, false, false, false, 0},
+    {"ACOP_T1", COUPLING_BITS[0], 0, 0, 0, false, false, false, false, false, 0},
+    {"ACOP_T2", COUPLING_BITS[1], 1, 0, 0, false, false, false, false, false, 0},
+    {"ACOP_T3", COUPLING_BITS[2], 2, 0, 0, false, false, false, false, false, 0},
 };
 
 VacuumSensorState vacuumSensors[3] = {
@@ -285,7 +292,10 @@ bool processActive = false;
 bool emergencyLatched = false;
 bool reconnectRequested = false;
 bool mqttDisconnectSafetyHandled = false;
-bool auxPwmAttached = false;
+bool couplingInputHardwareReady = false;
+bool physicalEstopRawActive = false;
+bool physicalEstopDebouncedActive = false;
+uint8_t couplingExpanderFailures = 0;
 int32_t activeProcessId = 0;
 float safetyVacuumLimitKpa = -95.0F;
 float vacuumTolerancePercent = 10.0F;
@@ -299,12 +309,14 @@ uint32_t lastStatusAt = 0;
 uint32_t lastCouplingPublishAt = 0;
 uint32_t lastDiagnosticReadingAt = 0;
 uint32_t lastProcessReadingAt = 0;
+uint32_t physicalEstopRawChangedAt = 0;
 time_t fallbackEpochAtBoot = 0;
 
 // Declaracoes explicitas evitam problemas do gerador automatico de prototipos
 // do Arduino IDE com structs e enums definidos no proprio sketch.
 void initializeSafeOutputs();
 void initializeInputs();
+void initializeI2cBus();
 void initializeTime();
 void initializeI2cSensors();
 void configureMqttClient();
@@ -313,16 +325,17 @@ void maintainMqtt();
 void onMqttMessage(char* topic, byte* payload, unsigned int length);
 void updateCouplings();
 void updateVacuumSensors();
-void updateAuxiliaryPwm();
 void enforceLocalSafety();
 void runPeriodicPublishers();
 void forceAllActuatorsSafe(bool clearProcess);
+void refreshReadinessError();
 void setValveOutput(ValveState& valve, bool open);
 void setPumpOutput(PumpState& pump, bool on);
 bool anyOpenValve(ValveKind kind);
 bool selectedPrincipalValvesOpen();
 bool mainProcessLineReady();
 uint8_t countOpenValves(ValveKind kind);
+bool hasUnconfirmedLegacySensor();
 bool initializeXgzpV3(VacuumSensorState& sensor);
 bool readXgzpV3(VacuumSensorState& sensor, float& pressureKpa);
 bool readXgzpLegacy(VacuumSensorState& sensor, float& pressureKpa);
@@ -364,6 +377,7 @@ void setup() {
   Serial.println(F("[TSEA] Inicializando firmware ESP32 MQTT v2..."));
 
   initializeSafeOutputs();
+  initializeI2cBus();
   initializeInputs();
   initializeTime();
   initializeI2cSensors();
@@ -389,7 +403,6 @@ void loop() {
 
   updateCouplings();
   updateVacuumSensors();
-  updateAuxiliaryPwm();
   enforceLocalSafety();
   runPeriodicPublishers();
 
@@ -406,6 +419,11 @@ bool credentialsConfigured() {
 }
 
 void initializeTime() {
+  // mktime() usa o fuso do processo; fixa UTC para converter timestamps MQTT
+  // sem depender de timegm(), que nao e exposta por todas as versoes do core.
+  setenv("TZ", "UTC0", 1);
+  tzset();
+
   struct tm compiled = {};
   char month[4] = {};
   int day = 1;
@@ -424,7 +442,7 @@ void initializeTime() {
     compiled.tm_hour = hour;
     compiled.tm_min = minute;
     compiled.tm_sec = second;
-    fallbackEpochAtBoot = timegm(&compiled);
+    fallbackEpochAtBoot = mktime(&compiled);
   }
 
   configTime(0, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
@@ -470,7 +488,7 @@ void synchronizeClockFromIso(const char* iso) {
   parsed.tm_hour = hour;
   parsed.tm_min = minute;
   parsed.tm_sec = second;
-  const time_t parsedEpoch = timegm(&parsed);
+  const time_t parsedEpoch = mktime(&parsed);
 
   if (parsedEpoch >= 1700000000 &&
       (!clockIsValid() ||
@@ -615,35 +633,63 @@ void initializeSafeOutputs() {
   digitalWrite(MAIN_PUMP_PIN, inactiveLevel(MAIN_PUMP_ACTIVE_LEVEL));
   pumps[0].on = false;
 
-  pinMode(AUX_PUMP_PWM_PIN, OUTPUT);
-  digitalWrite(AUX_PUMP_PWM_PIN, LOW);
-  auxPwmAttached = ledcAttach(AUX_PUMP_PWM_PIN, AUX_PWM_FREQUENCY_HZ,
-                              AUX_PWM_RESOLUTION_BITS);
-  if (auxPwmAttached) {
-    ledcWrite(AUX_PUMP_PWM_PIN, 0);
-  } else {
-    pumps[1].fault = true;
-    strlcpy(currentError, "FALHA_CONFIGURACAO_PWM", sizeof(currentError));
-    Serial.println(F("[TSEA][ERRO] Nao foi possivel configurar LEDC da bomba auxiliar."));
-  }
+  digitalWrite(AUX_PUMP_PIN, inactiveLevel(AUX_PUMP_ACTIVE_LEVEL));
+  pinMode(AUX_PUMP_PIN, OUTPUT);
+  digitalWrite(AUX_PUMP_PIN, inactiveLevel(AUX_PUMP_ACTIVE_LEVEL));
   pumps[1].on = false;
 }
 
+void initializeI2cBus() {
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, I2C_FREQUENCY_HZ);
+  Wire.setTimeOut(50);
+}
+
+bool configurePcf8574Inputs() {
+  // No PCF8574, escrever 1 libera o pino para uso como entrada.
+  Wire.beginTransmission(PCF8574_COUPLING_ADDRESS);
+  Wire.write(0xFF);
+  return Wire.endTransmission() == 0;
+}
+
+bool readPcf8574Inputs(uint8_t& portValue) {
+  const size_t received = Wire.requestFrom(
+      static_cast<int>(PCF8574_COUPLING_ADDRESS), 1);
+  if (received != 1 || !Wire.available()) {
+    while (Wire.available()) {
+      Wire.read();
+    }
+    return false;
+  }
+  portValue = static_cast<uint8_t>(Wire.read());
+  return true;
+}
+
 void initializeInputs() {
+  uint8_t couplingPort = 0xFF;
+  couplingInputHardwareReady =
+      configurePcf8574Inputs() && readPcf8574Inputs(couplingPort);
+  const uint32_t now = millis();
   for (CouplingState& coupling : couplings) {
-    pinMode(coupling.pin, INPUT_PULLUP);
-    const bool detected = digitalRead(coupling.pin) == COUPLING_ACTIVE_LEVEL;
+    const uint8_t rawLevel =
+        (couplingPort & static_cast<uint8_t>(1U << coupling.bit)) != 0
+            ? HIGH
+            : LOW;
+    const bool detected = couplingInputHardwareReady &&
+                          rawLevel == COUPLING_ACTIVE_LEVEL;
     coupling.rawCoupled = detected;
     coupling.coupled = detected;
-    coupling.rawChangedAt = millis();
+    coupling.rawChangedAt = now;
+    coupling.available = coupling.apiAvailable && couplingInputHardwareReady;
   }
+  Serial.printf("[TSEA][I2C] PCF8574 acoplamentos 0x%02X: %s\n",
+                PCF8574_COUPLING_ADDRESS,
+                couplingInputHardwareReady ? "ok" : "ausente/falha");
 
-  analogReadResolution(12);
-  analogSetPinAttenuation(AUX_POTENTIOMETER_PIN, ADC_ATTEN_DB_11);
-
-  if (ENABLE_PHYSICAL_ESTOP) {
-    pinMode(PHYSICAL_ESTOP_PIN, INPUT);  // Requer resistor externo.
-  }
+  pinMode(PHYSICAL_ESTOP_PIN, INPUT_PULLUP);
+  physicalEstopRawActive =
+      digitalRead(PHYSICAL_ESTOP_PIN) == PHYSICAL_ESTOP_ACTIVE_LEVEL;
+  physicalEstopDebouncedActive = physicalEstopRawActive;
+  physicalEstopRawChangedAt = now;
 }
 
 void setValveOutput(ValveState& valve, bool open) {
@@ -652,27 +698,10 @@ void setValveOutput(ValveState& valve, bool open) {
   valve.open = open;
 }
 
-uint8_t readAuxiliaryDuty() {
-  const uint32_t millivolts = analogReadMilliVolts(AUX_POTENTIOMETER_PIN);
-  const float normalized = constrain(
-      (static_cast<float>(millivolts) - AUX_POT_MIN_MV) /
-          static_cast<float>(AUX_POT_MAX_MV - AUX_POT_MIN_MV),
-      0.0F, 1.0F);
-  return static_cast<uint8_t>(lroundf(normalized * 255.0F));
-}
-
 void setPumpOutput(PumpState& pump, bool on) {
-  if (pump.auxiliary) {
-    const uint8_t duty = on ? readAuxiliaryDuty() : 0;
-    if (auxPwmAttached) {
-      ledcWrite(pump.pin, duty);
-    } else {
-      digitalWrite(pump.pin, LOW);
-    }
-  } else {
-    digitalWrite(pump.pin, on ? MAIN_PUMP_ACTIVE_LEVEL
-                              : inactiveLevel(MAIN_PUMP_ACTIVE_LEVEL));
-  }
+  const uint8_t activeLevel =
+      pump.auxiliary ? AUX_PUMP_ACTIVE_LEVEL : MAIN_PUMP_ACTIVE_LEVEL;
+  digitalWrite(pump.pin, on ? activeLevel : inactiveLevel(activeLevel));
   pump.on = on;
 }
 
@@ -697,6 +726,25 @@ void forceAllActuatorsSafe(bool clearProcess) {
   }
   if (clearProcess) {
     clearProcessContext();
+  }
+}
+
+void refreshReadinessError() {
+  if (emergencyLatched || processActive) {
+    return;
+  }
+  if (!configSynchronized) {
+    strlcpy(currentError, "CONFIGURACAO_NAO_SINCRONIZADA",
+            sizeof(currentError));
+  } else if (!couplingInputHardwareReady) {
+    strlcpy(currentError, "EXPANSOR_ACOPLAMENTO_INDISPONIVEL",
+            sizeof(currentError));
+  } else if (!VACUUM_SENSOR_CONFIGURATION_CONFIRMED ||
+             hasUnconfirmedLegacySensor()) {
+    strlcpy(currentError, "CALIBRACAO_SENSOR_PENDENTE",
+            sizeof(currentError));
+  } else {
+    strlcpy(currentError, "SEM_ERRO", sizeof(currentError));
   }
 }
 
@@ -754,39 +802,51 @@ bool allActuatorsSafe() {
   return true;
 }
 
-void closeAuxiliaryValves() {
-  for (ValveState& valve : valves) {
-    if (valve.kind == ValveKind::AUXILIAR) {
-      setValveOutput(valve, false);
-    }
-  }
-}
-
-void updateAuxiliaryPwm() {
-  if (!pumps[1].on) {
-    return;
-  }
-
-  const uint8_t duty = readAuxiliaryDuty();
-  if (duty < AUX_MIN_SAFE_DUTY) {
-    setPumpOutput(pumps[1], false);
-    closeAuxiliaryValves();
-    queueAlarm("BOMBA", "CRITICO", "PWM auxiliar insuficiente",
-               "A bomba auxiliar foi desligada e suas valvulas foram fechadas porque o ajuste local ficou abaixo do minimo seguro.",
-               pumps[1].code);
-    strlcpy(currentError, "PWM_AUXILIAR_INSUFICIENTE", sizeof(currentError));
-    return;
-  }
-
-  if (auxPwmAttached) {
-    ledcWrite(AUX_PUMP_PWM_PIN, duty);
-  }
-}
-
 void updateCouplings() {
   const uint32_t now = millis();
+  uint8_t portValue = 0xFF;
+  if (!readPcf8574Inputs(portValue)) {
+    if (couplingExpanderFailures < 255) {
+      ++couplingExpanderFailures;
+    }
+    if (couplingExpanderFailures >= COUPLING_EXPANDER_FAILURE_LIMIT &&
+        couplingInputHardwareReady) {
+      couplingInputHardwareReady = false;
+      for (CouplingState& coupling : couplings) {
+        coupling.available = false;
+        coupling.coupled = false;
+        coupling.rawCoupled = false;
+      }
+      Serial.println(F("[TSEA][I2C] Comunicacao com PCF8574 perdida."));
+      if (processActive) {
+        enterSafeFault(
+            "EXPANSOR_ACOPLAMENTO_INDISPONIVEL", "MANGUEIRA",
+            "Leitura de acoplamento indisponivel",
+            "O expansor dos sensores de acoplamento deixou de responder; todos os atuadores foram colocados em estado seguro.");
+      } else {
+        refreshReadinessError();
+        queueAlarm("MANGUEIRA", "CRITICO",
+                   "Leitura de acoplamento indisponivel",
+                   "O PCF8574 nao respondeu; nenhum processo sera liberado.");
+      }
+    }
+    return;
+  }
+
+  couplingExpanderFailures = 0;
+  if (!couplingInputHardwareReady) {
+    couplingInputHardwareReady = true;
+    Serial.println(F("[TSEA][I2C] Comunicacao com PCF8574 restabelecida."));
+    refreshReadinessError();
+  }
+
   for (CouplingState& coupling : couplings) {
-    const bool detected = digitalRead(coupling.pin) == COUPLING_ACTIVE_LEVEL;
+    coupling.available = coupling.apiAvailable && couplingInputHardwareReady;
+    const uint8_t rawLevel =
+        (portValue & static_cast<uint8_t>(1U << coupling.bit)) != 0
+            ? HIGH
+            : LOW;
+    const bool detected = rawLevel == COUPLING_ACTIVE_LEVEL;
     if (detected != coupling.rawCoupled) {
       coupling.rawCoupled = detected;
       coupling.rawChangedAt = now;
@@ -923,9 +983,6 @@ void detectXgzpSensor(uint8_t sensorIndex) {
 }
 
 void initializeI2cSensors() {
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, 400000);
-  Wire.setTimeOut(50);
-
   if (USE_TCA9548A && !i2cProbe(TCA9548A_ADDRESS)) {
     Serial.println(F("[TSEA][BLOQUEIO] TCA9548A nao encontrado em 0x70."));
   }
@@ -1128,8 +1185,13 @@ void enterSafeFault(const char* errorCode, const char* alarmType,
 }
 
 bool selectedCouplingsAreSafe() {
+  if (!couplingInputHardwareReady) {
+    return false;
+  }
   for (uint8_t index = 0; index < 3; ++index) {
-    if (tanks[index].selected && !couplings[index].coupled) {
+    if (tanks[index].selected &&
+        (!couplings[index].configured || !couplings[index].available ||
+         !couplings[index].coupled)) {
       return false;
     }
   }
@@ -1137,9 +1199,19 @@ bool selectedCouplingsAreSafe() {
 }
 
 void enforceLocalSafety() {
-  if (ENABLE_PHYSICAL_ESTOP &&
-      digitalRead(PHYSICAL_ESTOP_PIN) == PHYSICAL_ESTOP_ACTIVE_LEVEL &&
-      !emergencyLatched) {
+  const uint32_t now = millis();
+  const bool rawEstopActive =
+      digitalRead(PHYSICAL_ESTOP_PIN) == PHYSICAL_ESTOP_ACTIVE_LEVEL;
+  if (rawEstopActive != physicalEstopRawActive) {
+    physicalEstopRawActive = rawEstopActive;
+    physicalEstopRawChangedAt = now;
+  }
+  if (physicalEstopDebouncedActive != physicalEstopRawActive &&
+      now - physicalEstopRawChangedAt >= INPUT_DEBOUNCE_MS) {
+    physicalEstopDebouncedActive = physicalEstopRawActive;
+  }
+
+  if (physicalEstopDebouncedActive && !emergencyLatched) {
     emergencyLatched = true;
     enterSafeFault("PARADA_EMERGENCIA_FISICA", "SEGURANCA",
                    "Parada de emergencia fisica",
@@ -1251,7 +1323,7 @@ const char* statusGeneral() {
   const bool startupWarning =
       strcmp(currentError, "CONFIGURACAO_NAO_SINCRONIZADA") == 0 ||
       strcmp(currentError, "CALIBRACAO_SENSOR_PENDENTE") == 0;
-  if (emergencyLatched ||
+  if (emergencyLatched || !couplingInputHardwareReady ||
       (currentError[0] != '\0' && strcmp(currentError, "SEM_ERRO") != 0 &&
        !startupWarning)) {
     return "FALHA";
@@ -1321,6 +1393,7 @@ bool publishHardwareStatus(bool retained) {
       item["id_tanque"] = coupling.tankId;
     }
     item["acoplado"] = coupling.coupled;
+    item["disponivel"] = coupling.available;
   }
 
   char timestamp[32] = {};
@@ -1674,6 +1747,7 @@ void resetApiMappings() {
     couplings[index].id = 0;
     couplings[index].tankId = 0;
     couplings[index].configured = false;
+    couplings[index].apiAvailable = false;
     couplings[index].available = false;
   }
 }
@@ -1793,7 +1867,9 @@ void handleSyncConfig(JsonObjectConst root) {
         coupling.id = id;
         coupling.tankId = tankId;
         coupling.configured = true;
-        coupling.available = item["disponivel"] | false;
+        coupling.apiAvailable = item["disponivel"] | false;
+        coupling.available =
+            coupling.apiAvailable && couplingInputHardwareReady;
       }
     }
   }
@@ -1855,10 +1931,7 @@ void handleSyncConfig(JsonObjectConst root) {
       root["seguranca"]["timeout_heartbeat_ms"] | DEFAULT_MQTT_SAFETY_TIMEOUT_MS;
   mqttSafetyTimeoutMs = max(requestedTimeout, MIN_MQTT_SAFETY_TIMEOUT_MS);
   configSynchronized = true;
-  strlcpy(currentError,
-          VACUUM_SENSOR_CONFIGURATION_CONFIRMED ? "SEM_ERRO"
-                                               : "CALIBRACAO_SENSOR_PENDENTE",
-          sizeof(currentError));
+  refreshReadinessError();
 
   subscribeToApiTopics();
   cacheAndPublishFinalAck(
@@ -1921,6 +1994,13 @@ void handleStartProcess(JsonObjectConst root, const char* correlationId,
   if (processId <= 0) {
     rejectCommand(correlationId, command, "PROCESSO_INVALIDO",
                   "id_processo deve ser um inteiro positivo.");
+    return;
+  }
+  if (!couplingInputHardwareReady) {
+    rejectCommand(correlationId, command,
+                  "EXPANSOR_ACOPLAMENTO_INDISPONIVEL",
+                  "O PCF8574 dos sensores de acoplamento nao esta respondendo.",
+                  processId);
     return;
   }
 
@@ -2191,7 +2271,7 @@ void handleGenericCommand(JsonObjectConst root, const char* correlationId,
                                                          : requestedProcessId;
     forceAllActuatorsSafe(true);
     if (!emergencyLatched) {
-      strlcpy(currentError, "SEM_ERRO", sizeof(currentError));
+      refreshReadinessError();
     }
     cacheAndPublishFinalAck(correlationId, command, "EXECUTADO",
                             "Bombas desligadas, seis valvulas fechadas e contexto removido.",
@@ -2311,12 +2391,6 @@ void handleGenericCommand(JsonObjectConst root, const char* correlationId,
                     requestedProcessId, 0, 0, pump->id);
       return;
     }
-    if (pump->auxiliary && readAuxiliaryDuty() < AUX_MIN_SAFE_DUTY) {
-      rejectCommand(correlationId, command, "PWM_AUXILIAR_INSUFICIENTE",
-                    "Ajuste local abaixo do minimo seguro para mover a bomba auxiliar.",
-                    requestedProcessId, 0, 0, pump->id);
-      return;
-    }
     setPumpOutput(*pump, true);
     cacheAndPublishFinalAck(correlationId, command, "EXECUTADO",
                             "Saida eletrica da bomba acionada; sem sensor de corrente/rotacao.",
@@ -2341,7 +2415,8 @@ void handleGenericCommand(JsonObjectConst root, const char* correlationId,
       return;
     }
     if (strcmp(command, "ABRIR_VALVULA") == 0) {
-      if (!valve->available || !couplings[valve->tankIndex].coupled) {
+      if (!valve->available || !couplings[valve->tankIndex].available ||
+          !couplings[valve->tankIndex].coupled) {
         rejectCommand(correlationId, command, "VALVULA_BLOQUEADA",
                       "Valvula indisponivel ou tanque desacoplado.",
                       requestedProcessId, valve->tankId, valve->id);
@@ -2432,12 +2507,18 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
   if (topic == nullptr || payload == nullptr || length == 0) {
     return;
   }
+  if (length >= MQTT_PACKET_BUFFER_SIZE) {
+    queueAlarm("ESP32", "MEDIO", "Payload MQTT excedeu o limite",
+               "Uma mensagem maior que o buffer permitido foi ignorada; nenhuma saida foi alterada.");
+    return;
+  }
 
   JsonDocument document;
   // Entrada const faz o ArduinoJson copiar strings. Assim, publicar RECEBIDO
   // dentro do callback nao invalida ponteiros que vieram do buffer PubSubClient.
   const DeserializationError error = deserializeJson(
-      document, reinterpret_cast<const char*>(payload), length);
+      document, reinterpret_cast<const char*>(payload), length,
+      DeserializationOption::NestingLimit(8));
   if (error) {
     Serial.printf("[TSEA][MQTT] JSON invalido em %s: %s\n", topic,
                   error.c_str());

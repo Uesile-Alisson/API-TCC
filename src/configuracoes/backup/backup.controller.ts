@@ -30,6 +30,11 @@ import { BackupService } from './backup.service';
 import { BackupQueryDto } from './dto/backup-query.dto';
 import { CreateBackupDto } from './dto/create-backup.dto';
 import { RestoreBackupDto } from './dto/restore-backup.dto';
+import {
+  BackupDetailsResponseDto,
+  BackupListResponseDto,
+  BackupRestoreResponseDto,
+} from './dto/backup-response.dto';
 
 @ApiTags('Configuracoes - Backup')
 @ApiBearerAuth('access-token')
@@ -51,7 +56,10 @@ export class BackupController {
     },
   })
   @ApiOperation({ summary: 'Gera um backup logico em PostgreSQL JSON.' })
-  @ApiCreatedResponse({ description: 'Backup gerado com sucesso.' })
+  @ApiCreatedResponse({
+    description: 'Backup gerado com sucesso.',
+    type: BackupDetailsResponseDto,
+  })
   @ApiBadRequestResponse({ description: 'Payload invalido.' })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
@@ -64,7 +72,10 @@ export class BackupController {
 
   @Get()
   @ApiOperation({ summary: 'Lista backups gerados.' })
-  @ApiOkResponse({ description: 'Backups listados com sucesso.' })
+  @ApiOkResponse({
+    description: 'Backups listados com sucesso.',
+    type: BackupListResponseDto,
+  })
   @ApiBadRequestResponse({ description: 'Filtros invalidos.' })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
@@ -74,7 +85,10 @@ export class BackupController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Consulta um backup pelo ID.' })
-  @ApiOkResponse({ description: 'Backup encontrado.' })
+  @ApiOkResponse({
+    description: 'Backup encontrado.',
+    type: BackupDetailsResponseDto,
+  })
   @ApiBadRequestResponse({ description: 'ID invalido.' })
   @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido.' })
   @ApiForbiddenResponse({ description: 'Perfil sem permissao.' })
@@ -92,7 +106,10 @@ export class BackupController {
     },
   })
   @ApiOperation({ summary: 'Restaura um backup logico.' })
-  @ApiOkResponse({ description: 'Backup restaurado com sucesso.' })
+  @ApiOkResponse({
+    description: 'Backup restaurado com sucesso.',
+    type: BackupRestoreResponseDto,
+  })
   @ApiBadRequestResponse({
     description: 'Confirmacao de restauracao invalida.',
   })

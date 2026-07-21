@@ -36,7 +36,8 @@ export type MqttOperationalControlAction =
   | 'RESTART_COMMUNICATION'
   | 'OPEN_ALL_VALVES'
   | 'CLOSE_ALL_VALVES'
-  | 'SHUTDOWN_ALL_PUMPS';
+  | 'SHUTDOWN_ALL_PUMPS'
+  | 'PROCESS_PREFLIGHT_SAFE_STATE';
 
 export type EquipmentConfigurationMutation =
   | 'CREATE_PUMP'

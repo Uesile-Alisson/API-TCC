@@ -58,6 +58,7 @@ export interface ProcessoSensorOperationalContext {
   status_integridade: statusintegridadesensor;
   calibrado_em: Date | null;
   calibracao_valida_ate: Date | null;
+  modo_calibracao_ativo: boolean;
   liberado_em: Date | null;
   integridade_ultimo_erro: string | null;
   tipo_sensor: tiposensor;

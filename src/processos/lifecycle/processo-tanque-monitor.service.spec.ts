@@ -12,32 +12,34 @@ import { ProcessoLifecycleService } from './processo-lifecycle.service';
 import { ProcessoTanqueMonitorService } from './processo-tanque-monitor.service';
 import { ProcessoTanqueStagnationService } from './processo-tanque-stagnation.service';
 
+const asyncMock = () => jest.fn<(...args: unknown[]) => Promise<unknown>>();
+
 describe('ProcessoTanqueMonitorService', () => {
-  const transaction = jest.fn();
+  const transaction = asyncMock();
   const tx = {
     processostanquessensores: {
-      findUnique: jest.fn(),
+      findUnique: asyncMock(),
     },
     configuracoessistema: {
-      findFirst: jest.fn(),
+      findFirst: asyncMock(),
     },
     leiturasensores: {
-      aggregate: jest.fn(),
-      findFirst: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
+      aggregate: asyncMock(),
+      findFirst: asyncMock(),
+      findMany: asyncMock(),
+      count: asyncMock(),
     },
     eventos: {
-      findFirst: jest.fn(),
-      create: jest.fn(),
+      findFirst: asyncMock(),
+      create: asyncMock(),
     },
     processostanques: {
-      updateMany: jest.fn(),
+      updateMany: asyncMock(),
     },
     alarmes: {
-      findFirst: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
+      findFirst: asyncMock(),
+      create: asyncMock(),
+      update: asyncMock(),
     },
   };
   let service: ProcessoTanqueMonitorService;

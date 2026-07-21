@@ -1410,7 +1410,9 @@ export class ProcessosRepository {
           ),
           status_tanque_processo: statustanqueprocesso.CONFIGURADO,
           processostanquesauxiliares: {
-            create: {},
+            create: {
+              prioridade: tanque.prioridade ?? 0,
+            },
           },
         },
       });
@@ -1458,7 +1460,9 @@ export class ProcessosRepository {
           ),
           status_tanque_processo: statustanqueprocesso.CONFIGURADO,
           processostanquesauxiliares: {
-            create: {},
+            create: {
+              prioridade: tanque.prioridade ?? 0,
+            },
           },
         },
       });
@@ -1624,7 +1628,6 @@ export class ProcessosRepository {
       },
       data: {
         status_auxilio: tankStatus,
-        prioridade: 0,
         solicitado_em: null,
         iniciado_em: null,
         finalizado_em: null,
@@ -1812,6 +1815,7 @@ export class ProcessosRepository {
       status_integridade: sensor.sensores.status_integridade,
       calibrado_em: sensor.sensores.calibrado_em,
       calibracao_valida_ate: sensor.sensores.calibracao_valida_ate,
+      modo_calibracao_ativo: sensor.sensores.modo_calibracao_ativo,
       liberado_em: sensor.sensores.liberado_em,
       integridade_ultimo_erro: sensor.sensores.integridade_ultimo_erro,
       tipo_sensor: sensor.sensores.tipo_sensor,

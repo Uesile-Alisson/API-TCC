@@ -15,6 +15,8 @@ import {
 import {
   ApiAcceptedResponse,
   ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -32,9 +34,24 @@ import {
   IniciarEncerramentoGeralDTO,
   ListProcessosQueryDTO,
   ParadaEmergenciaProcessoDTO,
+  ProcessoActionResultResponseDto,
   ProcessoAuxiliarCommandDTO,
   ProcessoAuxiliarLeaseDTO,
+  ProcessoAuxiliarMutationResponseDto,
   ProcessoAuxiliarReleaseDTO,
+  ProcessoAuxiliarStateResponseDto,
+  ProcessoDashboardResponseDto,
+  ProcessoDetailsResponseDto,
+  ProcessoEmergencyActionResponseDto,
+  ProcessoEmergencyStateResponseDto,
+  ProcessoGeneralClosureStartResponseDto,
+  ProcessoGeneralClosureStateResponseDto,
+  ProcessoListResponseDto,
+  ProcessoPrecheckItemResponseDto,
+  ProcessoPrecheckResponseDto,
+  ProcessoTankClosureStartResponseDto,
+  ProcessoValveActionResponseDto,
+  ProcessoValveResponseDto,
   UpdateProcessoConfigDTO,
 } from './dto';
 import { CurrentUserPayload } from './interfaces';
@@ -53,7 +70,7 @@ type AuthenticatedProcessUser = {
 };
 
 @ApiTags('Processos')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Throttle({
   default: { limit: 60, ttl: 60_000, blockDuration: 60_000 },
@@ -72,6 +89,7 @@ export class ProcessosController {
     summary:
       'Inicia ou repete o encerramento geral seguro apos todos os tanques concluirem.',
   })
+  @ApiCreatedResponse({ type: ProcessoGeneralClosureStartResponseDto })
   startGeneralClosure(
     @Param('id', ParseIntPipe) id_processo: number,
     @Body() dto: IniciarEncerramentoGeralDTO,
@@ -87,6 +105,7 @@ export class ProcessosController {
   @Post()
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Cria um novo processo de vácuo.' })
+  @ApiCreatedResponse({ type: ProcessoActionResultResponseDto })
   create(
     @Body() dto: CreateProcessoDTO,
     @CurrentUser() user: AuthenticatedProcessUser,
@@ -97,6 +116,7 @@ export class ProcessosController {
   @Get()
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista processos de vácuo.' })
+  @ApiOkResponse({ type: ProcessoListResponseDto })
   list(@Query() query: ListProcessosQueryDTO) {
     return this.processosService.list(query);
   }
@@ -104,6 +124,7 @@ export class ProcessosController {
   @Get('ativo')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Consulta o processo ativo atual.' })
+  @ApiOkResponse({ type: ProcessoDetailsResponseDto })
   findActive() {
     return this.processosService.findActive();
   }
@@ -111,6 +132,7 @@ export class ProcessosController {
   @Get(':id')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Consulta detalhes de um processo.' })
+  @ApiOkResponse({ type: ProcessoDetailsResponseDto })
   findById(@Param('id', ParseIntPipe) id_processo: number) {
     return this.processosService.findById(id_processo);
   }
@@ -120,6 +142,7 @@ export class ProcessosController {
   @ApiOperation({
     summary: 'Consulta snapshot dos cards de tanques de um processo.',
   })
+  @ApiOkResponse({ type: ProcessoDashboardResponseDto })
   getDashboard(@Param('id', ParseIntPipe) id_processo: number) {
     return this.processosService.getDashboard(id_processo);
   }
@@ -129,6 +152,7 @@ export class ProcessosController {
   @ApiOperation({
     summary: 'Consulta o estado persistido do encerramento geral do processo.',
   })
+  @ApiOkResponse({ type: ProcessoGeneralClosureStateResponseDto })
   getGeneralClosure(@Param('id', ParseIntPipe) id_processo: number) {
     return this.processoGeneralClosureService.getState(id_processo);
   }
@@ -138,6 +162,7 @@ export class ProcessosController {
   @ApiOperation({
     summary: 'Consulta o estado atual do subsistema auxiliar do processo.',
   })
+  @ApiOkResponse({ type: ProcessoAuxiliarStateResponseDto })
   getAuxiliaryState(@Param('id', ParseIntPipe) id_processo: number) {
     return this.processosService.getAuxiliaryState(id_processo);
   }
@@ -145,6 +170,7 @@ export class ProcessosController {
   @Post(':id/auxiliar/controle-bomba/assumir')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Assume o lease da bomba auxiliar compartilhada.' })
+  @ApiCreatedResponse({ type: ProcessoAuxiliarMutationResponseDto })
   acquireAuxiliaryPumpControl(
     @Param('id', ParseIntPipe) id_processo: number,
     @Body() dto: ProcessoAuxiliarLeaseDTO,
@@ -160,6 +186,7 @@ export class ProcessosController {
   @Post(':id/auxiliar/controle-bomba/liberar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Libera o lease da bomba auxiliar compartilhada.' })
+  @ApiCreatedResponse({ type: ProcessoAuxiliarMutationResponseDto })
   releaseAuxiliaryPumpControl(
     @Param('id', ParseIntPipe) id_processo: number,
     @Body() dto: ProcessoAuxiliarReleaseDTO,
@@ -175,6 +202,7 @@ export class ProcessosController {
   @Post(':id/tanques/:id_processo_tanque/auxiliar/controle-valvula/assumir')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Assume o lease da valvula auxiliar de um tanque.' })
+  @ApiCreatedResponse({ type: ProcessoAuxiliarMutationResponseDto })
   acquireAuxiliaryValveControl(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
@@ -192,6 +220,7 @@ export class ProcessosController {
   @Post(':id/tanques/:id_processo_tanque/auxiliar/controle-valvula/liberar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Libera o lease da valvula auxiliar de um tanque.' })
+  @ApiCreatedResponse({ type: ProcessoAuxiliarMutationResponseDto })
   releaseAuxiliaryValveControl(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
@@ -209,6 +238,7 @@ export class ProcessosController {
   @Post(':id/tanques/:id_processo_tanque/auxiliar/bomba/ligar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Liga a bomba auxiliar para o tanque selecionado.' })
+  @ApiCreatedResponse({ type: ProcessoAuxiliarMutationResponseDto })
   turnOnAuxiliaryPump(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
@@ -226,6 +256,7 @@ export class ProcessosController {
   @Post(':id/auxiliar/bomba/desligar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Desliga a bomba auxiliar compartilhada.' })
+  @ApiCreatedResponse({ type: ProcessoAuxiliarMutationResponseDto })
   turnOffAuxiliaryPump(
     @Param('id', ParseIntPipe) id_processo: number,
     @Body() dto: ProcessoAuxiliarCommandDTO,
@@ -241,6 +272,7 @@ export class ProcessosController {
   @Post(':id/tanques/:id_processo_tanque/auxiliar/valvula/abrir')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Abre a valvula auxiliar do tanque.' })
+  @ApiCreatedResponse({ type: ProcessoAuxiliarMutationResponseDto })
   openAuxiliaryValve(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
@@ -258,6 +290,7 @@ export class ProcessosController {
   @Post(':id/tanques/:id_processo_tanque/auxiliar/valvula/fechar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Fecha a valvula auxiliar do tanque.' })
+  @ApiCreatedResponse({ type: ProcessoAuxiliarMutationResponseDto })
   closeAuxiliaryValve(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
@@ -278,6 +311,7 @@ export class ProcessosController {
     summary:
       'Inicia o encerramento individual de um tanque estabilizado com ACK e retencao.',
   })
+  @ApiCreatedResponse({ type: ProcessoTankClosureStartResponseDto })
   startTankClosure(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_processo_tanque', ParseIntPipe) id_processo_tanque: number,
@@ -295,6 +329,7 @@ export class ProcessosController {
   @Get(':id/prechecagem')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Consulta pre-checagem operacional do processo.' })
+  @ApiOkResponse({ type: ProcessoPrecheckResponseDto })
   consultarPrechecagem(
     @Param('id', ParseIntPipe) id_processo: number,
     @CurrentUser() user: AuthenticatedProcessUser,
@@ -308,6 +343,7 @@ export class ProcessosController {
   @Post(':id/prechecagem/executar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Executa pre-checagem operacional do processo.' })
+  @ApiCreatedResponse({ type: ProcessoPrecheckResponseDto })
   executarPrechecagem(
     @Param('id', ParseIntPipe) id_processo: number,
     @CurrentUser() user: AuthenticatedProcessUser,
@@ -321,6 +357,7 @@ export class ProcessosController {
   @Post(':id/tanques/:id_tanque/acoplamento/validar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Valida acoplamento de um tanque do processo.' })
+  @ApiCreatedResponse({ type: ProcessoPrecheckItemResponseDto })
   validarAcoplamentoTanque(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_tanque', ParseIntPipe) id_tanque: number,
@@ -334,6 +371,7 @@ export class ProcessosController {
   @Post(':id/sensores/:id_sensor/validar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Valida sensor de um processo.' })
+  @ApiCreatedResponse({ type: ProcessoPrecheckItemResponseDto })
   validarSensor(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_sensor', ParseIntPipe) id_sensor: number,
@@ -344,6 +382,7 @@ export class ProcessosController {
   @Get(':id/valvulas')
   @Roles('OPERADOR', 'TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Lista valvulas vinculadas ao processo.' })
+  @ApiOkResponse({ type: ProcessoValveResponseDto, isArray: true })
   listarValvulas(@Param('id', ParseIntPipe) id_processo: number) {
     return this.processosService.listarValvulas(id_processo);
   }
@@ -351,16 +390,23 @@ export class ProcessosController {
   @Post(':id/valvulas/:id_valvula/validar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Valida uma valvula do processo.' })
+  @ApiCreatedResponse({ type: ProcessoValveActionResponseDto })
   validarValvula(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_valvula', ParseIntPipe) id_valvula: number,
+    @CurrentUser() user: AuthenticatedProcessUser,
   ) {
-    return this.processosService.validarValvula(id_processo, id_valvula);
+    return this.processosService.validarValvula(
+      id_processo,
+      id_valvula,
+      this.toCurrentUserPayload(user),
+    );
   }
 
   @Post(':id/valvulas/:id_valvula/abrir')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Abre uma valvula do processo.' })
+  @ApiCreatedResponse({ type: ProcessoValveActionResponseDto })
   abrirValvula(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_valvula', ParseIntPipe) id_valvula: number,
@@ -376,6 +422,7 @@ export class ProcessosController {
   @Post(':id/valvulas/:id_valvula/fechar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Fecha uma valvula do processo.' })
+  @ApiCreatedResponse({ type: ProcessoValveActionResponseDto })
   fecharValvula(
     @Param('id', ParseIntPipe) id_processo: number,
     @Param('id_valvula', ParseIntPipe) id_valvula: number,
@@ -391,6 +438,7 @@ export class ProcessosController {
   @Patch(':id/config')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Atualiza configuração de um processo.' })
+  @ApiOkResponse({ type: ProcessoActionResultResponseDto })
   updateConfig(
     @Param('id', ParseIntPipe) id_processo: number,
     @Body() dto: UpdateProcessoConfigDTO,
@@ -406,6 +454,7 @@ export class ProcessosController {
   @Post(':id/iniciar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Inicia um processo configurado.' })
+  @ApiCreatedResponse({ type: ProcessoActionResultResponseDto })
   start(
     @Param('id', ParseIntPipe) id_processo: number,
     @CurrentUser() user: AuthenticatedProcessUser,
@@ -419,6 +468,7 @@ export class ProcessosController {
   @Post(':id/pausar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Pausa um processo em execução.' })
+  @ApiCreatedResponse({ type: ProcessoActionResultResponseDto })
   pause(
     @Param('id', ParseIntPipe) id_processo: number,
     @CurrentUser() user: AuthenticatedProcessUser,
@@ -432,6 +482,7 @@ export class ProcessosController {
   @Post(':id/retomar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Retoma um processo pausado.' })
+  @ApiCreatedResponse({ type: ProcessoActionResultResponseDto })
   resume(
     @Param('id', ParseIntPipe) id_processo: number,
     @CurrentUser() user: AuthenticatedProcessUser,
@@ -445,6 +496,7 @@ export class ProcessosController {
   @Post(':id/finalizar')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Finaliza um processo em execução.' })
+  @ApiCreatedResponse({ type: ProcessoGeneralClosureStartResponseDto })
   async finish(
     @Param('id', ParseIntPipe) id_processo: number,
     @Body() dto: FinalizarProcessoDTO,
@@ -467,6 +519,7 @@ export class ProcessosController {
   @Post(':id/interromper')
   @Roles('TECNICO', 'ADMINISTRADOR')
   @ApiOperation({ summary: 'Interrompe um processo de forma controlada.' })
+  @ApiCreatedResponse({ type: ProcessoActionResultResponseDto })
   interrupt(
     @Param('id', ParseIntPipe) id_processo: number,
     @Body() dto: InterromperProcessoDTO,
@@ -490,6 +543,7 @@ export class ProcessosController {
   @ApiAcceptedResponse({
     description:
       'Parada registrada. O corpo distingue interrupcao logica de confirmacao das saidas pelo ESP32.',
+    type: ProcessoEmergencyActionResponseDto,
   })
   emergencyStop(
     @Param('id', ParseIntPipe) id_processo: number,
@@ -510,6 +564,7 @@ export class ProcessosController {
     description:
       'Use esta rota para carregar o estado inicial ou recuperar o snapshot depois de uma reconexao. hardware_confirmado somente e verdadeiro apos snapshot fresco e completo com latch ativo; nao representa feedback mecanico dedicado.',
   })
+  @ApiOkResponse({ type: ProcessoEmergencyStateResponseDto })
   getEmergencyStopState(@Param('id', ParseIntPipe) id_processo: number) {
     return this.processoGeneralClosureService.getEmergencyState(id_processo);
   }

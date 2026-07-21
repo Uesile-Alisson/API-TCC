@@ -5,24 +5,30 @@ import { statusintegridadesensor, statussensor } from '@prisma/client';
 
 describe('SensorIntegrityMonitorService', () => {
   it('marca timeout uma unica vez e cria alarme bloqueante', async () => {
-    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
-    const createAlarm = jest.fn().mockResolvedValue({ id_alarme: 9 });
+    const updateMany = jest
+      .fn<(...args: unknown[]) => Promise<unknown>>()
+      .mockResolvedValue({ count: 1 });
+    const createAlarm = jest
+      .fn<(...args: unknown[]) => Promise<unknown>>()
+      .mockResolvedValue({ id_alarme: 9 });
     const prisma = {
       processostanquessensores: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id_processo_tanque_sensor: 40,
-            id_processo_tanque: 20,
-            id_sensor: 3,
-            sensores: {
-              ultima_leitura: new Date('2026-07-16T11:59:50.000Z'),
+        findMany: jest
+          .fn<(...args: unknown[]) => Promise<unknown>>()
+          .mockResolvedValue([
+            {
+              id_processo_tanque_sensor: 40,
+              id_processo_tanque: 20,
+              id_sensor: 3,
+              sensores: {
+                ultima_leitura: new Date('2026-07-16T11:59:50.000Z'),
+              },
+              processostanques: {
+                id_processo: 10,
+                processos: { encerramento_timeout_leitura_sensor_ms: 2500 },
+              },
             },
-            processostanques: {
-              id_processo: 10,
-              processos: { encerramento_timeout_leitura_sensor_ms: 2500 },
-            },
-          },
-        ]),
+          ]),
       },
       $transaction: jest.fn(
         async (callback: (tx: unknown) => Promise<unknown>) =>

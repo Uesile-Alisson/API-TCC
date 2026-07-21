@@ -54,6 +54,38 @@ Fluxo tecnico:
 
 Falhas por faixa fisica, mudanca abrupta, oscilacao, travamento e timeout mudam o sensor para `FALHA` ou `DESCONECTADO`, removem sua liberacao e criam alarme bloqueante. Leituras posteriores nao reativam o dispositivo; nova liberacao tecnica e obrigatoria.
 
+### Acao corretiva apresentada pela pre-checagem
+
+Cada item bloqueante de sensor pode devolver `acao_corretiva`. O front-end deve
+exibir a acao somente quando esse objeto nao for `null` e
+`acao_corretiva.disponivel=true`. Depois de concluir a acao, deve executar a
+pre-checagem novamente; a acao nao ignora nem aprova artificialmente o item.
+
+| Condicao encontrada                         | `acao_corretiva.codigo`       | Endpoint indicado                                              |
+| ------------------------------------------- | ----------------------------- | -------------------------------------------------------------- |
+| Sem calibracao valida ou calibracao vencida | `CALIBRAR_SENSOR`             | `POST /configuracoes/sensores/:id_sensor/calibracao/iniciar`   |
+| Calibracao ja iniciada                      | `CONTINUAR_CALIBRACAO_SENSOR` | `POST /configuracoes/sensores/:id_sensor/calibracao/finalizar` |
+| Calibrado, integro e ainda nao liberado     | `LIBERAR_SENSOR`              | `PATCH /configuracoes/sensores/:id_sensor/ativar`              |
+| Liberado, mas inativo                       | `ATIVAR_SENSOR`               | `PATCH /configuracoes/sensores/:id_sensor/ativar`              |
+| Telemetria ausente ou vencida               | `AGUARDAR_TELEMETRIA_SENSOR`  | `GET /configuracoes/sensores/:id_sensor`                       |
+| Falha ou integridade invalida               | `DIAGNOSTICAR_SENSOR`         | `GET /configuracoes/sensores/:id_sensor`                       |
+
+O estado de calibracao e avaliado antes do estado `INATIVO`, pois um sensor novo
+e mantido inativo justamente enquanto ainda nao foi calibrado e liberado. O
+endpoint de finalizacao exige referencia rastreavel e os valores previstos no
+`CalibrarSensorDto`.
+
+Valvulas solenoides nao passam por calibracao metrologica. Quando a
+pre-checagem nao possui estado logico recente e seguro, ela oferece
+`TESTAR_ESTADO_SEGURO_VALVULA`, apontando para
+`POST /processos/:id/valvulas/:id_valvula/validar`. Essa operacao exige processo
+`CONFIGURADO`, ausencia de qualquer processo ativo e comunicacao operacional;
+adquire exclusao MQTT, desliga todas as bombas, fecha todas as valvulas,
+sincroniza a configuracao e exige um `HARDWARE_STATUS` v2 novo, posterior aos
+ACKs. Sem fim de curso ou sensor dedicado, a resposta declara
+`feedback_mecanico_disponivel=false`: trata-se de verificacao logica do
+controlador, nao de comprovacao da posicao mecanica.
+
 ## Parametros
 
 Os defaults ficam em `configuracoessistema` e podem ser atualizados pela rota existente de configuracao do sistema. Os mesmos campos podem ser informados em `POST /processos` e `PATCH /processos/:id/config`:

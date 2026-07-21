@@ -7,6 +7,8 @@ import {
 } from './lifecycle';
 import { ProcessosService } from './processos.service';
 
+type AsyncMock = jest.Mock<(...args: unknown[]) => Promise<unknown>>;
+
 type ProcessosServiceMock = {
   create: jest.Mock;
   list: jest.Mock;
@@ -34,11 +36,11 @@ type ProcessosServiceMock = {
 describe('ProcessosController', () => {
   let controller: ProcessosController;
   let service: ProcessosServiceMock;
-  let closureService: { startManual: jest.Mock };
+  let closureService: { startManual: AsyncMock };
   let generalClosureService: {
-    getState: jest.Mock;
-    getEmergencyState: jest.Mock;
-    startManual: jest.Mock;
+    getState: AsyncMock;
+    getEmergencyState: AsyncMock;
+    startManual: AsyncMock;
   };
 
   const user = {
@@ -74,15 +76,21 @@ describe('ProcessosController', () => {
       interrupt: jest.fn(),
       emergencyStop: jest.fn(),
     };
-    closureService = { startManual: jest.fn() };
+    closureService = {
+      startManual: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+    };
     generalClosureService = {
-      getState: jest.fn().mockResolvedValue({ versao: 9 }),
-      getEmergencyState: jest.fn().mockResolvedValue({
-        ativa: true,
-        status: 'AGUARDANDO_CONFIRMACAO',
-        hardware_confirmado: false,
-      }),
-      startManual: jest.fn(),
+      getState: jest
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockResolvedValue({ versao: 9 }),
+      getEmergencyState: jest
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockResolvedValue({
+          ativa: true,
+          status: 'AGUARDANDO_CONFIRMACAO',
+          hardware_confirmado: false,
+        }),
+      startManual: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
     };
     controller = new ProcessosController(
       service as unknown as ProcessosService,

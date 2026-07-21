@@ -904,8 +904,16 @@ export class ProcessosService {
     return this.processoPrecheckService.listarValvulas(id_processo);
   }
 
-  async validarValvula(id_processo: number, id_valvula: number) {
-    return this.processoPrecheckService.validarValvula(id_processo, id_valvula);
+  async validarValvula(
+    id_processo: number,
+    id_valvula: number,
+    user: CurrentUserPayload,
+  ) {
+    return this.processoPrecheckService.validarValvula(
+      id_processo,
+      id_valvula,
+      user,
+    );
   }
 
   async abrirValvula(

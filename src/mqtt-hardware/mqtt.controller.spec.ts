@@ -18,7 +18,9 @@ describe('MqttController - credenciais externas', () => {
       ultima_falha_credenciais: null,
       connected: false,
     };
-    const updateCredentials = jest.fn(() => Promise.resolve(safeResponse));
+    const updateCredentials = jest.fn<
+      (...args: unknown[]) => Promise<typeof safeResponse>
+    >(() => Promise.resolve(safeResponse));
     const controller = new MqttController({
       updateCredentials,
     } as unknown as MqttService);
@@ -64,8 +66,12 @@ describe('MqttController - credenciais externas', () => {
 
 describe('MqttController - comandos administrativos', () => {
   it('propaga a identidade autenticada nas operacoes de conexao', async () => {
-    const reconnect = jest.fn(() => Promise.resolve({ success: true }));
-    const disconnect = jest.fn(() => Promise.resolve({ success: true }));
+    const reconnect = jest.fn<(...args: unknown[]) => Promise<unknown>>(() =>
+      Promise.resolve({ success: true }),
+    );
+    const disconnect = jest.fn<(...args: unknown[]) => Promise<unknown>>(() =>
+      Promise.resolve({ success: true }),
+    );
     const controller = new MqttController({
       reconnect,
       disconnect,
@@ -96,7 +102,9 @@ describe('MqttController - comandos administrativos', () => {
   });
 
   it('propaga processo alvo e identidade autenticada para o coordenador', async () => {
-    const paradaEmergencia = jest.fn(() => Promise.resolve({ success: true }));
+    const paradaEmergencia = jest.fn<(...args: unknown[]) => Promise<unknown>>(
+      () => Promise.resolve({ success: true }),
+    );
     const controller = new MqttController({
       paradaEmergencia,
     } as unknown as MqttService);

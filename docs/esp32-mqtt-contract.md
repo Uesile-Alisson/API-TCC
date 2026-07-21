@@ -560,6 +560,8 @@ compatibilidade, mas nao substituem a telemetria detalhada.
 - `RECEBIDO` nao autoriza a API a avancar; comando publicado so e tratado como executado apos `EXECUTADO`.
 - `RECUSADO`, `ERRO`, desconexao ou timeout impedem a transicao do processo para `EM_EXECUCAO`.
 - Na falha de qualquer etapa da partida, a API tenta desligar todas as bombas e fechar todas as valvulas.
+- O teste corretivo de valvulas da pre-checagem exige um `HARDWARE_STATUS` v2 nao retido, recebido depois dos ACKs de preparo, com todas as bombas do processo desligadas e todas as valvulas fechadas, disponiveis e sem falha.
+- `ACK EXECUTADO` e `HARDWARE_STATUS` confirmam processamento e estado logico do controlador. Sem sensores dedicados, nao comprovam posicao mecanica de valvula nem rotacao/corrente de bomba.
 - Desacoplamento durante processo deve provocar falha/parada de emergencia conforme regra operacional.
 - `codigo_hardware` deve ser estavel e nao deve depender dos IDs internos do banco.
 - Nenhum payload deve conter potencia, PWM ou valor de potenciometro.
@@ -570,15 +572,17 @@ compatibilidade, mas nao substituem a telemetria detalhada.
 2. ESP32 conecta ao broker.
 3. ESP32 publica heartbeat.
 4. API publica `SYNC_CONFIG`.
-5. Usuario inicia processo de vacuo.
-6. API executa pre-checagem.
-7. API desliga todas as bombas, fecha todas as valvulas e sincroniza a configuracao, aguardando `EXECUTADO` em cada etapa.
-8. API publica `INICIAR_PROCESSO_VACUO`; o ESP32 carrega o contexto sem acionar atuadores e responde `EXECUTADO`.
-9. API abre, uma por vez, as `VP_Tn` dos tanques selecionados e aguarda `EXECUTADO` de cada comando.
-10. API liga a bomba principal e aguarda `EXECUTADO`.
-11. Somente depois dessas confirmacoes a API altera o processo para `EM_EXECUCAO`.
-12. ESP32 publica leituras, status e acoplamentos.
-13. API encerra, interrompe ou aciona parada de emergencia quando necessario.
+5. Usuario consulta ou executa a pre-checagem.
+6. Se houver sensor sem calibracao/liberacao, o front executa a `acao_corretiva` indicada e repete a pre-checagem.
+7. Se houver valvula sem estado seguro recente, um tecnico executa `POST /processos/:id/valvulas/:id_valvula/validar`; a API desliga bombas, fecha valvulas, sincroniza e exige telemetria v2 posterior aos ACKs.
+8. Usuario solicita o inicio somente depois de a pre-checagem ser aprovada.
+9. A API repete o preparo seguro de partida, aguardando `EXECUTADO` em cada etapa.
+10. API publica `INICIAR_PROCESSO_VACUO`; o ESP32 carrega o contexto sem acionar atuadores e responde `EXECUTADO`.
+11. API abre, uma por vez, as `VP_Tn` dos tanques selecionados e aguarda `EXECUTADO` de cada comando.
+12. API liga a bomba principal e aguarda `EXECUTADO`.
+13. Somente depois dessas confirmacoes a API altera o processo para `EM_EXECUCAO`.
+14. ESP32 publica leituras, status e acoplamentos.
+15. API encerra, interrompe ou aciona parada de emergencia quando necessario.
 
 ## Teste com simulador MQTT ESP32
 

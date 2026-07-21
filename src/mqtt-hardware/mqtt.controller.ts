@@ -15,6 +15,8 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiServiceUnavailableResponse,
   ApiTags,
@@ -33,6 +35,15 @@ import {
 } from './dto/mqtt-command-request.dto';
 import { UpdateMqttCredentialsDTO } from './dto/update-mqtt-credentials.dto';
 import type { CommandOptions } from './commands/interfaces/command-options.interface';
+import {
+  MqttCommandExecutionResponseDto,
+  MqttConfigResponseDto,
+  MqttConnectionActionResponseDto,
+  MqttConnectionTestResponseDto,
+  MqttCredentialsUpdateResponseDto,
+  MqttEmergencyStopResponseDto,
+  MqttHardwareStatusResponseDto,
+} from './dto/mqtt-response.dto';
 
 type AuthenticatedUserPayload = {
   sub?: number;
@@ -42,7 +53,7 @@ type AuthenticatedUserPayload = {
 };
 
 @ApiTags('MQTT / Hardware')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Throttle({
   default: { limit: 60, ttl: 60_000, blockDuration: 60_000 },
@@ -58,6 +69,7 @@ export class MqttController {
     description:
       'Retorna estado atual da conexão MQTT, configuração ativa e estado operacional do ESP32/hardware.',
   })
+  @ApiOkResponse({ type: MqttHardwareStatusResponseDto })
   async getStatus() {
     return await this.mqttService.getStatus();
   }
@@ -69,6 +81,7 @@ export class MqttController {
     description:
       'Retorna a configuração principal do MQTT sem expor dados sensíveis, como senha/hash.',
   })
+  @ApiOkResponse({ type: MqttConfigResponseDto })
   async getConfig() {
     return await this.mqttService.getConfig();
   }
@@ -83,6 +96,7 @@ export class MqttController {
     description:
       'Testa a configuracao candidata em um cliente isolado, grava e reconecta o cliente principal. Se a aplicacao falhar, restaura a configuracao anterior.',
   })
+  @ApiOkResponse({ type: MqttConfigResponseDto })
   @ApiConflictResponse({
     description:
       'A atualizacao foi bloqueada por processo operacional, por outro update MQTT ou por perda do lease.',
@@ -112,6 +126,7 @@ export class MqttController {
     description:
       'Testa usuario e senha em uma conexao MQTT temporaria. Somente apos o broker aceitar a conexao e as assinaturas obrigatorias, substitui o arquivo seguro externo, reconecta o cliente principal e retorna indicadores sem expor as credenciais.',
   })
+  @ApiOkResponse({ type: MqttCredentialsUpdateResponseDto })
   @ApiConflictResponse({
     description:
       'A atualizacao foi bloqueada porque existe um processo em partida, execucao ou pausa, ou porque outra atualizacao de credenciais ja esta em andamento.',
@@ -141,6 +156,7 @@ export class MqttController {
     description:
       'Verifica se o cliente MQTT está conectado. Se não estiver, tenta conectar ao broker.',
   })
+  @ApiCreatedResponse({ type: MqttConnectionTestResponseDto })
   async testConnection() {
     return await this.mqttService.testConnection();
   }
@@ -152,6 +168,7 @@ export class MqttController {
     description:
       'Força uma conexão do backend com o broker MQTT usando a configuração ativa. É bloqueado durante qualquer estado operacional protegido.',
   })
+  @ApiCreatedResponse({ type: MqttConnectionActionResponseDto })
   @ApiConflictResponse({
     description:
       'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
@@ -167,6 +184,7 @@ export class MqttController {
     description:
       'Desconecta o cliente MQTT do broker quando não existe estado operacional protegido. Rota restrita a administradores.',
   })
+  @ApiCreatedResponse({ type: MqttConnectionActionResponseDto })
   @ApiConflictResponse({
     description:
       'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
@@ -187,6 +205,7 @@ export class MqttController {
       'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
+  @ApiCreatedResponse({ type: MqttCommandExecutionResponseDto })
   async sincronizarHardware(
     @Body() dto: MqttCommandRequestDto = {},
     @CurrentUser() user: AuthenticatedUserPayload,
@@ -208,6 +227,7 @@ export class MqttController {
       'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
+  @ApiCreatedResponse({ type: MqttCommandExecutionResponseDto })
   async reiniciarComuicacao(
     @Body() dto: MqttCommandRequestDto = {},
     @CurrentUser() user: AuthenticatedUserPayload,
@@ -226,6 +246,7 @@ export class MqttController {
       'Delega ao coordenador persistente quando existe processo operacional e executa a sequencia global best-effort somente quando nao existe processo alvo. HTTP 202 nao significa confirmacao do controlador.',
   })
   @ApiAcceptedResponse({
+    type: MqttEmergencyStopResponseDto,
     description:
       'Solicitacao aceita; o corpo distingue persistencia, escopo e confirmacao pendente.',
   })
@@ -251,6 +272,7 @@ export class MqttController {
       'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
+  @ApiCreatedResponse({ type: MqttCommandExecutionResponseDto })
   async desligarTodasBombas(
     @Body() dto: MqttCommandRequestDto = {},
     @CurrentUser() user: AuthenticatedUserPayload,
@@ -272,6 +294,7 @@ export class MqttController {
       'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
+  @ApiCreatedResponse({ type: MqttCommandExecutionResponseDto })
   async abrirTodasValvulas(
     @Body() dto: MqttCommandRequestDto = {},
     @CurrentUser() user: AuthenticatedUserPayload,
@@ -293,6 +316,7 @@ export class MqttController {
       'Operação bloqueada por processo ativo/pausado, partida, encerramento, lifecycle de tanque, lease humano ou outra operação MQTT exclusiva.',
   })
   @ApiBody({ type: MqttCommandRequestDto, required: false })
+  @ApiCreatedResponse({ type: MqttCommandExecutionResponseDto })
   async fecharTodasValvulas(
     @Body() dto: MqttCommandRequestDto = {},
     @CurrentUser() user: AuthenticatedUserPayload,

@@ -19,19 +19,21 @@ import {
 } from './processo-auxiliar.repository';
 import { ProcessoAuxiliarSchedulerService } from './processo-auxiliar-scheduler.service';
 
+const asyncMock = () => jest.fn<(...args: unknown[]) => Promise<unknown>>();
+
 describe('ProcessoAuxiliarSchedulerService', () => {
   const repository = {
-    clearExpiredLeases: jest.fn(),
-    findSchedulerContexts: jest.fn(),
-    synchronizeCandidates: jest.fn(),
-    updateIdleSchedulerDecision: jest.fn(),
-    blockTank: jest.fn(),
-    markSchedulerFailure: jest.fn(),
-    refreshAssistanceEvidence: jest.fn(),
+    clearExpiredLeases: asyncMock(),
+    findSchedulerContexts: asyncMock(),
+    synchronizeCandidates: asyncMock(),
+    updateIdleSchedulerDecision: asyncMock(),
+    blockTank: asyncMock(),
+    markSchedulerFailure: asyncMock(),
+    refreshAssistanceEvidence: asyncMock(),
   };
-  const commands = { executeAutomaticCommand: jest.fn() };
-  const logs = { registerSystemAction: jest.fn() };
-  const processos = { notifyAuxiliaryStateUpdated: jest.fn() };
+  const commands = { executeAutomaticCommand: asyncMock() };
+  const logs = { registerSystemAction: asyncMock() };
+  const processos = { notifyAuxiliaryStateUpdated: asyncMock() };
   let service: ProcessoAuxiliarSchedulerService;
 
   beforeEach(() => {

@@ -4,10 +4,12 @@ import {
   StatusAcoplamentoMangueira,
   StatusValvula,
   funcaovalvula,
+  modooperacaoauxiliar,
   nivelacesso,
   statusbomba,
   statusconexaomqtt,
   statusgeralsistema,
+  statusintegridadesensor,
   statusencerramentotanque,
   statusprocesso,
   statussensor,
@@ -20,6 +22,7 @@ import type { Mock } from 'jest-mock';
 import { CommandService } from '../../mqtt-hardware/commands/command.service';
 import { MqttConfigService } from '../../mqtt-hardware/config/mqtt-config.service';
 import { ProcessoLogService } from '../logs';
+import { ProcessoOperationalContext } from '../interfaces';
 import { ProcessoMqttOrchestratorService } from '../mqtt';
 import { ProcessosRepository } from '../processos.repository';
 import { ProcessosSocketGateway } from '../socket';
@@ -46,13 +49,21 @@ describe('ProcessoPrecheckService', () => {
   };
   let startValidator: { validateCanStart: SyncMock };
   let logs: { registerUserAction: AsyncMock };
-  let mqtt: { getHardwareReadiness: SyncMock };
+  let mqtt: {
+    getHardwareReadiness: SyncMock;
+    prepareHardwareForStart: AsyncMock;
+  };
   let socket: { emitPrecheckResult: SyncMock };
   let commandService: {
     abrirValvula: AsyncMock;
     fecharValvula: AsyncMock;
   };
-  let mqttConfig: { getConfig: AsyncMock };
+  let mqttConfig: {
+    getConfig: AsyncMock;
+    claimOperationalControlLease: AsyncMock;
+    releaseOperationalControlLease: AsyncMock;
+    findLatestHardwareStatusSnapshotAfter: AsyncMock;
+  };
 
   const user: ProcessoPrecheckUser = {
     sub: 7,
@@ -86,6 +97,24 @@ describe('ProcessoPrecheckService', () => {
     };
     mqtt = {
       getHardwareReadiness: syncMock().mockReturnValue(makeReadiness()),
+      prepareHardwareForStart: asyncMock().mockResolvedValue({
+        success: true,
+        message: 'Hardware preparado com sucesso.',
+        id_processo: 10,
+        command_results: [
+          {
+            comando: 'SINCRONIZAR_HARDWARE',
+            topic: 'tsea/comandos',
+            qos: 1,
+            retain: false,
+            correlation_id: 'safe-state-1',
+            published_at: new Date(Date.now() - 200),
+            acknowledged: true,
+            ack_status: 'EXECUTADO',
+            ack_received_at: new Date(Date.now() - 100),
+          },
+        ],
+      }),
     };
     socket = {
       emitPrecheckResult: syncMock(),
@@ -111,7 +140,23 @@ describe('ProcessoPrecheckService', () => {
         topico_comandos: 'tsea/comandos',
         topico_status: 'tsea/status',
         topico_heartbeat: 'tsea/heartbeat',
+        timeout_comunicacao: 0,
       }),
+      claimOperationalControlLease: asyncMock().mockResolvedValue(undefined),
+      releaseOperationalControlLease: asyncMock().mockResolvedValue(undefined),
+      findLatestHardwareStatusSnapshotAfter: asyncMock().mockImplementation(
+        (...args: unknown[]) => {
+          const marker = args[0] as Date;
+          const receivedAt = new Date(marker.getTime() + 200);
+          return Promise.resolve({
+            id: 1,
+            topic: 'tsea/status',
+            receivedAt,
+            statusAt: new Date(marker.getTime() + 100),
+            payload: makeSafeHardwareStatus(receivedAt),
+          });
+        },
+      ),
     };
 
     service = new ProcessoPrecheckService(
@@ -137,6 +182,18 @@ describe('ProcessoPrecheckService', () => {
     expect(commandService.fecharValvula).not.toHaveBeenCalled();
     expect(logs.registerUserAction).not.toHaveBeenCalled();
     expect(socket.emitPrecheckResult).not.toHaveBeenCalled();
+    expect(result.itens).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codigo: 'SENSOR_51_CALIBRACAO',
+          acao_corretiva: expect.objectContaining({
+            codigo: 'CALIBRAR_SENSOR',
+            disponivel: false,
+            motivo_indisponibilidade: expect.stringContaining('TECNICO'),
+          }),
+        }),
+      ]),
+    );
   });
 
   it('aprova a topologia completa de encerramento por tanque', async () => {
@@ -195,6 +252,7 @@ describe('ProcessoPrecheckService', () => {
         expect.objectContaining({
           grupo: 'VALVULAS',
           status: 'APROVADO',
+          acao_corretiva: null,
         }),
       ]),
     );
@@ -212,6 +270,11 @@ describe('ProcessoPrecheckService', () => {
         expect.objectContaining({
           grupo: 'VALVULAS',
           status: 'REPROVADO',
+          acao_corretiva: expect.objectContaining({
+            codigo: 'REVISAR_CONFIGURACAO_VALVULA',
+            disponivel: false,
+            endpoint: null,
+          }),
         }),
       ]),
     );
@@ -231,6 +294,10 @@ describe('ProcessoPrecheckService', () => {
         expect.objectContaining({
           grupo: 'VALVULAS',
           status: 'NAO_CONFIRMADO',
+          acao_corretiva: expect.objectContaining({
+            codigo: 'TESTAR_ESTADO_SEGURO_VALVULA',
+            endpoint: '/processos/10/valvulas/99/validar',
+          }),
         }),
       ]),
     );
@@ -350,6 +417,9 @@ describe('ProcessoPrecheckService', () => {
         expect.objectContaining({
           codigo: 'SENSOR_50_RESPOSTA',
           status: 'NAO_CONFIRMADO',
+          acao_corretiva: expect.objectContaining({
+            codigo: 'AGUARDAR_TELEMETRIA_SENSOR',
+          }),
         }),
       ]),
     );
@@ -370,6 +440,56 @@ describe('ProcessoPrecheckService', () => {
         }),
       ]),
     );
+  });
+
+  it('prioriza a calibracao pendente mesmo quando o sensor novo esta INATIVO', async () => {
+    const context = makeContext();
+    context.tanques[0].sensores[1].status_sensor = statussensor.INATIVO;
+    repository.findOperationalContextById.mockResolvedValueOnce(context);
+
+    const result = await service.validarSensor(10, 51);
+
+    expect(result).toMatchObject({
+      codigo: 'SENSOR_51_CALIBRACAO',
+      status: 'REPROVADO',
+      acao_corretiva: {
+        codigo: 'CALIBRAR_SENSOR',
+        metodo: 'POST',
+        endpoint: '/configuracoes/sensores/51/calibracao/iniciar',
+        disponivel: true,
+      },
+    });
+  });
+
+  it('orienta finalizar uma calibracao que ja esta em andamento', async () => {
+    const context = makeContext();
+    context.tanques[0].sensores[1].modo_calibracao_ativo = true;
+    repository.findOperationalContextById.mockResolvedValueOnce(context);
+
+    const result = await service.validarSensor(10, 51);
+
+    expect(result.acao_corretiva).toMatchObject({
+      codigo: 'CONTINUAR_CALIBRACAO_SENSOR',
+      metodo: 'POST',
+      endpoint: '/configuracoes/sensores/51/calibracao/finalizar',
+    });
+  });
+
+  it('solicita liberacao separada depois de uma calibracao valida', async () => {
+    const context = makeContext();
+    const sensor = context.tanques[0].sensores[1];
+    sensor.calibrado_em = new Date(Date.now() - 1_000);
+    sensor.calibracao_valida_ate = new Date(Date.now() + 86_400_000);
+    sensor.liberado_em = null;
+    repository.findOperationalContextById.mockResolvedValueOnce(context);
+
+    const result = await service.validarSensor(10, 51);
+
+    expect(result.acao_corretiva).toMatchObject({
+      codigo: 'LIBERAR_SENSOR',
+      metodo: 'PATCH',
+      endpoint: '/configuracoes/sensores/51/ativar',
+    });
   });
 
   it('exige leitura diagnostica quando sensor de vacuo carrega acoplamento do tanque', async () => {
@@ -422,9 +542,85 @@ describe('ProcessoPrecheckService', () => {
   it('bloqueia validar valvula quando ha processo ativo', async () => {
     repository.findActiveProcessId.mockResolvedValueOnce(10);
 
-    await expect(service.validarValvula(10, 99)).rejects.toBeInstanceOf(
+    await expect(service.validarValvula(10, 99, user)).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+
+  it('confirma o teste seguro apenas com telemetria v2 nova e coerente', async () => {
+    const result = await service.validarValvula(10, 99, user);
+
+    expect(mqttConfig.claimOperationalControlLease).toHaveBeenCalledWith(
+      expect.any(String),
+      'PROCESS_PREFLIGHT_SAFE_STATE',
+    );
+    expect(mqtt.prepareHardwareForStart).toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: 'APROVADO',
+      aprovado: true,
+      detalhes: {
+        estado_controlador_confirmado: true,
+        feedback_mecanico_disponivel: false,
+        snapshot_recebido: true,
+      },
+    });
+    expect(mqttConfig.releaseOperationalControlLease).toHaveBeenCalledWith(
+      expect.any(String),
+    );
+    expect(logs.registerUserAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acao: 'VALVULA_PRECHECK_ESTADO_SEGURO',
+      }),
+    );
+  });
+
+  it('nao aprova o teste quando a preparacao segura falha e libera o lease', async () => {
+    mqtt.prepareHardwareForStart.mockResolvedValueOnce({
+      success: false,
+      message: 'ACK de fechamento ausente.',
+      id_processo: 10,
+      command_results: [],
+      command_failures: [
+        { comando: 'FECHAR_TODAS_VALVULAS', message: 'timeout' },
+      ],
+    });
+
+    const result = await service.validarValvula(10, 99, user);
+
+    expect(result).toMatchObject({ status: 'FALHA', aprovado: false });
+    expect(
+      mqttConfig.findLatestHardwareStatusSnapshotAfter,
+    ).not.toHaveBeenCalled();
+    expect(mqttConfig.releaseOperationalControlLease).toHaveBeenCalled();
+  });
+
+  it('reprova telemetria cujo relogio nao comprova estado posterior aos comandos', async () => {
+    mqttConfig.findLatestHardwareStatusSnapshotAfter.mockImplementationOnce(
+      (...args: unknown[]) => {
+        const marker = args[0] as Date;
+        const receivedAt = new Date(marker.getTime() + 200);
+        return Promise.resolve({
+          id: 2,
+          topic: 'tsea/status',
+          receivedAt,
+          statusAt: new Date(marker.getTime() - 10_000),
+          payload: makeSafeHardwareStatus(receivedAt),
+        });
+      },
+    );
+
+    const result = await service.validarValvula(10, 99, user);
+
+    expect(result).toMatchObject({
+      status: 'REPROVADO',
+      aprovado: false,
+      detalhes: {
+        estado_controlador_confirmado: false,
+        feedback_mecanico_disponivel: false,
+        snapshot_recebido: true,
+      },
+    });
+    expect(result.mensagem).toContain('depois dos comandos');
   });
 
   it('bloqueia abrir valvula sem processo ativo', async () => {
@@ -633,12 +829,69 @@ describe('ProcessoPrecheckService', () => {
     };
   }
 
-  function makeContext() {
+  function makeSafeHardwareStatus(enviadoEm: Date) {
+    return {
+      tipo: 'HARDWARE_STATUS',
+      schema_version: 2,
+      device_id: 'esp32-test',
+      esp32_on: true,
+      status_geral: statusgeralsistema.OPERACIONAL,
+      emergencia_ativa: false,
+      enviado_em: enviadoEm.toISOString(),
+      valvulas: [
+        {
+          id_valvula: 99,
+          codigo_hardware: 'VP_T1',
+          status_valvula: StatusValvula.FECHADA,
+          ack: true,
+          falha: false,
+          disponivel: true,
+        },
+        {
+          id_valvula: 100,
+          codigo_hardware: 'VA_T1',
+          status_valvula: StatusValvula.FECHADA,
+          ack: true,
+          falha: false,
+          disponivel: true,
+        },
+      ],
+      bombas: [
+        {
+          id_bomba: 5,
+          codigo_hardware: 'BOMBA_VACUO_PRINCIPAL',
+          ligada: false,
+          disponivel: true,
+          falha: false,
+        },
+        {
+          id_bomba: 6,
+          codigo_hardware: 'BOMBA_VACUO_AUXILIAR',
+          ligada: false,
+          disponivel: true,
+          falha: false,
+        },
+      ],
+    };
+  }
+
+  function makeContext(): ProcessoOperationalContext {
     return {
       id_processo: 10,
       id_usuario: 7,
       nome_processo: 'Processo teste',
       status_processo: statusprocesso.CONFIGURADO,
+      modo_operacao_auxiliar: modooperacaoauxiliar.AUTOMATICO,
+      encerramento_automatico: true,
+      encerramento_versao: 0,
+      encerramento_tolerancia_vacuo_percentual: 10,
+      encerramento_limite_seguranca_vacuo: -95,
+      encerramento_tempo_estabilizacao_segundos: 30,
+      encerramento_estabilizacao_cobertura_minima_percentual: 80,
+      encerramento_intervalo_leitura_esperado_ms: 1000,
+      encerramento_timeout_leitura_sensor_ms: 2500,
+      encerramento_tempo_retencao_segundos: 30,
+      encerramento_perda_vacuo_maxima_retencao: 2,
       vacuo_alvo: -80,
       vacuo_inicial: null,
       vacuo_final: null,
@@ -666,6 +919,10 @@ describe('ProcessoPrecheckService', () => {
           vacuo_medio: null,
           eficiencia: null,
           status_tanque_processo: statustanqueprocesso.CONFIGURADO,
+          vacuo_atingido: false,
+          vacuo_estabilizado: false,
+          status_encerramento: statusencerramentotanque.INATIVO,
+          encerramento_versao: 0,
           iniciado_em: null,
           finalizado_em: null,
           sensores: [
@@ -677,6 +934,12 @@ describe('ProcessoPrecheckService', () => {
               unidade_medida: 'kPa',
               status_sensor: statussensor.ATIVO,
               tipo_sensor: tiposensor.ACOPLAMENTO,
+              status_integridade: statusintegridadesensor.VALIDO,
+              calibrado_em: null,
+              calibracao_valida_ate: null,
+              modo_calibracao_ativo: false,
+              liberado_em: null,
+              integridade_ultimo_erro: null,
               ultima_leitura: new Date(),
               ultimo_valor_lido: -70,
               ativo_no_processo: true,
@@ -698,6 +961,12 @@ describe('ProcessoPrecheckService', () => {
               unidade_medida: 'kPa',
               status_sensor: statussensor.ATIVO,
               tipo_sensor: tiposensor.VACUO,
+              status_integridade: statusintegridadesensor.VALIDO,
+              calibrado_em: null,
+              calibracao_valida_ate: null,
+              modo_calibracao_ativo: false,
+              liberado_em: null,
+              integridade_ultimo_erro: null,
               ultima_leitura: new Date(),
               ultimo_valor_lido: -70,
               ativo_no_processo: true,
